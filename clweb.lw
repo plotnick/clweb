@@ -1,0 +1,322 @@
+@ @e ;;;; -*- Mode: Lisp -*-
+
+(defpackage "COMMON-LISP-WEB"
+  (:nicknames "CLWEB")
+  (:use "COMMON-LISP")
+  (:export "TANGLE-FILE" "LOAD-WEB" "WEAVE"))
+(in-package "CLWEB")
+
+@*Tangling \& weaving. The two primary operations that a literate programming
+system makes available are {\it tangling\/} and {\/weaving\/}. The former
+creates a machine-readable output file from a \WEB, while the latter prepares
+the \WEB\ for formatting using \TeX\ or some other formatting engine.
+
+There are three interface functions defined by this system: |tangle-file|,
+|load-web|, and |weave|. The first is analogous to |compile-file|: given
+an input file containing \WEB\ source, it produces a compiled output file
+that can subsequently be loaded into a Lisp image with |load|. The function
+|load-web| is analogous to |load|, but again accepts \WEB\ as input
+instead of ordinary Lisp source. And finally, |weave| takes a \WEB\ as
+input and generates a \TeX\ source file containing the commentary parts
+of each section together with pretty-printed code parts.
+
+@ The fundamental unit of a \WEB\ is the {\it section}, which consists
+essentially of two parts, either of which may be null: a commentary part,
+which is represented as a string containing \TeX\ text, and a code part,
+which is represented as a list of forms, possibly containing references
+to other named sections. Every section is automatically assigned a number,
+and each section is either {\it named\/} or {\it unnamed\/}. The code parts
+of named sections may be included in that of another (named or unnamed)
+section via \.{@@<$ldots$@@>} commands, while unnamed sections are output
+or evaluated in the order in which they appear in the \WEB\ source file.
+
+@l
+(defparameter *section-number* 0)
+
+(defclass section ()
+  ((number :reader section-number
+           :initarg :number
+           :initform (incf *section-number*))
+   (commentary :accessor section-commentary :initarg :commentary :initform "")
+   (name :accessor section-name :initarg :name :initform nil)
+   (code :accessor section-code :initarg :code :initform '())
+   (used-by :accessor used-by :initarg :used-by :initform '())))
+
+(defclass starred-section (section)
+  ())
+
+@ We'll start with the tangler. Both of the high-level tangling routines
+use the following function, which loops over the sections read from the
+given stream one at a time, stores the code for the named sections as a
+side-effect, and returns a list of Lisp forms from the code parts of the
+unnamed sections.
+
+@l
+(defun unnamed-section-code (stream)
+  (loop for section in (read-sections stream)
+        if (section-name section)
+          do (define-section (section-name section) (section-code section))
+        else
+          append (section-code section)))
+
+@ The |tangle| routine does the actual ``tangling''---that is, the
+macro-expansion of code from named sections.
+
+@l
+(defun tangle (forms)
+  forms)
+
+@ @l
+
+(defun load-web-from-stream (stream verbose print)
+  (when verbose (format t "~&; loading WEB from ~S~%" (pathname stream)))
+  (let ((*readtable* *readtable*)
+        (*package* *package*))
+    (dolist (form (tangle (unnamed-section-code stream)))
+      (if print
+          (let ((results (multiple-value-list (eval form))))
+            (format t "~&; ~{~S~^, ~}~%" results))
+          (eval form)))))
+
+(defun load-web (filespec &key
+                 (verbose *load-verbose*)
+                 (print *load-print*)
+                 (if-does-not-exist t)
+                 (external-format :default))
+  (if (streamp filespec)
+      (load-web-from-stream filespec verbose print)
+      (with-open-file (stream filespec
+                       :direction :input
+                       :external-format external-format
+                       :if-does-not-exist (if if-does-not-exist :error nil))
+        (load-web-from-stream stream verbose print))))
+
+@ @l
+(defun tangle-file (input-file &rest args &key
+                    output-file
+                    (verbose *compile-verbose*)
+                    (print *compile-print*)
+                    (external-format :default) &allow-other-keys &aux
+                    (lisp-file (merge-pathnames (make-pathname :type "lisp")
+                                                input-file)))
+  (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
+  (with-open-file (input input-file
+                   :direction :input
+                   :external-format external-format)
+    (with-open-file (lisp lisp-file
+                     :direction :output
+                     :if-exists :supersede
+                     :external-format external-format)
+      (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S.  DO NOT EDIT." input-file)
+      (dolist (form (tangle (unnamed-section-code input)))
+        (pprint form lisp))))
+  (apply #'compile-file lisp-file args))
+
+@ Now that we've covered the high-level interfaces, we'll drop down to
+the lower levels, beginning with the reader.
+
+@*Reading. We recognize five distinct modes, or contexts, for reading.
+Limbo mode is for \TeX\ text that proceeds the first section in a file.
+\TeX\ mode is used for reading the commentary that begins a section.
+Lisp mode is used for reading the code part of a section, and inner-Lisp
+mode is for reading Lisp forms that are embedded within \TeX\ material.
+Finally, restricted mode is used for reading material in section names
+and a few other places.
+
+Note that we do not support the `middle' part of a section that the
+original \WEB\ and \CWEB\ used for macro definitions and the like;
+those features are simply unnecessary with Lisp.
+
+@l
+(defparameter *modes* '(:limbo :TeX :lisp :inner-lisp :restricted))
+(deftype mode () `(member ,@*modes*))
+(declaim (type mode *mode*))
+(defvar *mode* :limbo)
+
+@ We use seperate readtables for each mode, which are accessed via
+|readtable-for-mode|.
+
+@l
+(defvar *mode-readtables*
+  (loop for mode in *modes*
+        collect (cons mode (copy-readtable nil))))
+
+(defun readtable-for-mode (mode)
+  (declare (type mode mode))
+  (cdr (assoc mode *mode-readtables*)))
+
+@ Certain control codes (e.g., \.{@@ }, \.{@@l}, \etc.) cause a transition
+to a different mode. Changing modes involves two things: setting the global
+|*mode*| variable, and changing the global |*readtable*|.
+
+@l
+(defun set-mode (mode)
+  (setq *mode* mode
+        *readtable* (readtable-for-mode mode)))
+
+@ Sometimes, as with inner-Lisp mode, we want a specific mode to be
+established only within some dynamic extent. The |with-mode| macro
+makes this easy.
+
+@l
+(defmacro with-mode (mode &body body)
+  `(let ((*mode* ,mode)
+         (*readtable* (readtable-for-mode ,mode)))
+     ,@body))
+
+@ We sometimes need to manually detect {\sc EOF}. In such cases, we use an
+object that is (almost) guaranteed never to be returned by |read| as the
+|eof-value| argument to the reader functions.
+
+@l
+(defvar *eof* (make-symbol "EOF"))
+(defun eof-p (char) (eq char *eof*))
+
+@ \TeX\ mode material, such as commentary, section names, \etc. is accumulated
+using the following function, which simply reads from the given stream until
+either {\sc EOF}, a control code, or a vertical bar is encountered. The caller
+should then invoke |read| on the stream, whereby the appropriate reader
+macro will pick up the object whose printed representation follows.
+
+@l
+(defun snarf-until-control-char (stream)
+  (with-output-to-string (string)
+    (loop for char = (peek-char nil stream nil *eof* nil)
+          until (or (eof-p char) (member char '(#\@ #\|)))
+            do (write-char (read-char stream) string))))
+
+@ In \TeX\ mode, we allow embedded Lisp code to be surrounded by
+vertical-bars, where it is read in inner-Lisp mode, which is almost, but
+not quite, the same as Lisp mode. The forms read in inner-Lisp mode are
+returned as a quoted list.
+
+@l
+(set-macro-character #\| (lambda (stream char)
+                           (with-mode :inner-lisp
+                             (cons 'quote (read-delimited-list char stream t))))
+                     nil (readtable-for-mode :TeX))
+
+@ The call to |read-delimited-list| above will only stop at the closing
+vertical bar if we set it to be a terminating macro character, overriding
+its usual Lisp meaning as an escape character. The following makes it an
+error to use vertical-bar in inner-Lisp mode.
+
+@l
+(set-macro-character #\| (get-macro-character #\) nil)
+                     nil (readtable-for-mode :inner-lisp))
+
+@ We make |#\@| a non-terminating dispatching macro character in every
+mode, and define some convenience routines for retrieving and setting the
+reader macro functions that implement the control codes.
+
+@l
+(dolist (mode *modes*)
+  ;; The CL standard does not say that calling MAKE-DISPATCH-MACRO-CHARACTER
+  ;; on a character that's already a dispatching macro character is supposed
+  ;; to signal an error, but SBCL does so; hence the IGNORE-ERRORS.
+  (ignore-errors
+    (make-dispatch-macro-character #\@ t (readtable-for-mode mode))))
+
+(defun get-control-code (sub-char mode)
+  (get-dispatch-macro-character #\@ sub-char (readtable-for-mode mode)))
+
+(defun set-control-code (sub-char function &optional (modes *modes*))
+  (dolist (mode modes)
+    (set-dispatch-macro-character #\@ sub-char function
+                                  (readtable-for-mode mode))))
+
+@ The control code \.{@@@@} yields the string `\.{"@@"}' in all modes.
+However, since |#\@| is a {\it non-terminating\/} macro character, you
+don't usually need to use this control code in Lisp mode.
+
+@l
+(set-control-code #\@ (lambda (stream sub-char arg)
+                        (declare (ignore stream arg))
+                        (string sub-char)))
+
+@ Sections are introduced by the two section-starting control codes, \.{@@ }
+and~\.{@@*}, which differ only in the way they are output during weaving.
+The reader macro functions that implement these control codes return an
+instance of the appropriate section class.
+
+% We might extend this with the prefix argument if we decide to support that.
+
+@l
+(defun start-section-reader (section-class)
+  (lambda (stream sub-char arg)
+    (declare (ignore stream sub-char arg))
+    (make-instance section-class)))
+
+(set-control-code #\Space (start-section-reader 'section) '(:limbo :TeX :lisp))
+(set-control-code #\* (start-section-reader 'starred-section) '(:limbo :TeX :lisp))
+
+@ The control codes \.{@@l} and ~\.{@@p} (where `l' is for `Lisp' and `p'
+is for `Program'---both control codes do the same thing) begin the code
+part of an unnamed section. They are recognized only in \TeX\ mode---every
+section must begin with a commentary, even if it is empty.
+
+The control code \.{@@e} (`e' for `evaluate') is similar to \.{@@l} in that
+it begins the code part of an unnamed section, but every form in that part
+is evaluated at read-time {\it in addition to\/} being tangled and therefore
+evaluated at run-time and possibly compile-time, too. Sections containing
+evaluated code-parts should be used only for establishing state that is
+needed by the reader: package definitions, structure definitions that are
+used with the \.{#S} reader macro, \etc.
+
+@l
+(defstruct (start-code
+             (:constructor make-start-code (evalp &optional name)))
+  evalp name)
+
+(defun start-code-reader (evalp)
+  (lambda (stream sub-char arg)
+    (declare (ignore stream sub-char arg))
+    (make-start-code evalp)))
+
+(set-control-code #\l (start-code-reader nil) '(:TeX))
+(set-control-code #\p (start-code-reader nil) '(:TeX))
+(set-control-code #\e (start-code-reader t) '(:TeX))
+
+@ Because the \WEB\ syntax doesn't have nice closing delimiters for sections
+or parts thereof, we have to manually parse them. Luckily, the reader macros
+established above make this fairly straightforward.
+
+@l
+(defun read-sections (stream)
+  (flet ((finish-section (section commentary code)
+           (setf (section-commentary section) (nreverse commentary))
+           (setf (section-code section) (nreverse code))
+           section))
+    (prog (form commentary code section sections)
+     commentary
+          (when section
+            (push (finish-section section commentary code) sections))
+          (setq section (if (typep form 'section) form (make-instance 'section))
+                commentary '()
+                code '())
+          (with-mode :TeX
+            (loop
+              (let ((text (snarf-until-control-char stream)))
+                (when (plusp (length text))
+                  (push text commentary)))
+              (setq form (read stream nil *eof* nil))
+              (cond ((eof-p form) (go eof))
+                    ((typep form 'section) (go commentary))
+                    ((start-code-p form) (go lisp))
+                    (t (push form commentary)))))
+     lisp
+          (when (start-code-name form)
+            (setf (section-name section) (cadr form)))
+          (with-mode :lisp
+            (let ((evalp (start-code-evalp form)))
+              (loop
+                (setq form (read stream nil *eof* nil))
+                (cond ((eof-p form) (go eof))
+                      ((typep form 'section) (go commentary))
+                      ((start-code-p form)
+                       (error "Can't start a section with a code part"))
+                      (t (when evalp (eval form))
+                         (push form code))))))
+     eof
+          (push (finish-section section commentary code) sections)
+          (return (nreverse sections)))))
