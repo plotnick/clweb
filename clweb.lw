@@ -67,7 +67,6 @@ macro-expansion of code from named sections.
   forms)
 
 @ @l
-
 (defun load-web-from-stream (stream verbose print)
   (when verbose (format t "~&; loading WEB from ~S~%" (pathname stream)))
   (let ((*readtable* *readtable*)
