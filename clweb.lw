@@ -129,38 +129,25 @@ those features are simply unnecessary with Lisp.
 @l
 (defparameter *modes* '(:limbo :TeX :lisp :inner-lisp :restricted))
 (deftype mode () `(member ,@*modes*))
-(declaim (type mode *mode*))
-(defvar *mode* :limbo)
 
 @ We use seperate readtables for each mode, which are accessed via
 |readtable-for-mode|.
 
 @l
-(defvar *mode-readtables*
+(defvar *readtables*
   (loop for mode in *modes*
         collect (cons mode (copy-readtable nil))))
 
 (defun readtable-for-mode (mode)
   (declare (type mode mode))
-  (cdr (assoc mode *mode-readtables*)))
+  (cdr (assoc mode *readtables*)))
 
-@ Certain control codes (e.g., \.{@@ }, \.{@@l}, \etc.) cause a transition
-to a different mode. Changing modes involves two things: setting the global
-|*mode*| variable, and changing the global |*readtable*|.
-
-@l
-(defun set-mode (mode)
-  (setq *mode* mode
-        *readtable* (readtable-for-mode mode)))
-
-@ Sometimes, as with inner-Lisp mode, we want a specific mode to be
-established only within some dynamic extent. The |with-mode| macro
-makes this easy.
+@ The following macro is just a bit of syntactic sugar for executing the
+given forms with |*readtable*| bound appropriately for the given mode.
 
 @l
 (defmacro with-mode (mode &body body)
-  `(let ((*mode* ,mode)
-         (*readtable* (readtable-for-mode ,mode)))
+  `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
 @ We sometimes need to manually detect {\sc EOF}. In such cases, we use an
