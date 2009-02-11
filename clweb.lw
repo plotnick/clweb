@@ -1,5 +1,8 @@
-@ @e ;;;; -*- Mode: Lisp -*-
+% -*- Mode: Lisp -*-
+\def\pb{\.{|...|}}
+\def\v{\.{\char'174}} % vertical bar (|) in typewriter font
 
+@ @e
 (defpackage "COMMON-LISP-WEB"
   (:nicknames "CLWEB")
   (:use "COMMON-LISP")
@@ -35,10 +38,15 @@ or evaluated in the order in which they appear in the \WEB\ source file.
   ((number :reader section-number
            :initarg :number
            :initform (incf *section-number*))
-   (commentary :accessor section-commentary :initarg :commentary :initform "")
-   (name :accessor section-name :initarg :name :initform nil)
-   (code :accessor section-code :initarg :code :initform '())
-   (used-by :accessor used-by :initarg :used-by :initform '())))
+   (commentary :accessor section-commentary :initarg :commentary)
+   (name :accessor section-name :initarg :name)
+   (code :accessor section-code :initarg :code)
+   (used-by :accessor used-by :initarg :used-by))
+  (:default-initargs :commentary nil :name nil :code nil :used-by nil))
+
+(defclass limbo-section (section)
+  ()
+  (:default-initargs :name (list (make-symbol "LIMBO"))))
 
 (defclass starred-section (section)
   ())
@@ -293,21 +301,26 @@ object that is (almost) guaranteed never to be returned by |read| as the
 (defvar *eof* (make-symbol "EOF"))
 (defun eof-p (char) (eq char *eof*))
 
-@ \TeX\ mode material, such as commentary, section names, \etc. is accumulated
-using the following function, which simply reads from the given stream until
-either {\sc EOF}, a control code, or a vertical bar is encountered. The caller
-should then invoke |read| on the stream, whereby the appropriate reader
-macro will pick up the object whose printed representation follows.
+@ \TeX\ mode material, such as commentary, section names, \etc. is
+accumulated using the following function, which simply reads from the given
+stream until either {\sc EOF}, or a {\it control character\/} (defined
+below) is encountered. The caller should then invoke |read| on the stream,
+whereby the appropriate reader macro will pick up the object whose printed
+representation follows.
+
+A {\it control character\/} is normally one of \.{@@} or \v, but in limbo
+mode, the latter is not recognized as such.
 
 @l
-(defun snarf-until-control-char (stream)
+(defun snarf-until-control-char (stream &optional limbo &aux
+                                 (control-chars (if limbo '(#\@) '(#\@ #\|))))
   (with-output-to-string (string)
     (loop for char = (peek-char nil stream nil *eof* nil)
-          until (or (eof-p char) (member char '(#\@ #\|)))
+          until (or (eof-p char) (member char control-chars))
             do (write-char (read-char stream) string))))
 
 @ In \TeX\ mode, we allow embedded Lisp code to be surrounded by
-vertical-bars, where it is read in inner-Lisp mode, which is almost, but
+\pb, where it is read in inner-Lisp mode, which is almost, but
 not quite, the same as Lisp mode.
 
 @l
@@ -319,9 +332,9 @@ not quite, the same as Lisp mode.
 (set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode :restricted))
 
 @ The call to |read-delimited-list| in |read-inner-lisp| will only stop at
-the closing vertical bar if we set it to be a terminating macro character,
+the closing \v\ if we set it to be a terminating macro character,
 overriding its usual Lisp meaning as an escape character. The following
-makes it an error to use vertical-bar in inner-Lisp mode.
+makes it an error to use \v\ in inner-Lisp mode.
 
 @l
 (set-macro-character #\| (get-macro-character #\) nil)
@@ -458,9 +471,10 @@ only during weaving.
                             (t (find-section name)))))
                   '(:lisp :inner-lisp))
 
-@ Because the \WEB\ syntax doesn't have nice closing delimiters for sections
-or parts thereof, we have to manually parse them. Luckily, the reader macros
-established above make this fairly straightforward.
+@ We now come to the heart of the \WEB\ parser. This function is a
+tiny state machine that models the global syntax of a \WEB\ file.
+(We can't just use reader macros since sections and their parts lack
+explicit closing delimiters.) It returns a list of |section| objects.
 
 @l
 (defun read-sections (stream)
@@ -469,35 +483,70 @@ established above make this fairly straightforward.
            (setf (section-code section) (nreverse code))
            section))
     (prog (form commentary code section sections)
+     limbo
+      (setq section (make-instance 'limbo-section))
+      @<Accumulate limbo text in |commentary|@>
      commentary
-          (when section
-            (push (finish-section section commentary code) sections))
-          (setq section (if (typep form 'section) form (make-instance 'section))
-                commentary '()
-                code '())
-          (with-mode :TeX
-            (loop
-              (let ((text (snarf-until-control-char stream)))
-                (when (plusp (length text))
-                  (push text commentary)))
-              (setq form (read stream nil *eof* nil))
-              (cond ((eof-p form) (go eof))
-                    ((typep form 'section) (go commentary))
-                    ((start-code-p form) (go lisp))
-                    (t (push form commentary)))))
+      (push (finish-section section commentary code) sections)
+      @<Initialize section variables@>
+      @<Accumulate \TeX-mode material in |commentary|@>
      lisp
-          (when (start-code-p form)
-            (setf (section-name section) (start-code-name form)))
-          (with-mode :lisp
-            (let ((evalp (start-code-evalp form)))
-              (loop
-                (setq form (read stream nil *eof* nil))
-                (cond ((eof-p form) (go eof))
-                      ((typep form 'section) (go commentary))
-                      ((start-code-p form)
-                       (error "Can't start a section with a code part"))
-                      (t (when evalp (eval form))
-                         (push form code))))))
+      @<Accumulate Lisp-mode material in |code|@>
      eof
-          (push (finish-section section commentary code) sections)
-          (return (nreverse sections)))))
+      (push (finish-section section commentary code) sections)
+      (return (nreverse sections)))))
+
+@ Limbo text is \TeX\ text that proceeds the first section marker. We treat
+it as commentary for a special section with no code. It can only end with
+{\sc EOF} or the start of a regular section. Note that inner-Lisp material
+is not allowed in limbo text: \v\ is not recognized as a control character
+by |snarf-until-control-char| when its second argument is true.
+
+@<Accumulate limbo text in |commentary|@>=
+(with-mode :limbo
+  (loop
+    (push (snarf-until-control-char stream t) commentary)
+    (setq form (read stream nil *eof* nil))
+    (cond ((eof-p form) (go eof))
+          ((typep form 'section) (go commentary))
+          (t (push form commentary)))))
+
+@ @<Initialize section variables@>=
+(check-type form section)
+(setq section form
+      commentary '()
+      code '())
+
+@ The commentary part that begins a section consists of \TeX\ text and
+inner-Lisp material surrounded by \pb. It is terminated by either the start
+of a new section, the beginning of the code part, or {\sc EOF}. If a code
+part is detected, we also set the name of the current section, which may be
+|nil|.
+
+@<Accumulate \TeX-mode material in |commentary|@>=
+(with-mode :TeX
+  (loop
+    (push (snarf-until-control-char stream) commentary)
+    (setq form (read stream nil *eof* nil))
+    (cond ((eof-p form) (go eof))
+          ((typep form 'section) (go commentary))
+          ((start-code-p form)
+           (setf (section-name section) (start-code-name form))
+           (go lisp))
+          (t (push form commentary)))))
+
+@ The code part consists of zero or more Lisp forms and is terminated by
+either {\sc EOF} or the start of a new section. If the code part was begun
+by a \.{@@e} control code, we evaluate the code forms as we read them.
+
+@<Accumulate Lisp-mode material in |code|@>=
+(with-mode :lisp
+  (let ((evalp (start-code-evalp form)))
+    (loop
+      (setq form (read stream nil *eof* nil))
+      (cond ((eof-p form) (go eof))
+            ((typep form 'section) (go commentary))
+            ((start-code-p form)
+             (error "Can't start a section with a code part"))
+            (t (when evalp (eval form))
+               (push form code))))))

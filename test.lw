@@ -1,3 +1,4 @@
+% Some limbo text. Note that | is not special in limbo-mode.
 @*Foo. The function |foo| adds twice its argument's value to thrice it.
 @l
 (defun foo (x)
