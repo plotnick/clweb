@@ -433,8 +433,8 @@ that extends to the matching \.{@@>}. The following routine reads such text.
 @ The control code \.{@@<} introduces a section name, which extends to the
 closing \.{@@>}. Its meaning is context-dependent.
 
-In \TeX\ mode, it must be followed by \.{=}, in which case it indicates
-that the name should be attached to the current section, and begins the
+In \TeX\ mode, a name must be followed by \.{=}, in which case it indicates
+that the name should be attached to the current section and begins the
 code part of the section.
 
 @l
@@ -471,7 +471,7 @@ only during weaving.
                             (t (find-section name)))))
                   '(:lisp :inner-lisp))
 
-@ We now come to the heart of the \WEB\ parser. This function is a
+@ We come now to the heart of the \WEB\ parser. This function is a
 tiny state machine that models the global syntax of a \WEB\ file.
 (We can't just use reader macros since sections and their parts lack
 explicit closing delimiters.) It returns a list of |section| objects.
@@ -535,9 +535,10 @@ part is detected, we also set the name of the current section, which may be
            (go lisp))
           (t (push form commentary)))))
 
-@ The code part consists of zero or more Lisp forms and is terminated by
-either {\sc EOF} or the start of a new section. If the code part was begun
-by a \.{@@e} control code, we evaluate the code forms as we read them.
+@ The code part of a section consists of zero or more Lisp forms and is
+terminated by either {\sc EOF} or the start of a new section. If the code
+part was begun by a \.{@@e} control code, we evaluate the code forms as we
+read them.
 
 @<Accumulate Lisp-mode material in |code|@>=
 (with-mode :lisp
