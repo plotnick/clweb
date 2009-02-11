@@ -21,12 +21,10 @@ input and generates a \TeX\ source file containing the commentary parts
 of each section together with pretty-printed code parts.
 
 @ The fundamental unit of a \WEB\ is the {\it section}, which consists
-essentially of two parts, either of which may be null: a commentary part,
-which is represented as a string containing \TeX\ text, and a code part,
-which is represented as a list of forms, possibly containing references
-to other named sections. Every section is automatically assigned a number,
+essentially of two parts, either of which may be null: a commentary part
+and a code part. Every section is automatically assigned a number,
 and each section is either {\it named\/} or {\it unnamed\/}. The code parts
-of named sections may be included in that of another (named or unnamed)
+of named sections may be included in those of another (named or unnamed)
 section via \.{@@<$ldots$@@>} commands, while unnamed sections are output
 or evaluated in the order in which they appear in the \WEB\ source file.
 
@@ -45,11 +43,139 @@ or evaluated in the order in which they appear in the \WEB\ source file.
 (defclass starred-section (section)
   ())
 
-@ We'll start with the tangler. Both of the high-level tangling routines
-use the following function, which loops over the sections read from the
-given stream one at a time, stores the code for the named sections as a
-side-effect, and returns a list of Lisp forms from the code parts of the
-unnamed sections.
+@ @<Initialize global variables@>=
+(setq *section-number* 0)
+
+@ The code for named sections is stored in a binary search tree whose keys
+are the section names (possibly abbreviated, as discussed below), and whose
+values are the code to be substituted in place of a reference to the section
+so named.
+
+@l
+(defclass binary-search-tree ()
+  ((root :accessor root :initarg :root)
+   (predicate :reader predicate :initarg :predicate)
+   (node-class :reader node-class :initarg :node-class))
+  (:default-initargs :root nil :predicate #'<))
+
+(defclass binary-search-tree-node ()
+  ((key :accessor node-key :initarg :key)
+   (value :accessor node-value :initarg :value)
+   (left-child :accessor left-child :initarg :left)
+   (right-child :accessor right-child :initarg :right))
+  (:default-initargs :key nil :value nil :left nil :right nil))
+
+@ The only interface we need to the {\sc BST} is the following routine,
+which attempts to locate the node in |tree| with key |item|. If it is not
+already present, a new node is created with that key. The |predicate|
+argument should be a designator for a function of two arguments that is
+used to compare the keys of the nodes in the tree.
+
+Two values are returned: the node for the given key, and a boolean
+representing whether the key was already in the tree or not.
+
+@l
+(defmethod find-or-insert (item (tree binary-search-tree) &key
+                           (test #'eql) &aux
+                           (predicate (predicate tree)))
+  (flet ((lessp (item node) (funcall predicate item (node-key node)))
+         (samep (item node) (funcall test item (node-key node))))
+    (do ((parent nil node)
+         (node (root tree) (if (lessp item node)
+                               (left-child node)
+                               (right-child node))))
+        ((or (null node) (samep item node))
+         (if node
+             (values node t)
+             (let ((node (make-instance (node-class tree) :key item)))
+               (if (null parent)
+                   (setf (root tree) node)
+                   (if (lessp item parent)
+                       (setf (left-child parent) node)
+                       (setf (right-child parent) node)))
+               (values node nil)))))))
+
+@ It's important to keep in mind that named sections can be defined
+piecemeal, with the code spread out over several physical sections. We
+might think of a full named section as a sort of `virtual' section, which
+consists of a name and some code, but lacks, for instance, a section number
+or commentary.
+
+And that's what we store in the {\sc BST}: nodes that look like (but are not)
+sections that have only names and code.
+
+@l
+(defclass named-section (binary-search-tree-node)
+  ((name :accessor node-key
+         :accessor section-name
+         :initarg :key
+         :initarg :name)
+   (code :accessor node-value
+         :accessor section-code
+         :initarg :value
+         :initarg :code)))
+
+(defparameter *named-sections*
+  (make-instance 'binary-search-tree
+                 :predicate #'string<
+                 :node-class 'named-section))
+
+(defun flatten-name (name)
+  (apply #'concatenate 'string
+         (mapcar (lambda (x) (if (atom x) (string x) (flatten-name x))) name)))
+
+(defun define-section (name forms &aux (name (flatten-name name)))
+  (multiple-value-bind (node present-p)
+      (find-or-insert name *named-sections* :test #'string=)
+    (setf (node-value node) (if present-p
+                                (nconc (node-value node) forms)
+                                forms))))
+
+(defun find-section (name &aux (name (flatten-name name)))
+  (find-or-insert name *named-sections* :test #'string=))
+
+@ @<Initialize global variables@>=
+(setf (root *named-sections*) nil)
+
+@ Tangling involves recursively replacing each reference to a named section
+with the code accumulated for that section. The function |tangle-1| expands
+one level of such references, returning the possibly-expanded form, and a
+boolean representing whether or not any expansions were actually performed.
+
+Note that this is a splicing operation, not a simple replacement: if
+|@<foo@>\='(x y)|, then |(tangle-1 '(a @<foo@> b))|$\rarrow$|(a x y b)|,~|t|.
+
+@l
+(defun tangle-1 (form)
+  (cond ((atom form) (values form nil))
+        ((typep (car form) 'named-section)
+         (values (append (section-code (car form)) (tangle-1 (cdr form)))
+                 t))
+        (t (multiple-value-bind (a car-expanded-p) (tangle-1 (car form))
+             (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
+               (values (if (and (eql a (car form)) (eql d (cdr form)))
+                           form
+                           (cons a d))
+                       (or car-expanded-p cdr-expanded-p)))))))
+
+@ |tangle| repeatedly calls |tangle-1| on |form| until it can no longer be
+expanded. Like |tangle-1|, it returns the possibly-expanded form and an
+`expanded' flag.
+
+@l
+(defun tangle (form)
+  (labels ((expand (form expanded)
+             (multiple-value-bind (new-form newly-expanded-p)
+                 (tangle-1 form)
+               (if newly-expanded-p
+                   (expand new-form t)
+                   (values new-form expanded)))))
+    (expand form nil)))
+
+@ Both of the high-level tangling routines use the following function,
+which loops over the sections read from the given stream one at a time,
+stores the code for the named sections as a side-effect, and returns a list
+of Lisp forms from the code parts of the unnamed sections.
 
 @l
 (defun unnamed-section-code (stream)
@@ -59,16 +185,20 @@ unnamed sections.
         else
           append (section-code section)))
 
-@ The |tangle| routine does the actual ``tangling''---that is, the
-macro-expansion of code from named sections.
+@ We're now ready for the high-level tangler interface. We begin with
+|load-web|, which uses a helper function, |load-web-from-stream|, so
+that it can handle input from a file or an arbitrary stream. The logic
+is straightfoward: loop over the tangled forms read from the stream,
+evaluating each one in turn.
+
+Note that like |load|, we bind |*readtable*| and |*package*| to their
+current values, so that assignments to those variables in the \WEB\ code
+will not effect the calling environment.
 
 @l
-(defun tangle (forms)
-  forms)
-
-@ @l
 (defun load-web-from-stream (stream verbose print)
   (when verbose (format t "~&; loading WEB from ~S~%" (pathname stream)))
+  @<Initialize global variables@>
   (let ((*readtable* *readtable*)
         (*package* *package*))
     (dolist (form (tangle (unnamed-section-code stream)))
@@ -90,7 +220,10 @@ macro-expansion of code from named sections.
                        :if-does-not-exist (if if-does-not-exist :error nil))
         (load-web-from-stream stream verbose print))))
 
-@ @l
+@ The file tangler operates by writing out the tangled code to a Lisp source
+file, and then invoking the file compiler on that file.
+
+@l
 (defun tangle-file (input-file &rest args &key
                     output-file
                     (verbose *compile-verbose*)
@@ -98,7 +231,9 @@ macro-expansion of code from named sections.
                     (external-format :default) &allow-other-keys &aux
                     (lisp-file (merge-pathnames (make-pathname :type "lisp")
                                                 input-file)))
+  (declare (ignore output-file print))
   (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
+  @<Initialize global variables@>
   (with-open-file (input input-file
                    :direction :input
                    :external-format external-format)
@@ -173,19 +308,20 @@ macro will pick up the object whose printed representation follows.
 
 @ In \TeX\ mode, we allow embedded Lisp code to be surrounded by
 vertical-bars, where it is read in inner-Lisp mode, which is almost, but
-not quite, the same as Lisp mode. The forms read in inner-Lisp mode are
-returned as a quoted list.
+not quite, the same as Lisp mode.
 
 @l
-(set-macro-character #\| (lambda (stream char)
-                           (with-mode :inner-lisp
-                             (cons 'quote (read-delimited-list char stream t))))
-                     nil (readtable-for-mode :TeX))
+(defun read-inner-lisp (stream char)
+  (with-mode :inner-lisp
+    (read-delimited-list char stream t)))
 
-@ The call to |read-delimited-list| above will only stop at the closing
-vertical bar if we set it to be a terminating macro character, overriding
-its usual Lisp meaning as an escape character. The following makes it an
-error to use vertical-bar in inner-Lisp mode.
+(set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode :TeX))
+(set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode :restricted))
+
+@ The call to |read-delimited-list| in |read-inner-lisp| will only stop at
+the closing vertical bar if we set it to be a terminating macro character,
+overriding its usual Lisp meaning as an escape character. The following
+makes it an error to use vertical-bar in inner-Lisp mode.
 
 @l
 (set-macro-character #\| (get-macro-character #\) nil)
@@ -250,8 +386,7 @@ needed by the reader: package definitions, structure definitions that are
 used with the \.{#S} reader macro, \etc.
 
 @l
-(defstruct (start-code
-             (:constructor make-start-code (evalp &optional name)))
+(defstruct (start-code (:constructor make-start-code (evalp &optional name)))
   evalp name)
 
 (defun start-code-reader (evalp)
@@ -262,6 +397,66 @@ used with the \.{#S} reader macro, \etc.
 (set-control-code #\l (start-code-reader nil) '(:TeX))
 (set-control-code #\p (start-code-reader nil) '(:TeX))
 (set-control-code #\e (start-code-reader t) '(:TeX))
+
+@ Several control codes, including \.{@@<}, consist of restricted \TeX\ text
+that extends to the matching \.{@@>}. The following routine reads such text.
+% FIXME: Explain about the list that's returned.
+
+@l
+(defvar *end-control-text* (make-symbol "@>"))
+
+(set-control-code #\> (constantly *end-control-text*) '(:restricted))
+
+(defun read-control-text (stream)
+  (with-mode :restricted
+    (let ((text '()))
+      (loop
+        (push (snarf-until-control-char stream) text)
+        (let ((x (read-preserving-whitespace stream t nil t)))
+          (if (eq x *end-control-text*)
+              (return (nreverse text))
+              (push x text)))))))
+
+@ The control code \.{@@<} introduces a section name, which extends to the
+closing \.{@@>}. Its meaning is context-dependent.
+
+In \TeX\ mode, it must be followed by \.{=}, in which case it indicates
+that the name should be attached to the current section, and begins the
+code part of the section.
+
+@l
+(set-control-code #\<
+                  (lambda (stream sub-char arg)
+                    (declare (ignore sub-char arg))
+                    (let* ((name (read-control-text stream))
+                           (next-char (peek-char nil stream nil *eof* t)))
+                      (cond ((eql #\= next-char)
+                             (read-char stream)
+                             (make-start-code nil name))
+                            (t
+                             ;; There's no reason not to have a restart here
+                             ;; that takes the reference to be in inner-Lisp
+                             ;; mode.
+                             (error "Can't use section name in TeX mode.")))))
+                  '(:TeX))
+
+@ In Lisp and inner-Lisp modes, a name is taken to refer to the section so
+named.  During tangling, such references in Lisp mode will be replaced with
+the code defined for that section. References in inner-Lisp mode are used
+only during weaving.
+
+@l
+(set-control-code #\<
+                  (lambda (stream sub-char arg)
+                    (declare (ignore sub-char arg))
+                    (let* ((name (read-control-text stream))
+                           (next-char (peek-char nil stream nil *eof* t)))
+                      (cond ((eql #\= next-char)
+                             ;; There should be a restart here that simply
+                             ;; ignores the #\=.
+                             (error "Can't define a named section in code."))
+                            (t (find-section name)))))
+                  '(:lisp :inner-lisp))
 
 @ Because the \WEB\ syntax doesn't have nice closing delimiters for sections
 or parts thereof, we have to manually parse them. Luckily, the reader macros
@@ -291,8 +486,8 @@ established above make this fairly straightforward.
                     ((start-code-p form) (go lisp))
                     (t (push form commentary)))))
      lisp
-          (when (start-code-name form)
-            (setf (section-name section) (cadr form)))
+          (when (start-code-p form)
+            (setf (section-name section) (start-code-name form)))
           (with-mode :lisp
             (let ((evalp (start-code-evalp form)))
               (loop

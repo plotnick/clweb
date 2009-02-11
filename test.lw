@@ -1,0 +1,18 @@
+@*Foo. The function |foo| adds twice its argument's value to thrice it.
+@l
+(defun foo (x)
+  (+ @<Twice |x|@> @<Thrice |x|@>))
+
+@ @<The only even prime@>=2
+@ @<Twice |x|@>=(* x @<The only even prime@>)
+@ @<Thrice |x|@>=(* x 3)
+
+@*Bar. The function |bar| returns the first three natural numbers, and
+demonstrates how a named section may be defined piecewise.
+@l
+(defun bar () '(@<Natural numbers@>))
+
+@ @<Natural numbers@>=0
+@ @<Natural numbers@>=1
+@ @<Natural numbers@>=@<The only even prime@>
+
