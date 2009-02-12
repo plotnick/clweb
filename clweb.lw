@@ -377,13 +377,13 @@ instance of the appropriate section class.
 % We might extend this with the prefix argument if we decide to support that.
 
 @l
-(defun start-section-reader (section-class)
-  (lambda (stream sub-char arg)
-    (declare (ignore stream sub-char arg))
-    (make-instance section-class)))
+(defmacro start-section-reader (section-class)
+  `(lambda (stream sub-char arg)
+     (declare (ignore stream sub-char arg))
+     (make-instance ',section-class)))
 
-(set-control-code #\Space (start-section-reader 'section) '(:limbo :TeX :lisp))
-(set-control-code #\* (start-section-reader 'starred-section) '(:limbo :TeX :lisp))
+(set-control-code #\Space (start-section-reader section) '(:limbo :TeX :lisp))
+(set-control-code #\* (start-section-reader starred-section) '(:limbo :TeX :lisp))
 
 @ The control codes \.{@@l} and ~\.{@@p} (where `l' is for `Lisp' and `p'
 is for `Program'---both control codes do the same thing) begin the code
@@ -402,10 +402,10 @@ used with the \.{#S} reader macro, \etc.
 (defstruct (start-code (:constructor make-start-code (evalp &optional name)))
   evalp name)
 
-(defun start-code-reader (evalp)
-  (lambda (stream sub-char arg)
-    (declare (ignore stream sub-char arg))
-    (make-start-code evalp)))
+(defmacro start-code-reader (evalp)
+  `(lambda (stream sub-char arg)
+     (declare (ignore stream sub-char arg))
+     (make-start-code ,evalp)))
 
 (set-control-code #\l (start-code-reader nil) '(:TeX))
 (set-control-code #\p (start-code-reader nil) '(:TeX))
@@ -437,39 +437,44 @@ In \TeX\ mode, a name must be followed by \.{=}, in which case it indicates
 that the name should be attached to the current section and begins the
 code part of the section.
 
-@l
-(set-control-code #\<
-                  (lambda (stream sub-char arg)
-                    (declare (ignore sub-char arg))
-                    (let* ((name (read-control-text stream))
-                           (next-char (peek-char nil stream nil *eof* t)))
-                      (cond ((eql #\= next-char)
-                             (read-char stream)
-                             (make-start-code nil name))
-                            (t
-                             ;; There's no reason not to have a restart here
-                             ;; that takes the reference to be in inner-Lisp
-                             ;; mode.
-                             (error "Can't use section name in TeX mode.")))))
-                  '(:TeX))
-
-@ In Lisp and inner-Lisp modes, a name is taken to refer to the section so
-named.  During tangling, such references in Lisp mode will be replaced with
+In Lisp and inner-Lisp modes, a name is taken to refer to the section so
+named. During tangling, such references in Lisp mode will be replaced with
 the code defined for that section. References in inner-Lisp mode are used
 only during weaving.
 
 @l
-(set-control-code #\<
-                  (lambda (stream sub-char arg)
-                    (declare (ignore sub-char arg))
-                    (let* ((name (read-control-text stream))
-                           (next-char (peek-char nil stream nil *eof* t)))
-                      (cond ((eql #\= next-char)
-                             ;; There should be a restart here that simply
-                             ;; ignores the #\=.
-                             (error "Can't define a named section in code."))
-                            (t (find-section name)))))
-                  '(:lisp :inner-lisp))
+(defmacro section-name-reader (definition-allowed-p)
+  `(lambda (stream sub-char arg)
+     (declare (ignore sub-char arg))
+     (let* ((name (read-control-text stream))
+            (definition-p (eql (peek-char nil stream nil nil t) #\=)))
+       (if definition-p
+           ,(if definition-allowed-p
+                '(progn (read-char stream) (make-start-code nil name))
+                '@<Signal an error about section definition in Lisp mode@>)
+           ,(if definition-allowed-p
+               '@<Signal an error about section name use in \TeX\ mode@>
+               '(find-section name))))))
+
+(set-control-code #\< (section-name-reader t) '(:TeX))
+(set-control-code #\< (section-name-reader nil) '(:lisp :inner-lisp))
+
+@ @<Signal an error about section definition in Lisp mode@>=
+(restart-case
+    (error "Can't define a named section in Lisp mode: ~A" name)
+  (use-section ()
+    :report "Don't define the section, just use it."
+    (find-section name)))
+
+@ @<Signal an error about section name use in \TeX\ mode@>=
+(restart-case
+    (error "Can't use a section name in TeX mode: ~A" name)
+  (name-section ()
+    :report "Name the current section and start the code part."
+    (make-start-code nil name))
+  (cite-section ()
+    :report "Assume the section is just being cited."
+    (find-section name)))
 
 @ We come now to the heart of the \WEB\ parser. This function is a
 tiny state machine that models the global syntax of a \WEB\ file.

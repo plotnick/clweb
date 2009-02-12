@@ -167,20 +167,20 @@
                   (LAMBDA (STREAM SUB-CHAR ARG)
                     (DECLARE (IGNORE STREAM ARG))
                     (STRING SUB-CHAR)))
-(DEFUN START-SECTION-READER (SECTION-CLASS)
-  (LAMBDA (STREAM SUB-CHAR ARG)
-    (DECLARE (IGNORE STREAM SUB-CHAR ARG))
-    (MAKE-INSTANCE SECTION-CLASS)))
-(SET-CONTROL-CODE #\  (START-SECTION-READER 'SECTION) '(:LIMBO :TEX :LISP))
-(SET-CONTROL-CODE #\* (START-SECTION-READER 'STARRED-SECTION)
+(DEFMACRO START-SECTION-READER (SECTION-CLASS)
+  `(LAMBDA (STREAM SUB-CHAR ARG)
+     (DECLARE (IGNORE STREAM SUB-CHAR ARG))
+     (MAKE-INSTANCE ',SECTION-CLASS)))
+(SET-CONTROL-CODE #\  (START-SECTION-READER SECTION) '(:LIMBO :TEX :LISP))
+(SET-CONTROL-CODE #\* (START-SECTION-READER STARRED-SECTION)
                   '(:LIMBO :TEX :LISP))
 (DEFSTRUCT (START-CODE (:CONSTRUCTOR MAKE-START-CODE (EVALP &OPTIONAL NAME)))
   EVALP
   NAME)
-(DEFUN START-CODE-READER (EVALP)
-  (LAMBDA (STREAM SUB-CHAR ARG)
-    (DECLARE (IGNORE STREAM SUB-CHAR ARG))
-    (MAKE-START-CODE EVALP)))
+(DEFMACRO START-CODE-READER (EVALP)
+  `(LAMBDA (STREAM SUB-CHAR ARG)
+     (DECLARE (IGNORE STREAM SUB-CHAR ARG))
+     (MAKE-START-CODE ,EVALP)))
 (SET-CONTROL-CODE #\l (START-CODE-READER NIL) '(:TEX))
 (SET-CONTROL-CODE #\p (START-CODE-READER NIL) '(:TEX))
 (SET-CONTROL-CODE #\e (START-CODE-READER T) '(:TEX))
@@ -193,26 +193,31 @@
                      (LET ((X (READ-PRESERVING-WHITESPACE STREAM T NIL T)))
                        (IF (EQ X *END-CONTROL-TEXT*) (RETURN (NREVERSE TEXT))
                            (PUSH X TEXT)))))))
-(SET-CONTROL-CODE #\<
-                  (LAMBDA (STREAM SUB-CHAR ARG)
-                    (DECLARE (IGNORE SUB-CHAR ARG))
-                    (LET* ((NAME (READ-CONTROL-TEXT STREAM))
-                           (NEXT-CHAR (PEEK-CHAR NIL STREAM NIL *EOF* T)))
-                      (COND
-                       ((EQL #\= NEXT-CHAR) (READ-CHAR STREAM)
-                        (MAKE-START-CODE NIL NAME))
-                       (T (ERROR "Can't use section name in TeX mode.")))))
-                  '(:TEX))
-(SET-CONTROL-CODE #\<
-                  (LAMBDA (STREAM SUB-CHAR ARG)
-                    (DECLARE (IGNORE SUB-CHAR ARG))
-                    (LET* ((NAME (READ-CONTROL-TEXT STREAM))
-                           (NEXT-CHAR (PEEK-CHAR NIL STREAM NIL *EOF* T)))
-                      (COND
-                       ((EQL #\= NEXT-CHAR)
-                        (ERROR "Can't define a named section in code."))
-                       (T (FIND-SECTION NAME)))))
-                  '(:LISP :INNER-LISP))
+(DEFMACRO SECTION-NAME-READER (DEFINITION-ALLOWED-P)
+  `(LAMBDA (STREAM SUB-CHAR ARG)
+     (DECLARE (IGNORE SUB-CHAR ARG))
+     (LET* ((NAME (READ-CONTROL-TEXT STREAM))
+            (DEFINITION-P (EQL (PEEK-CHAR NIL STREAM NIL NIL T) #\=)))
+       (IF DEFINITION-P
+           ,(IF DEFINITION-ALLOWED-P
+                '(PROGN (READ-CHAR STREAM) (MAKE-START-CODE NIL NAME))
+                '(RESTART-CASE
+                  (ERROR "Can't define a named section in Lisp mode: ~A" NAME)
+                  (USE-SECTION NIL :REPORT
+                   "Don't define the section, just use it."
+                   (FIND-SECTION NAME))))
+           ,(IF DEFINITION-ALLOWED-P
+                '(RESTART-CASE
+                  (ERROR "Can't use a section name in TeX mode: ~A" NAME)
+                  (NAME-SECTION NIL :REPORT
+                   "Name the current section and start the code part."
+                   (MAKE-START-CODE NIL NAME))
+                  (CITE-SECTION NIL :REPORT
+                   "Assume the section is just being cited."
+                   (FIND-SECTION NAME)))
+                '(FIND-SECTION NAME))))))
+(SET-CONTROL-CODE #\< (SECTION-NAME-READER T) '(:TEX))
+(SET-CONTROL-CODE #\< (SECTION-NAME-READER NIL) '(:LISP :INNER-LISP))
 (DEFUN READ-SECTIONS (STREAM)
   (FLET ((FINISH-SECTION (SECTION COMMENTARY CODE)
            (SETF (SECTION-COMMENTARY SECTION) (NREVERSE COMMENTARY))
