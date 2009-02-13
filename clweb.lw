@@ -86,22 +86,47 @@ representing whether the key was already in the tree or not.
 (defmethod find-or-insert (item (tree binary-search-tree) &key
                            (test #'eql) &aux
                            (predicate (predicate tree)))
-  (flet ((lessp (item node) (funcall predicate item (node-key node)))
-         (samep (item node) (funcall test item (node-key node))))
-    (do ((parent nil node)
-         (node (root tree) (if (lessp item node)
-                               (left-child node)
-                               (right-child node))))
-        ((or (null node) (samep item node))
-         (if node
-             (values node t)
-             (let ((node (make-instance (node-class tree) :key item)))
-               (if (null parent)
-                   (setf (root tree) node)
-                   (if (lessp item parent)
-                       (setf (left-child parent) node)
-                       (setf (right-child parent) node)))
-               (values node nil)))))))
+  (labels ((lessp (item node) (funcall predicate item (node-key node)))
+           (samep (item node) (funcall test item (node-key node)))
+           (find-in-tree (item root-node &optional (insert-if-not-found t))
+             (do ((parent nil node)
+                  (node root-node (if (lessp item node)
+                                      (left-child node)
+                                      (right-child node))))
+                 ((or (null node) (samep item node))
+                  (if node
+                      (values node t)
+                      (if insert-if-not-found
+                          @<Insert a new node with key |item| and return it@>
+                          (values nil nil)))))))
+    (multiple-value-bind (node found-p) (find-in-tree item (root tree))
+      (if found-p
+          (or @<Check for an ambiguous match, and raise an error if found@>
+              (values node t))
+          (values node nil)))))
+
+@ @<Insert a new node...@>=
+(let ((node (make-instance (node-class tree) :key item)))
+  (if (null parent)
+      (setf (root tree) node)
+      (if (lessp item parent)
+          (setf (left-child parent) node)
+          (setf (right-child parent) node)))
+  (values node nil))
+
+@ @<Check for an ambiguous match...@>=
+(dolist (child (list (left-child node) (right-child node)) nil)
+  (multiple-value-bind (alt found-p) (find-in-tree item child nil)
+    (when found-p
+      (restart-case
+          (error "Ambiguous prefix: matches <~A> and <~A>"
+                 (node-key node) (node-key alt))
+        (use-first-match ()
+          :report "Use the first match."
+          (return (values node t)))
+        (use-alt-match ()
+          :report "Use the alternate match."
+          (return (values alt t)))))))
 
 @ It's important to keep in mind that named sections can be defined
 piecemeal, with the code spread out over several physical sections. We
@@ -248,7 +273,7 @@ than the old one.
       (find-or-insert section-name *named-sections* :test #'section-name-equal)
     (setf (section-name section) section-name)
     (setf (section-code section) (if present-p
-                                     (nconc (section-code section) forms)
+                                     (append (section-code section) forms)
                                      forms))))
 
 (defun find-section (name &aux (section-name (make-section-name name)))

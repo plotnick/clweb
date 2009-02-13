@@ -28,22 +28,49 @@
 (DEFMETHOD FIND-OR-INSERT
            (ITEM (TREE BINARY-SEARCH-TREE) &KEY (TEST #'EQL) &AUX
             (PREDICATE (PREDICATE TREE)))
-           (FLET ((LESSP (ITEM NODE)
-                    (FUNCALL PREDICATE ITEM (NODE-KEY NODE)))
-                  (SAMEP (ITEM NODE)
-                    (FUNCALL TEST ITEM (NODE-KEY NODE))))
-             (DO ((PARENT NIL NODE)
-                  (NODE (ROOT TREE)
-                        (IF (LESSP ITEM NODE) (LEFT-CHILD NODE)
-                            (RIGHT-CHILD NODE))))
-                 ((OR (NULL NODE) (SAMEP ITEM NODE))
-                  (IF NODE (VALUES NODE T)
-                      (LET ((NODE (MAKE-INSTANCE (NODE-CLASS TREE) :KEY ITEM)))
-                        (IF (NULL PARENT) (SETF (ROOT TREE) NODE)
-                            (IF (LESSP ITEM PARENT)
-                                (SETF (LEFT-CHILD PARENT) NODE)
-                                (SETF (RIGHT-CHILD PARENT) NODE)))
-                        (VALUES NODE NIL)))))))
+           (LABELS ((LESSP (ITEM NODE)
+                      (FUNCALL PREDICATE ITEM (NODE-KEY NODE)))
+                    (SAMEP (ITEM NODE)
+                      (FUNCALL TEST ITEM (NODE-KEY NODE)))
+                    (FIND-IN-TREE
+                        (ITEM ROOT-NODE &OPTIONAL (INSERT-IF-NOT-FOUND T))
+                      (DO ((PARENT NIL NODE)
+                           (NODE ROOT-NODE
+                                 (IF (LESSP ITEM NODE) (LEFT-CHILD NODE)
+                                     (RIGHT-CHILD NODE))))
+                          ((OR (NULL NODE) (SAMEP ITEM NODE))
+                           (IF NODE (VALUES NODE T)
+                               (IF INSERT-IF-NOT-FOUND
+                                   (LET ((NODE
+                                          (MAKE-INSTANCE (NODE-CLASS TREE) :KEY
+                                                         ITEM)))
+                                     (IF (NULL PARENT) (SETF (ROOT TREE) NODE)
+                                         (IF (LESSP ITEM PARENT)
+                                             (SETF (LEFT-CHILD PARENT) NODE)
+                                             (SETF (RIGHT-CHILD PARENT) NODE)))
+                                     (VALUES NODE NIL))
+                                   (VALUES NIL NIL)))))))
+             (MULTIPLE-VALUE-BIND
+                 (NODE FOUND-P)
+                 (FIND-IN-TREE ITEM (ROOT TREE))
+               (IF FOUND-P
+                   (OR
+                    (DOLIST
+                        (CHILD (LIST (LEFT-CHILD NODE) (RIGHT-CHILD NODE)) NIL)
+                      (MULTIPLE-VALUE-BIND
+                          (ALT FOUND-P)
+                          (FIND-IN-TREE ITEM CHILD NIL)
+                        (WHEN FOUND-P
+                          (RESTART-CASE
+                           (ERROR "Ambiguous prefix: matches <~A> and <~A>"
+                                  (NODE-KEY NODE) (NODE-KEY ALT))
+                           (USE-FIRST-MATCH NIL :REPORT "Use the first match."
+                            (RETURN (VALUES NODE T)))
+                           (USE-ALT-MATCH NIL :REPORT
+                            "Use the alternate match."
+                            (RETURN (VALUES ALT T)))))))
+                    (VALUES NODE T))
+                   (VALUES NODE NIL)))))
 (DEFCLASS NAMED-SECTION (BINARY-SEARCH-TREE-NODE)
           ((KEY :ACCESSOR SECTION-NAME :INITARG :NAME)
            (VALUE :ACCESSOR SECTION-CODE :INITARG :CODE)))
@@ -122,7 +149,7 @@
       (FIND-OR-INSERT SECTION-NAME *NAMED-SECTIONS* :TEST #'SECTION-NAME-EQUAL)
     (SETF (SECTION-NAME SECTION) SECTION-NAME)
     (SETF (SECTION-CODE SECTION)
-            (IF PRESENT-P (NCONC (SECTION-CODE SECTION) FORMS) FORMS))))
+            (IF PRESENT-P (APPEND (SECTION-CODE SECTION) FORMS) FORMS))))
 (DEFUN FIND-SECTION (NAME &AUX (SECTION-NAME (MAKE-SECTION-NAME NAME)))
   (MULTIPLE-VALUE-BIND
       (SECTION PRESENT-P)
