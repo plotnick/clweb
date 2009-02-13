@@ -15,65 +15,83 @@
           (:DEFAULT-INITARGS :NAME (LIST (MAKE-SYMBOL "LIMBO"))))
 (DEFCLASS STARRED-SECTION (SECTION) NIL)
 (DEFCLASS BINARY-SEARCH-TREE NIL
-          ((ROOT :ACCESSOR ROOT :INITARG :ROOT)
-           (PREDICATE :READER PREDICATE :INITARG :PREDICATE)
-           (NODE-CLASS :READER NODE-CLASS :INITARG :NODE-CLASS))
-          (:DEFAULT-INITARGS :ROOT NIL :PREDICATE #'<))
-(DEFCLASS BINARY-SEARCH-TREE-NODE NIL
           ((KEY :ACCESSOR NODE-KEY :INITARG :KEY)
            (VALUE :ACCESSOR NODE-VALUE :INITARG :VALUE)
            (LEFT-CHILD :ACCESSOR LEFT-CHILD :INITARG :LEFT)
            (RIGHT-CHILD :ACCESSOR RIGHT-CHILD :INITARG :RIGHT))
           (:DEFAULT-INITARGS :KEY NIL :VALUE NIL :LEFT NIL :RIGHT NIL))
+(DEFGENERIC FIND-OR-INSERT (ITEM ROOT &KEY PREDICATE TEST INSERT-IF-NOT-FOUND))
 (DEFMETHOD FIND-OR-INSERT
-           (ITEM (TREE BINARY-SEARCH-TREE) &KEY (TEST #'EQL) &AUX
-            (PREDICATE (PREDICATE TREE)))
-           (LABELS ((LESSP (ITEM NODE)
-                      (FUNCALL PREDICATE ITEM (NODE-KEY NODE)))
-                    (SAMEP (ITEM NODE)
-                      (FUNCALL TEST ITEM (NODE-KEY NODE)))
-                    (FIND-IN-TREE
-                        (ITEM ROOT-NODE &OPTIONAL (INSERT-IF-NOT-FOUND T))
-                      (DO ((PARENT NIL NODE)
-                           (NODE ROOT-NODE
-                                 (IF (LESSP ITEM NODE) (LEFT-CHILD NODE)
-                                     (RIGHT-CHILD NODE))))
-                          ((OR (NULL NODE) (SAMEP ITEM NODE))
-                           (IF NODE (VALUES NODE T)
-                               (IF INSERT-IF-NOT-FOUND
-                                   (LET ((NODE
-                                          (MAKE-INSTANCE (NODE-CLASS TREE) :KEY
-                                                         ITEM)))
-                                     (IF (NULL PARENT) (SETF (ROOT TREE) NODE)
-                                         (IF (LESSP ITEM PARENT)
-                                             (SETF (LEFT-CHILD PARENT) NODE)
-                                             (SETF (RIGHT-CHILD PARENT) NODE)))
-                                     (VALUES NODE NIL))
-                                   (VALUES NIL NIL)))))))
-             (MULTIPLE-VALUE-BIND
-                 (NODE FOUND-P)
-                 (FIND-IN-TREE ITEM (ROOT TREE))
-               (IF FOUND-P
-                   (OR
-                    (DOLIST
-                        (CHILD (LIST (LEFT-CHILD NODE) (RIGHT-CHILD NODE)) NIL)
+           (ITEM (ROOT BINARY-SEARCH-TREE) &KEY (PREDICATE #'<) (TEST #'EQL)
+            (INSERT-IF-NOT-FOUND T))
+           (FLET ((LESSP (ITEM NODE)
+                    (FUNCALL PREDICATE ITEM (NODE-KEY NODE)))
+                  (SAMEP (ITEM NODE)
+                    (FUNCALL TEST ITEM (NODE-KEY NODE))))
+             (DO ((PARENT NIL NODE)
+                  (NODE ROOT
+                        (IF (LESSP ITEM NODE) (LEFT-CHILD NODE)
+                            (RIGHT-CHILD NODE))))
+                 ((OR (NULL NODE) (SAMEP ITEM NODE))
+                  (IF NODE (VALUES NODE T)
+                      (IF INSERT-IF-NOT-FOUND
+                          (LET ((NODE
+                                 (MAKE-INSTANCE (CLASS-OF ROOT) :KEY ITEM)))
+                            (WHEN PARENT
+                              (IF (LESSP ITEM PARENT)
+                                  (SETF (LEFT-CHILD PARENT) NODE)
+                                  (SETF (RIGHT-CHILD PARENT) NODE)))
+                            (VALUES NODE NIL))
+                          (VALUES NIL NIL)))))))
+(DEFCLASS NAMED-SECTION (BINARY-SEARCH-TREE)
+          ((KEY :ACCESSOR SECTION-NAME :INITARG :NAME)
+           (VALUE :ACCESSOR SECTION-CODE :INITARG :CODE)))
+(DEFMETHOD FIND-OR-INSERT
+           (ITEM (ROOT NAMED-SECTION) &KEY (PREDICATE #'SECTION-NAME-LESSP)
+            (TEST #'SECTION-NAME-EQUAL) (INSERT-IF-NOT-FOUND T))
+           (MULTIPLE-VALUE-BIND
+               (NODE PRESENT-P)
+               (CALL-NEXT-METHOD ITEM ROOT :PREDICATE PREDICATE :TEST TEST
+                :INSERT-IF-NOT-FOUND INSERT-IF-NOT-FOUND)
+             (IF PRESENT-P
+                 (OR
+                  (DOLIST (CHILD (LIST (LEFT-CHILD NODE) (RIGHT-CHILD NODE)))
+                    (WHEN CHILD
                       (MULTIPLE-VALUE-BIND
-                          (ALT FOUND-P)
-                          (FIND-IN-TREE ITEM CHILD NIL)
-                        (WHEN FOUND-P
+                          (ALT PRESENT-P)
+                          (CALL-NEXT-METHOD ITEM CHILD :PREDICATE PREDICATE
+                           :TEST TEST :INSERT-IF-NOT-FOUND NIL)
+                        (WHEN PRESENT-P
                           (RESTART-CASE
-                           (ERROR "Ambiguous prefix: matches <~A> and <~A>"
-                                  (NODE-KEY NODE) (NODE-KEY ALT))
+                           (ERROR
+                            "~<Ambiguous prefix <~A>: matches both <~A> and <~A>~:@>"
+                            (LIST ITEM (NODE-KEY NODE) (NODE-KEY ALT)))
                            (USE-FIRST-MATCH NIL :REPORT "Use the first match."
                             (RETURN (VALUES NODE T)))
                            (USE-ALT-MATCH NIL :REPORT
                             "Use the alternate match."
-                            (RETURN (VALUES ALT T)))))))
-                    (VALUES NODE T))
-                   (VALUES NODE NIL)))))
-(DEFCLASS NAMED-SECTION (BINARY-SEARCH-TREE-NODE)
-          ((KEY :ACCESSOR SECTION-NAME :INITARG :NAME)
-           (VALUE :ACCESSOR SECTION-CODE :INITARG :CODE)))
+                            (RETURN (VALUES ALT T))))))))
+                  (VALUES NODE T))
+                 (VALUES NODE NIL))))
+(DEFPARAMETER *NAMED-SECTIONS* NIL)
+(DEFUN FIND-SECTION (NAME &AUX (SECTION-NAME (MAKE-SECTION-NAME NAME)))
+  (IF (NULL *NAMED-SECTIONS*)
+      (VALUES
+       (SETQ *NAMED-SECTIONS*
+               (MAKE-INSTANCE 'NAMED-SECTION :NAME SECTION-NAME))
+       NIL)
+      (MULTIPLE-VALUE-BIND
+          (SECTION PRESENT-P)
+          (FIND-OR-INSERT SECTION-NAME *NAMED-SECTIONS*)
+        (WHEN PRESENT-P (SETF (SECTION-NAME SECTION) SECTION-NAME))
+        (VALUES SECTION PRESENT-P))))
+(DEFUN DEFINE-SECTION (NAME FORMS)
+  (MULTIPLE-VALUE-BIND
+      (SECTION PRESENT-P)
+      (FIND-SECTION NAME)
+    (DECLARE (IGNORE PRESENT-P))
+    (SETF (SECTION-CODE SECTION) (APPEND (SECTION-CODE SECTION) FORMS))
+    SECTION))
 (DEFCLASS SECTION-NAME NIL
           ((NAME :ACCESSOR SECTION-NAME :INITARG :NAME)
            (NAMESTRING :READER SECTION-NAMESTRING) (PREFIX-P :READER PREFIX-P))
@@ -140,22 +158,6 @@
                    (> (LENGTH (SECTION-NAMESTRING NEW-NAME))
                       (LENGTH (SECTION-NAMESTRING OLD-NAME))))
               (CALL-NEXT-METHOD) NEW-NAME)))
-(DEFPARAMETER *NAMED-SECTIONS*
-  (MAKE-INSTANCE 'BINARY-SEARCH-TREE :PREDICATE #'SECTION-NAME-LESSP
-                 :NODE-CLASS 'NAMED-SECTION))
-(DEFUN DEFINE-SECTION (NAME FORMS &AUX (SECTION-NAME (MAKE-SECTION-NAME NAME)))
-  (MULTIPLE-VALUE-BIND
-      (SECTION PRESENT-P)
-      (FIND-OR-INSERT SECTION-NAME *NAMED-SECTIONS* :TEST #'SECTION-NAME-EQUAL)
-    (SETF (SECTION-NAME SECTION) SECTION-NAME)
-    (SETF (SECTION-CODE SECTION)
-            (IF PRESENT-P (APPEND (SECTION-CODE SECTION) FORMS) FORMS))))
-(DEFUN FIND-SECTION (NAME &AUX (SECTION-NAME (MAKE-SECTION-NAME NAME)))
-  (MULTIPLE-VALUE-BIND
-      (SECTION PRESENT-P)
-      (FIND-OR-INSERT SECTION-NAME *NAMED-SECTIONS* :TEST #'SECTION-NAME-EQUAL)
-    (SETF (SECTION-NAME SECTION) SECTION-NAME)
-    (VALUES SECTION PRESENT-P)))
 (DEFUN TANGLE-1 (FORM)
   (COND ((ATOM FORM) (VALUES FORM NIL))
         ((TYPEP (CAR FORM) 'NAMED-SECTION)
@@ -185,7 +187,7 @@
 (DEFUN LOAD-WEB-FROM-STREAM (STREAM VERBOSE PRINT)
   (WHEN VERBOSE (FORMAT T "~&; loading WEB from ~S~%" (PATHNAME STREAM)))
   (SETQ *SECTION-NUMBER* 0)
-  (SETF (ROOT *NAMED-SECTIONS*) NIL)
+  (SETQ *NAMED-SECTIONS* NIL)
   (LET ((*READTABLE* *READTABLE*) (*PACKAGE* *PACKAGE*))
     (DOLIST (FORM (TANGLE (UNNAMED-SECTION-CODE STREAM)))
       (IF PRINT
@@ -211,7 +213,7 @@
   (DECLARE (IGNORE OUTPUT-FILE PRINT))
   (WHEN VERBOSE (FORMAT T "~&; tangling WEB from ~S~%" INPUT-FILE))
   (SETQ *SECTION-NUMBER* 0)
-  (SETF (ROOT *NAMED-SECTIONS*) NIL)
+  (SETQ *NAMED-SECTIONS* NIL)
   (WITH-OPEN-FILE
       (INPUT INPUT-FILE :DIRECTION :INPUT :EXTERNAL-FORMAT EXTERNAL-FORMAT)
     (WITH-OPEN-FILE
