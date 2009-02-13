@@ -1,6 +1,6 @@
 % -*- Mode: Lisp -*-
 \def\pb{\.{|...|}}
-\def\v{\.{\char'174}} % vertical bar (|) in typewriter font
+\def\v{\.{\char'174}} % vertical bar in typewriter font
 
 @ @e
 (defpackage "COMMON-LISP-WEB"
@@ -106,41 +106,156 @@ representing whether the key was already in the tree or not.
 @ It's important to keep in mind that named sections can be defined
 piecemeal, with the code spread out over several physical sections. We
 might think of a full named section as a sort of `virtual' section, which
-consists of a name and some code, but lacks, for instance, a section number
-or commentary.
+consists of a name, the combined code parts of all of the physical sections
+with that name, and the number of the first such section.
 
 And that's what we store in the {\sc BST}: nodes that look like (but are not)
-sections that have only names and code.
+sections.
 
 @l
 (defclass named-section (binary-search-tree-node)
-  ((name :accessor node-key
-         :accessor section-name
-         :initarg :key
-         :initarg :name)
-   (code :accessor node-value
-         :accessor section-code
-         :initarg :value
-         :initarg :code)))
+  ((key :accessor section-name :initarg :name)
+   (value :accessor section-code :initarg :code)))
 
+@ Section names consist of \TeX-mode material: a list of strings and Lisp
+forms. For the purposes of storage, retrieval, and abbreviation, however,
+we need simple strings. And so we implement a pathname-like abstraction:
+instances of the |section-name| class represent section names, but have a
+flat namestring syntax derived from the `raw' name, which is the \TeX-mode
+material.
+
+Be careful not to become confused by the proliferation of entities named
+`section-name': there's the class |section-name|, instances of which denote
+names of sections, and there's the generic function |section-name| which has
+methods defined to (a)~access the name of a named section, which is always
+an instance of the class |section-name|, and (b)~access the raw form of
+the name denoted by an instance of the class |section-name|. In practice,
+this doesn't seem to be any more confusing than anything else in a
+Lisp-$n$ with~$n>1$, but some care should be taken nonetheless.
+
+@l
+(defclass section-name ()
+  ((name :accessor section-name :initarg :name)
+   (namestring :reader section-namestring)
+   (prefix-p :reader prefix-p))
+  (:default-initargs :name '()))
+
+(defmethod print-object ((name section-name) stream)
+  (format stream "~W" (concatenate 'string
+                                   (section-namestring name)
+                                   (and (prefix-p name) "..."))))
+
+@ Lists and strings may be used as designators for section-names, and of
+course section names may denote themselves. This function should be used
+anywhere a section name is required, but only a designator is available.
+
+@l
+(defun make-section-name (name)
+  (etypecase name
+    (list (make-instance 'section-name :name name))
+    (string (make-instance 'section-name :name (list name)))
+    (section-name name)))
+
+@ Section-namestrings are formed from the raw list of \TeX-mode material via
+|flatten|, which converts all s-exps to strings, trims leading and trailing
+whitespace, and replaces all runs of one or more whitespace characters with
+a single space.
+
+@l
+(defparameter *whitespace*
+  (coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'simple-string))
+
+(defun squeeze (string)
+  (flet ((whitespace-p (char) (find char *whitespace* :test #'char=)))
+    (coerce
+     (loop with squeezing = nil
+           for char across (string-trim *whitespace* string)
+           if (not squeezing)
+             if (whitespace-p char) do (setq squeezing t) and collect #\Space
+             else collect char
+           else
+             unless (whitespace-p char)
+               do (setq squeezing nil) and collect char)
+     'simple-string)))
+
+(defun flatten (name)
+  (squeeze
+   (apply #'concatenate 'string
+          (mapcar (lambda (x) (if (atom x) (princ-to-string x) (flatten x)))
+                  name))))
+
+@ When a section name's raw form is modified (and {\it only\/} its raw form
+should ever be modified), we need to update both the namestring representation
+and the prefix flag.
+
+@l
+(defmethod (setf section-name) :after (new-name (name section-name))
+  (let* ((namestring (flatten new-name))
+         (len (length namestring)))
+    (cond ((or (< len 3)
+               (not (string= (subseq namestring (- len 3) len) "...")))
+           (setf (slot-value name 'namestring) namestring)
+           (setf (slot-value name 'prefix-p) nil))
+          (t
+           (setf (slot-value name 'namestring) (subseq namestring 0 (- len 3)))
+           (setf (slot-value name 'prefix-p) t)))))
+
+@ The automatic updating method that we just defined should be run even
+during instance initialization.
+
+@l
+(defmethod shared-initialize :after ((instance section-name) slot-names
+                                     &rest initargs)
+  (let ((name (getf initargs :name)))
+    (when name (setf (section-name instance) name))))
+
+@ We need special comparison routines for section names.
+
+@l
+(defun section-name-equal (name1 name2)
+  (let* ((string1 (section-namestring name1)) (len1 (length string1))
+         (string2 (section-namestring name2)) (len2 (length string2))
+         (end (min len1 len2)))
+    (cond ((and (prefix-p name1) (prefix-p name2))
+           (string-equal string1 string2 :end1 end :end2 end))
+          ((prefix-p name1) (string-equal string1 string2 :end2 end))
+          ((prefix-p name2) (string-equal string1 string2 :end1 end))
+          (t (string-equal string1 string2)))))
+
+(defun section-name-lessp (name1 name2)
+  (string-lessp (section-namestring name1) (section-namestring name2)))
+
+@ We only actually update the name of a section if the new name is `longer'
+than the old one.
+
+@l
+(defmethod (setf section-name) :around (new-name (section named-section))
+  (let ((old-name (section-name section)))
+    (if (and (prefix-p old-name)
+             (> (length (section-namestring new-name))
+                (length (section-namestring old-name))))
+        (call-next-method)
+        new-name)))
+
+@ @l
 (defparameter *named-sections*
   (make-instance 'binary-search-tree
-                 :predicate #'string<
+                 :predicate #'section-name-lessp
                  :node-class 'named-section))
 
-(defun flatten-name (name)
-  (apply #'concatenate 'string
-         (mapcar (lambda (x) (if (atom x) (string x) (flatten-name x))) name)))
+(defun define-section (name forms &aux (section-name (make-section-name name)))
+  (multiple-value-bind (section present-p)
+      (find-or-insert section-name *named-sections* :test #'section-name-equal)
+    (setf (section-name section) section-name)
+    (setf (section-code section) (if present-p
+                                     (nconc (section-code section) forms)
+                                     forms))))
 
-(defun define-section (name forms &aux (name (flatten-name name)))
-  (multiple-value-bind (node present-p)
-      (find-or-insert name *named-sections* :test #'string=)
-    (setf (node-value node) (if present-p
-                                (nconc (node-value node) forms)
-                                forms))))
-
-(defun find-section (name &aux (name (flatten-name name)))
-  (find-or-insert name *named-sections* :test #'string=))
+(defun find-section (name &aux (section-name (make-section-name name)))
+  (multiple-value-bind (section present-p)
+      (find-or-insert section-name *named-sections* :test #'section-name-equal)
+    (setf (section-name section) section-name)
+    (values section present-p)))
 
 @ @<Initialize global variables@>=
 (setf (root *named-sections*) nil)
@@ -446,7 +561,7 @@ only during weaving.
 (defmacro section-name-reader (definition-allowed-p)
   `(lambda (stream sub-char arg)
      (declare (ignore sub-char arg))
-     (let* ((name (read-control-text stream))
+     (let* ((name (make-section-name (read-control-text stream)))
             (definition-p (eql (peek-char nil stream nil nil t) #\=)))
        (if definition-p
            ,(if definition-allowed-p
