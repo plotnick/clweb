@@ -44,12 +44,9 @@ or evaluated in the order in which they appear in the \WEB\ source file.
    (used-by :accessor used-by :initarg :used-by))
   (:default-initargs :commentary nil :name nil :code nil :used-by nil))
 
-(defclass limbo-section (section)
-  ()
-  (:default-initargs :name (list (make-symbol "LIMBO"))))
+(defclass limbo-section (section) ())
 
-(defclass starred-section (section)
-  ())
+(defclass starred-section (section) ())
 
 @ @<Initialize global variables@>=
 (setq *section-number* 0)
@@ -177,16 +174,15 @@ which is reset before each tangling or weaving.
 section exists, and |define-section| is used to add code to a named section.
 
 @l
-(defun find-section (name &aux (section-name (make-section-name name)))
+(defun find-section (name)
   (if (null *named-sections*)
-      (values (setq *named-sections* (make-instance 'named-section
-                                                    :name section-name))
+      (values (setq *named-sections* (make-instance 'named-section :name name))
               nil)
       (multiple-value-bind (section present-p)
-          (find-or-insert section-name *named-sections*)
+          (find-or-insert name *named-sections*)
         (when present-p
           ;; Update the section name in case the new one is longer.
-          (setf (section-name section) section-name))
+          (setf (section-name section) name))
         (values section present-p))))
 
 (defun define-section (name forms)
@@ -195,49 +191,9 @@ section exists, and |define-section| is used to add code to a named section.
     (setf (section-code section) (append (section-code section) forms))
     section))
 
-@ Section names consist of \TeX-mode material: a list of strings and Lisp
-forms. For the purposes of storage, retrieval, and abbreviation, however,
-we need simple strings. And so we implement a pathname-like abstraction:
-instances of the |section-name| class represent section names, but have a
-flat namestring syntax derived from the `raw' name, which is the \TeX-mode
-material.
-
-Be careful not to become confused by the proliferation of entities named
-`section-name': there's the class |section-name|, instances of which denote
-names of sections, and there's the generic function |section-name| which has
-methods defined to (a)~access the name of a named section, which is always
-an instance of the class |section-name|, and (b)~access the raw form of
-the name denoted by an instance of the class |section-name|. In practice,
-this doesn't seem to be any more confusing than anything else in a
-Lisp-$n$ with~$n>1$, but some care should be taken nonetheless.
-
-@l
-(defclass section-name ()
-  ((name :accessor section-name :initarg :name)
-   (namestring :reader section-namestring)
-   (prefix-p :reader prefix-p))
-  (:default-initargs :name '()))
-
-(defmethod print-object ((name section-name) stream)
-  (format stream "~W" (concatenate 'string
-                                   (section-namestring name)
-                                   (and (prefix-p name) "..."))))
-
-@ Lists and strings may be used as designators for section-names, and of
-course section names may denote themselves. This function should be used
-anywhere a section name is required, but only a designator is available.
-
-@l
-(defun make-section-name (name)
-  (etypecase name
-    (list (make-instance 'section-name :name name))
-    (string (make-instance 'section-name :name (list name)))
-    (section-name name)))
-
-@ Section-namestrings are formed from the raw list of \TeX-mode material via
-|flatten|, which converts all s-exps to strings, trims leading and trailing
-whitespace, and replaces all runs of one or more whitespace characters with
-a single space.
+@ Section names are normalized processed by |squeeze|, which trims leading
+and trailing whitespace and replaces all runs of one or more whitespace
+characters with a single space.
 
 @l
 (defparameter *whitespace*
@@ -256,64 +212,45 @@ a single space.
                do (setq squeezing nil) and collect char)
      'simple-string)))
 
-(defun flatten (name)
-  (squeeze
-   (apply #'concatenate 'string
-          (mapcar (lambda (x) (if (atom x) (princ-to-string x) (flatten x)))
-                  name))))
-
-@ When a section name's raw form is modified (and {\it only\/} its raw form
-should ever be modified), we need to update both the namestring representation
-and the prefix flag.
+@ We need some special comparison routines for section names that deal with
+abbreviations.
 
 @l
-(defmethod (setf section-name) :after (new-name (name section-name))
-  (let* ((namestring (flatten new-name))
-         (len (length namestring)))
-    (cond ((or (< len 3)
-               (not (string= (subseq namestring (- len 3) len) "...")))
-           (setf (slot-value name 'namestring) namestring)
-           (setf (slot-value name 'prefix-p) nil))
-          (t
-           (setf (slot-value name 'namestring) (subseq namestring 0 (- len 3)))
-           (setf (slot-value name 'prefix-p) t)))))
+(defun section-name-prefix-p (name)
+  (let ((len (length name)))
+    (if (string= (subseq name (max (- len 3) 0) len) "...")
+        (values t (- len 3))
+        (values nil len))))
 
-@ The automatic updating method that we just defined should be run even
-during instance initialization.
-
-@l
-(defmethod shared-initialize :after ((instance section-name) slot-names
-                                     &rest initargs)
-  (let ((name (getf initargs :name)))
-    (when name (setf (section-name instance) name))))
-
-@ We need special comparison routines for section names.
-
-@l
 (defun section-name-equal (name1 name2)
-  (let* ((string1 (section-namestring name1)) (len1 (length string1))
-         (string2 (section-namestring name2)) (len2 (length string2))
-         (end (min len1 len2)))
-    (cond ((and (prefix-p name1) (prefix-p name2))
-           (string-equal string1 string2 :end1 end :end2 end))
-          ((prefix-p name1) (string-equal string1 string2 :end2 end))
-          ((prefix-p name2) (string-equal string1 string2 :end1 end))
-          (t (string-equal string1 string2)))))
+  (multiple-value-bind (prefix-1-p len1) (section-name-prefix-p name1)
+    (multiple-value-bind (prefix-2-p len2) (section-name-prefix-p name2)
+      (let ((end (min len1 len2)))
+        (if (or prefix-1-p prefix-2-p)
+            (string-equal name1 name2 :end1 end :end2 end)
+            (string-equal name1 name2))))))
 
 (defun section-name-lessp (name1 name2)
-  (string-lessp (section-namestring name1) (section-namestring name2)))
+  (multiple-value-bind (prefix-1-p len1) (section-name-prefix-p name1)
+    (declare (ignore prefix-1-p))
+    (multiple-value-bind (prefix-2-p len2) (section-name-prefix-p name2)
+      (declare (ignore prefix-2-p))
+      (string-lessp name1 name2 :end1 len1 :end2 len2))))
 
-@ We only actually update the name of a section if the new name is `longer'
-than the old one.
+@ We only actually update the name of a section in two cases: if the new
+name is not an abbreviation but the old one was, or if they are both
+abbreviations, but the new one is shorter.
 
 @l
 (defmethod (setf section-name) :around (new-name (section named-section))
-  (let ((old-name (section-name section)))
-    (if (and (prefix-p old-name)
-             (> (length (section-namestring new-name))
-                (length (section-namestring old-name))))
-        (call-next-method)
-        new-name)))
+  (multiple-value-bind (new-prefix-p new-len)
+      (section-name-prefix-p new-name)
+    (multiple-value-bind (old-prefix-p old-len)
+        (section-name-prefix-p (section-name section))
+      (if (or (and old-prefix-p (not new-prefix-p))
+              (and old-prefix-p new-prefix-p (< new-len old-len)))
+          (call-next-method)
+          new-name))))
 
 @*The tangler. Tangling involves recursively replacing each reference to a
 named section with the code accumulated for that section. The function
@@ -479,20 +416,21 @@ below) is encountered. The caller should then invoke |read| on the stream,
 whereby the appropriate reader macro will pick up the object whose printed
 representation follows.
 
-A {\it control character\/} is normally one of \.{@@} or \v, but in limbo
-mode, the latter is not recognized as such.
+A {\it control character\/} is normally one of \.{@@} or \v, but in
+restricted mode and text in limbo, the latter is not recognized as such.
 
 @l
-(defun snarf-until-control-char (stream &optional limbo &aux
-                                 (control-chars (if limbo '(#\@) '(#\@ #\|))))
+(defun snarf-until-control-char (stream &optional restricted &aux
+                                 (control-chars
+                                  (if restricted '(#\@) '(#\@ #\|))))
   (with-output-to-string (string)
     (loop for char = (peek-char nil stream nil *eof* nil)
           until (or (eof-p char) (member char control-chars))
             do (write-char (read-char stream) string))))
 
-@ In \TeX\ mode, we allow embedded Lisp code to be surrounded by
-\pb, where it is read in inner-Lisp mode, which is almost, but
-not quite, the same as Lisp mode.
+@ In \TeX\ mode, we allow embedded Lisp code to be surrounded by \pb, where
+it is read in inner-Lisp mode, which is almost, but not quite, the same as
+Lisp mode.
 
 @l
 (defun read-inner-lisp (stream char)
@@ -500,7 +438,6 @@ not quite, the same as Lisp mode.
     (read-delimited-list char stream t)))
 
 (set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode :TeX))
-(set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode :restricted))
 
 @ The call to |read-delimited-list| in |read-inner-lisp| will only stop at
 the closing \v\ if we set it to be a terminating macro character,
@@ -583,23 +520,19 @@ used with the \.{#S} reader macro, \etc.
 (set-control-code #\e (start-code-reader t) '(:TeX))
 
 @ Several control codes, including \.{@@<}, consist of restricted \TeX\ text
-that extends to the matching \.{@@>}. The following routine reads such text.
-% FIXME: Explain about the list that's returned.
+that extends to the matching \.{@@>}. Such text is known as {\it control text}.
 
 @l
 (defvar *end-control-text* (make-symbol "@>"))
-
 (set-control-code #\> (constantly *end-control-text*) '(:restricted))
 
 (defun read-control-text (stream)
   (with-mode :restricted
-    (let ((text '()))
-      (loop
-        (push (snarf-until-control-char stream) text)
-        (let ((x (read-preserving-whitespace stream t nil t)))
-          (if (eq x *end-control-text*)
-              (return (nreverse text))
-              (push x text)))))))
+    (apply #'concatenate 'string
+           (loop for text = (snarf-until-control-char stream t)
+                 as x = (read-preserving-whitespace stream t nil t)
+                 collect text
+                 until (eq x *end-control-text*) collect x))))
 
 @ The control code \.{@@<} introduces a section name, which extends to the
 closing \.{@@>}. Its meaning is context-dependent.
@@ -617,7 +550,7 @@ only during weaving.
 (defmacro section-name-reader (definition-allowed-p)
   `(lambda (stream sub-char arg)
      (declare (ignore sub-char arg))
-     (let* ((name (make-section-name (read-control-text stream)))
+     (let* ((name (read-control-text stream))
             (definition-p (eql (peek-char nil stream nil nil t) #\=)))
        (if definition-p
            ,(if definition-allowed-p
