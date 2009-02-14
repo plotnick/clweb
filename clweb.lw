@@ -482,16 +482,15 @@ and~\.{@@*}, which differ only in the way they are output during weaving.
 The reader macro functions that implement these control codes return an
 instance of the appropriate section class.
 
-% We might extend this with the prefix argument if we decide to support that.
-
 @l
-(defmacro start-section-reader (section-class)
-  `(lambda (stream sub-char arg)
-     (declare (ignore stream sub-char arg))
-     (make-instance ',section-class)))
+(defun start-section-reader (stream sub-char arg)
+  (declare (ignore stream arg))
+  (make-instance (ecase sub-char
+                   (#\Space 'section)
+                   (#\* 'starred-section))))
 
-(set-control-code #\Space (start-section-reader section) '(:limbo :TeX :lisp))
-(set-control-code #\* (start-section-reader starred-section) '(:limbo :TeX :lisp))
+(dolist (sub-char '(#\Space #\*))
+  (set-control-code sub-char #'start-section-reader '(:limbo :TeX :lisp)))
 
 @ The control codes \.{@@l} and ~\.{@@p} (where `l' is for `Lisp' and `p'
 is for `Program'---both control codes do the same thing) begin the code
@@ -510,14 +509,14 @@ used with the \.{#S} reader macro, \etc.
 (defstruct (start-code (:constructor make-start-code (evalp &optional name)))
   evalp name)
 
-(defmacro start-code-reader (evalp)
-  `(lambda (stream sub-char arg)
-     (declare (ignore stream sub-char arg))
-     (make-start-code ,evalp)))
+(defun start-code-reader (stream sub-char arg)
+  (declare (ignore stream arg))
+  (make-start-code (ecase sub-char
+                     ((#\L #\P) nil)
+                     (#\E t))))
 
-(set-control-code #\l (start-code-reader nil) '(:TeX))
-(set-control-code #\p (start-code-reader nil) '(:TeX))
-(set-control-code #\e (start-code-reader t) '(:TeX))
+(dolist (sub-char '(#\l #\p #\e))
+  (set-control-code sub-char #'start-code-reader '(:TeX)))
 
 @ Several control codes, including \.{@@<}, consist of restricted \TeX\ text
 that extends to the matching \.{@@>}. Such text is known as {\it control text}.
@@ -547,21 +546,21 @@ the code defined for that section. References in inner-Lisp mode are used
 only during weaving.
 
 @l
-(defmacro section-name-reader (definition-allowed-p)
-  `(lambda (stream sub-char arg)
-     (declare (ignore sub-char arg))
-     (let* ((name (read-control-text stream))
-            (definition-p (eql (peek-char nil stream nil nil t) #\=)))
-       (if definition-p
-           ,(if definition-allowed-p
-                '(progn (read-char stream) (make-start-code nil name))
-                '@<Signal an error about section definition in Lisp mode@>)
-           ,(if definition-allowed-p
-               '@<Signal an error about section name use in \TeX\ mode@>
-               '(find-section name))))))
+(defun make-section-name-reader (definition-allowed-p)
+  (lambda (stream sub-char arg)
+    (declare (ignore sub-char arg))
+    (let* ((name (read-control-text stream))
+           (definition-p (eql (peek-char nil stream nil nil t) #\=)))
+      (if definition-p
+          (if definition-allowed-p
+              (progn (read-char stream) (make-start-code nil name))
+              @<Signal an error about section definition in Lisp mode@>)
+          (if definition-allowed-p
+               @<Signal an error about section name use in \TeX\ mode@>
+               (find-section name))))))
 
-(set-control-code #\< (section-name-reader t) '(:TeX))
-(set-control-code #\< (section-name-reader nil) '(:lisp :inner-lisp))
+(set-control-code #\< (make-section-name-reader t) '(:TeX))
+(set-control-code #\< (make-section-name-reader nil) '(:lisp :inner-lisp))
 
 @ @<Signal an error about section definition in Lisp mode@>=
 (restart-case
