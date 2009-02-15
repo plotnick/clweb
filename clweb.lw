@@ -32,7 +32,7 @@ section via \.{@@<$ldots$@@>} commands, while unnamed sections are output
 or evaluated in the order in which they appear in the \WEB\ source file.
 
 @l
-(defparameter *section-number* 0)
+(defvar *section-number* 0)
 
 (defclass section ()
   ((number :reader section-number
@@ -171,7 +171,7 @@ ambiguous.
 which is reset before each tangling or weaving.
 
 @l
-(defparameter *named-sections* nil)
+(defvar *named-sections* nil)
 
 @ @<Initialize global variables@>=
 (setq *named-sections* nil)
@@ -320,10 +320,9 @@ will not effect the calling environment.
 @l
 (defun load-web-from-stream (stream verbose print)
   (when verbose (format t "~&; loading WEB from ~S~%" (pathname stream)))
-  @<Initialize global variables@>
   (let ((*readtable* *readtable*)
         (*package* *package*))
-    (dolist (form (tangle (unnamed-section-code stream)))
+    (dolist (form (tangle (unnamed-section-code stream)) t)
       (if print
           (let ((results (multiple-value-list (eval form))))
             (format t "~&; ~{~S~^, ~}~%" results))
@@ -334,6 +333,7 @@ will not effect the calling environment.
                  (print *load-print*)
                  (if-does-not-exist t)
                  (external-format :default))
+  @<Initialize global variables@>
   (if (streamp filespec)
       (load-web-from-stream filespec verbose print)
       (with-open-file (stream filespec
@@ -342,8 +342,21 @@ will not effect the calling environment.
                        :if-does-not-exist (if if-does-not-exist :error nil))
         (load-web-from-stream stream verbose print))))
 
+@ This next function exists solely for the sake of front-ends that wish to
+load a piece of a \WEB, such as the author's `\.{clweb.el}'. Note that it
+does {\it not\/} initialize the global variables; this allows incremental
+redefinition.
+
+@l
+(defun load-sections-from-temp-file (file &aux (truename (probe-file file)))
+  (when truename
+    (unwind-protect
+         (with-open-file (stream truename :direction :input)
+           (load-web-from-stream stream nil t))
+      (delete-file truename))))
+
 @ The file tangler operates by writing out the tangled code to a Lisp source
-file, and then invoking the file compiler on that file.
+file and then invoking the file compiler on that file.
 
 @l
 (defun tangle-file (input-file &rest args &key
