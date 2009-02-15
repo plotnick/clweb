@@ -62,7 +62,7 @@ of, say, a hash table is so that we can support abbreviations (see below).
    (value :accessor node-value :initarg :value)
    (left-child :accessor left-child :initarg :left)
    (right-child :accessor right-child :initarg :right))
-  (:default-initargs :key nil :value nil :left nil :right nil))
+  (:default-initargs :left nil :right nil))
 
 @ The primary interface to the {\sc BST} is the following routine, which
 attempts to locate the node with key |item| in the tree rooted at |root|.
@@ -118,7 +118,13 @@ but are not actually instances of the class |section|.
 @l
 (defclass named-section (binary-search-tree)
   ((key :accessor section-name :initarg :name)
-   (value :accessor section-code :initarg :code)))
+   (value :reader section-code :initarg :code)))
+
+(defmethod (setf section-code) (forms (section named-section))
+  (setf (slot-value section 'value)
+        (if (slot-boundp section 'value)
+            (append (slot-value section 'value) forms)
+            forms)))
 
 @ When we look up a named section, the name used to perform the lookup,
 the name for the section in the tree, or both may be an abbreviation of
@@ -170,9 +176,9 @@ which is reset before each tangling or weaving.
 @ @<Initialize global variables@>=
 (setq *named-sections* nil)
 
-@ These two routines are the primary interface to the named sections:
+@ The next two routines are the primary interface to named sections:
 |find-section| looks up a section by name, creating a new one if no such
-section exists, and |define-section| is used to add code to a named section.
+section exists, and |defsection| is used to add code to a named section.
 
 @l
 (defun find-section (name)
@@ -186,10 +192,9 @@ section exists, and |define-section| is used to add code to a named section.
           (setf (section-name section) name))
         (values section present-p))))
 
-(defun define-section (name forms)
-  (multiple-value-bind (section present-p) (find-section name)
-    (declare (ignore present-p))
-    (setf (section-code section) (append (section-code section) forms))
+(defun defsection (name forms)
+  (let ((section (find-section name)))
+    (setf (section-code section) forms)
     section))
 
 @ Section names are normalized processed by |squeeze|, which trims leading
@@ -298,7 +303,7 @@ of Lisp forms from the code parts of the unnamed sections.
 (defun unnamed-section-code (stream)
   (loop for section in (read-sections stream)
         if (section-name section)
-          do (define-section (section-name section) (section-code section))
+          do (defsection (section-name section) (section-code section))
         else
           append (section-code section)))
 
