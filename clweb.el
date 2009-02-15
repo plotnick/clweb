@@ -23,8 +23,11 @@
   (interactive "p")
   (move-to-section (- arg)))
 
-(defun eval-section ()
-  (interactive)
+(defun eval-section (arg)
+  "Evaluate the (named or unnamed) section around point.  If ARG is supplied,
+code for named sections will be appended to any existing code for that section;
+otherwise, it will be replaced."
+  (interactive "P")
   (let ((tmp (make-temp-file "clweb"))
         (start (save-excursion
                  (unless (looking-at *start-section-regexp*)
@@ -35,7 +38,8 @@
                (- (point) 2))))
     (write-region start end tmp t 'nomsg)
     (comint-simple-send (inferior-lisp-proc)
-                        (format "(load-sections-from-temp-file %S)" tmp))))
+                        (format "(load-sections-from-temp-file %S %S)"
+                                tmp (not (null arg))))))
 
 (define-minor-mode clweb-mode
   "A minor mode for editing CLWEB programs."
