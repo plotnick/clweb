@@ -6,7 +6,7 @@
 (defpackage "COMMON-LISP-WEB"
   (:nicknames "CLWEB")
   (:use "COMMON-LISP")
-  (:export "TANGLE-FILE" "LOAD-WEB" "WEAVE"))
+  (:export "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE" "WEAVE"))
 (in-package "CLWEB")
 
 @*Tangling \& weaving. The two primary operations that a literate programming
