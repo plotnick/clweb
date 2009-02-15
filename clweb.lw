@@ -111,8 +111,9 @@ might think of a full named section as a sort of `virtual' section, which
 consists of a name, the combined code parts of all of the physical sections
 with that name, and the number of the first such section.
 
-And that's what we store in the {\sc BST}: nodes that look like (but are not)
-sections.
+And that's what we store in the {\sc BST}: nodes that look like sections,
+inasmuch as they have specialized |section-name| and |section-code| methods,
+but are not actually instances of the class |section|.
 
 @l
 (defclass named-section (binary-search-tree)
@@ -120,7 +121,7 @@ sections.
    (value :accessor section-code :initarg :code)))
 
 @ When we look up a named section, the name used to perform the lookup,
-the name for the section in the tree, or both may be an abbreviation for
+the name for the section in the tree, or both may be an abbreviation of
 the full section name. Any prefix of the full name is allowed, followed by
 `$\ldots$': e.g., |@<foo...@>| is an acceptable abbreviation for either
 |@<foo bar@>| or |@<foo baz@>|. It is a correctable error if a prefix is
@@ -520,6 +521,8 @@ used with the \.{#S} reader macro, \etc.
 
 @ Several control codes, including \.{@@<}, consist of restricted \TeX\ text
 that extends to the matching \.{@@>}. Such text is known as {\it control text}.
+During weaving, control text will be re-scanned to pick up inner-Lisp-mode
+material, but during tangling we treat it as a simple string.
 
 @l
 (defvar *end-control-text* (make-symbol "@>"))
