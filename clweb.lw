@@ -35,12 +35,8 @@ section via \.{@@<$ldots$@@>} commands, while unnamed sections are output
 or evaluated in the order in which they appear in the \WEB\ source file.
 
 @l
-(defvar *section-counter* 0)
-
 (defclass section ()
-  ((number :reader section-number
-           :initarg :number
-           :initform (incf *section-counter*))
+  ((number :accessor section-number)
    (commentary :accessor section-commentary :initarg :commentary)
    (name :accessor section-name :initarg :name)
    (code :accessor section-code :initarg :code)
@@ -51,8 +47,23 @@ or evaluated in the order in which they appear in the \WEB\ source file.
 
 (defclass starred-section (section) ())
 
+@ Whenever a section is created, we store it in the global |*sections*|
+vector and set its number to its index therein. This is only used during
+weaving, but it doesn't cost much even during tangling, since the section
+instances themselves are around in any case.
+
+@l
+(defvar *sections* (make-array 128
+                               :element-type 'section
+                               :adjustable t
+                               :fill-pointer 0))
+
+(defmethod initialize-instance :after ((section section) &rest initargs &key)
+  (declare (ignore initargs))
+  (setf (section-number section) (vector-push-extend section *sections*)))
+
 @ @<Initialize global variables@>=
-(setq *section-counter* 0)
+(setf (fill-pointer *sections*) 0)
 
 @ Named sections are stored in a binary search tree whose keys are the
 section names and whose values are the code to be substituted in place of
