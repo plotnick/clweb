@@ -1,5 +1,8 @@
-% -*- Mode: Lisp -*-
-\def\pb{\.{|...|}}
+% CLWEB is a literate programming system for Common Lisp.
+% It was inspired by CWEB by Silvio Levy and Donald E. Knuth, which was
+% based on Knuth's original WEB system.
+
+\def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
 
 @ @e
