@@ -28,14 +28,15 @@
 code for named sections will be appended to any existing code for that section;
 otherwise, it will be replaced."
   (interactive "P")
-  (let ((tmp (make-temp-file "clweb"))
-        (start (save-excursion
-                 (unless (looking-at *start-section-regexp*)
-                   (move-to-section -1))
-                 (point)))
-        (end (save-excursion
-               (move-to-section 1)
-               (- (point) 2))))
+  (let* ((tmp (make-temp-file "clweb"))
+         (on-start-section (looking-at *start-section-regexp*))
+         (start (save-excursion
+                  (unless on-start-section (move-to-section -1))
+                  (point)))
+         (end (save-excursion
+                (when on-start-section (forward-char 2))
+                (move-to-section 1)
+                (- (point) 2))))
     (write-region start end tmp t 'nomsg)
     (comint-simple-send (inferior-lisp-proc)
                         (format "(load-sections-from-temp-file %S %S)"
