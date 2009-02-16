@@ -35,12 +35,12 @@ section via \.{@@<$ldots$@@>} commands, while unnamed sections are output
 or evaluated in the order in which they appear in the \WEB\ source file.
 
 @l
-(defvar *section-number* 0)
+(defvar *section-counter* 0)
 
 (defclass section ()
   ((number :reader section-number
            :initarg :number
-           :initform (incf *section-number*))
+           :initform (incf *section-counter*))
    (commentary :accessor section-commentary :initarg :commentary)
    (name :accessor section-name :initarg :name)
    (code :reader section-code :initarg :code)
@@ -52,7 +52,7 @@ or evaluated in the order in which they appear in the \WEB\ source file.
 (defclass starred-section (section) ())
 
 @ @<Initialize global variables@>=
-(setq *section-number* 0)
+(setq *section-counter* 0)
 
 @ We'll see below that for named sections, we want to allow some keyword
 arguments to its |(setf section-code)| method. The $\lambda$-list-congruence
