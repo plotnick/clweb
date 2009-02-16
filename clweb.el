@@ -1,4 +1,4 @@
-;;;; A simple minor-mode for editing CLWEB programs.
+;;;; A major-mode for editing CLWEB programs.
 
 (defvar *start-section-regexp* "@ \\|@\\*\\|@\n")
 
@@ -41,10 +41,12 @@ otherwise, it will be replaced."
                         (format "(load-sections-from-temp-file %S %S)"
                                 tmp (not (null arg))))))
 
-(define-minor-mode clweb-mode
-  "A minor mode for editing CLWEB programs."
-  :lighter " CLWEB"
-  :keymap '(("\C-\M-n" . forward-section)
-            ("\C-\M-p" . backward-section)
-            ("\C-c\C-s" . eval-section)))
+(define-derived-mode clweb-mode lisp-mode "CLWEB"
+  "Major mode for editing CLWEB programs.
+\\{clweb-mode-map}")
 
+(define-key clweb-mode-map "\M-n" 'forward-section)
+(define-key clweb-mode-map "\M-p" 'backward-section)
+(define-key clweb-mode-map "\C-c\C-s" 'eval-section)
+
+(add-to-list 'auto-mode-alist '("\\.lw" . clweb-mode))
