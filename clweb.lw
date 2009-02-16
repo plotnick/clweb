@@ -43,7 +43,7 @@ or evaluated in the order in which they appear in the \WEB\ source file.
            :initform (incf *section-counter*))
    (commentary :accessor section-commentary :initarg :commentary)
    (name :accessor section-name :initarg :name)
-   (code :reader section-code :initarg :code)
+   (code :accessor section-code :initarg :code)
    (used-by :accessor used-by :initarg :used-by))
   (:default-initargs :commentary nil :name nil :code nil :used-by nil))
 
@@ -53,16 +53,6 @@ or evaluated in the order in which they appear in the \WEB\ source file.
 
 @ @<Initialize global variables@>=
 (setq *section-counter* 0)
-
-@ We'll see below that for named sections, we want to allow some keyword
-arguments to its |(setf section-code)| method. The $\lambda$-list-congruence
-rules for methods force us to declare that fact here.
-
-@l
-(defgeneric (setf section-code) (forms section &key))
-
-(defmethod (setf section-code) (forms (section section) &key)
-  (setf (slot-value section 'code) forms))
 
 @ Named sections are stored in a binary search tree whose keys are the
 section names and whose values are the code to be substituted in place of
@@ -131,7 +121,7 @@ but are not actually instances of the class |section|.
 @l
 (defclass named-section (binary-search-tree)
   ((key :accessor section-name :initarg :name)
-   (value :reader section-code :initarg :code)))
+   (value :accessor section-code :initarg :code)))
 
 @ Setting the code for a named section usually involves appending the given
 forms to whatever forms were already defined for that section, which allows
@@ -140,10 +130,10 @@ and have the new forms replace the old, such as during interactive
 development.
 
 @l
-(defmethod (setf section-code) (forms (section named-section) &key (append t))
-  (setf (slot-value section 'value)
-        (if (and append (slot-boundp section 'value))
-            (append (slot-value section 'value) forms)
+(defun set-named-section-code (section forms &optional (append-p t))
+  (setf (section-code section)
+        (if (and append-p (slot-boundp section 'value))
+            (append (section-code section) forms)
             forms)))
 
 @ When we look up a named section, the name used to perform the lookup,
@@ -196,9 +186,8 @@ which is reset before each tangling or weaving.
 @ @<Initialize global variables@>=
 (setq *named-sections* nil)
 
-@ The next two routines are the primary interface to named sections:
-|find-section| looks up a section by name, creating a new one if no such
-section exists, and |defsection| is used to add code to a named section.
+@ The next routine is the primary interface to named sections: it looks up
+a section by name, and creates a new one if no such section exists.
 
 @l
 (defun find-section (name)
@@ -211,11 +200,6 @@ section exists, and |defsection| is used to add code to a named section.
           ;; Update the section name in case the new one is longer.
           (setf (section-name section) name))
         (values section present-p))))
-
-(defun defsection (name forms &optional (append-p t))
-  (let ((section (find-section name)))
-    (setf (section-code section :append append-p) forms)
-    section))
 
 @ Section names are normalized processed by |squeeze|, which trims leading
 and trailing whitespace and replaces all runs of one or more whitespace
@@ -322,12 +306,12 @@ argument is |t|, code for named sections will be appended to the code
 already defined, if any; otherwise, old code will be replaced with the new.
 
 @l
-(defun unnamed-section-code (stream append-p)
+(defun read-code-parts (stream append-p)
   (loop for section in (read-sections stream)
-        if (section-name section)
-          do (defsection (section-name section) (section-code section) append-p)
-        else
-          append (section-code section)))
+        as name = (section-name section)
+        as code = (section-code section)
+        if name do (set-named-section-code (find-section name) code append-p)
+        else append code))
 
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so
@@ -344,7 +328,7 @@ will not effect the calling environment.
   (when verbose (format t "~&; loading WEB from ~S~%" (pathname stream)))
   (let ((*readtable* *readtable*)
         (*package* *package*))
-    (dolist (form (tangle (unnamed-section-code stream append-p)) t)
+    (dolist (form (tangle (read-code-parts stream append-p)) t)
       (if print
           (let ((results (multiple-value-list (eval form))))
             (format t "~&; ~{~S~^, ~}~%" results))
@@ -400,7 +384,7 @@ file and then invoking the file compiler on that file.
                      :if-exists :supersede
                      :external-format external-format)
       (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S.  DO NOT EDIT." input-file)
-      (dolist (form (tangle (unnamed-section-code input t)))
+      (dolist (form (tangle (read-code-parts input t)))
         (pprint form lisp))))
   (apply #'compile-file lisp-file args))
 
