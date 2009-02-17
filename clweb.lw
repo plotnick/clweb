@@ -285,15 +285,28 @@ expansions were actually performed.
 Note that this is a splicing operation, not a simple replacement: if
 |@<foo@>\='(x y)|, then |(tangle-1 '(a @<foo@> b))|$\rarrow$|(a x y b)|,~|t|.
 
+Tangling also replaces {\it bound markers\/} with their associated values.
+Markers are objects that behave much like symbols: they have names, and may
+be bound to a value. We usually use them to stand for objects that would
+not ordinarily be returned or preserved by the reader, such as newlines and
+comments. If a marker is not bound (as is the case for newlines and comments),
+it is simply removed from the form.
+
 @l
 (defun tangle-1 (form)
   (cond ((atom form) (values form nil))
         ((typep (car form) 'named-section)
          (values (append (section-code (car form)) (tangle-1 (cdr form)))
                  t))
+        ((typep (car form) 'marker)
+         (values (if (marker-boundp (car form))
+                     (cons (marker-value (car form)) (tangle-1 (cdr form)))
+                     (tangle-1 (cdr form)))
+                 t))
         (t (multiple-value-bind (a car-expanded-p) (tangle-1 (car form))
              (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
-               (values (if (and (eql a (car form)) (eql d (cdr form)))
+               (values (if (and (eql a (car form))
+                                (eql d (cdr form)))
                            form
                            (cons a d))
                        (or car-expanded-p cdr-expanded-p)))))))
@@ -436,13 +449,110 @@ given forms with |*readtable*| bound appropriately for the given mode.
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
-@ We sometimes need to manually detect {\sc EOF}. In such cases, we use an
-object that is (almost) guaranteed never to be returned by |read| as the
-|eof-value| argument to the reader functions.
+@ We define a class of objects called {\it markers\/} that denote objects
+in source code, but that would ordinarily never be returned by |read|.
+Markers may be {\it bound\/} to a value, which will be used in place of
+an occurrence of that marker when the containing form is tangled. They
+may also be unbound, in which case they are removed from their containing
+form.
 
 @l
-(defvar *eof* (make-symbol "EOF"))
-(defun eof-p (char) (eq char *eof*))
+(defclass marker ()
+  ((name :accessor marker-name :initarg :name)
+   (value :accessor marker-value :initarg :value))
+  (:default-initargs :name nil))
+
+(defgeneric marker-boundp (marker))
+(defmethod marker-boundp ((marker marker))
+  (slot-boundp marker 'value))
+
+@ This is purely for debugging purposes; later, we'll define define
+pretty-printing functions for markers that we use during weaving.
+
+@l
+(defmethod print-object ((object marker) stream)
+  (let ((name (marker-name object)))
+    (if name
+        (print-unreadable-object (object stream :type t :identity nil)
+          (princ name stream))
+        (print-unreadable-object (object stream :type t :identity t)))))
+
+@ Some markers are used purely for their identity as objects, such as this
+one representing end-of-file. This marker should never appear in a form to
+be evaluated, but is often used as the |eof-value| argument to the various
+reader functions.
+
+@l
+(defvar *eof* (make-instance 'marker :name "EOF"))
+(defun eof-p (x) (eq x *eof*))
+
+@ We preserve newlines in Lisp code so that we don't have to rely on the
+pretty-printer to decide where to break lines. They are represented in
+code forms by a unique unbound marker.
+
+@l
+(defvar *newline* (make-instance 'marker :name "Newline"))
+
+(set-macro-character #\Newline (constantly *newline*)
+                     nil (readtable-for-mode :lisp))
+
+@ Comments in Lisp code also need to be preserved for output during
+weaving. We use a derived marker class with a special slot for storing the
+text of the comment, so that they can remain unbound, and thus be stripped
+during tangling.
+
+@l
+(defclass comment-marker (marker)
+  ((text :reader comment-text :initarg :text)))
+
+(defmethod print-object ((object comment-marker) stream)
+  (print-unreadable-object (object stream :type t :identity nil)
+    (prin1 (comment-text object) stream)))
+
+@ Usually, to read a comment we accumulate all of the characters starting
+with the semicolon and ending just before the next newline, which we leave
+for the newline reader to pick up. But as a special exception, if the
+comment is empty (that is, consists solely of a single semicolon), the
+newline is consumed, and we return zero values. This provides for
+``soft-newlines''---that is, newlines in the source file that will not
+appear in the output.
+
+@l
+(defun comment-reader (stream char)
+  (if (char= (peek-char nil stream nil nil t) #\Newline)
+      (progn (read-char stream t nil t) (values))
+      (make-instance 'comment-marker :text @<Read characters up to...@>)))
+
+(set-macro-character #\; #'comment-reader nil (readtable-for-mode :lisp))
+
+@ @<Read characters up to, but not including, the next newline@>=
+(with-output-to-string (s)
+  (write-char char s) ; include the opening #\;
+  (do ()
+      ((char= (peek-char nil stream nil #\Newline t) #\Newline))
+    (write-char (read-char stream t nil t) s)))
+
+@ The standard Lisp reader does not distinguish between |nil| and the empty
+list, but we want to preserve the distinction so that we can output what
+was given as input. The simplest way to do this seems to be to override the
+reader macro function for `\.{(}'. However, we don't want to re-implement
+the (quite complex) logic needed for reading an arbitrary list, so in the
+non-empty-list case we fall back to using the reader macro function in the
+standard readtable.
+
+Note that we bind the |*empty-list*| marker to the value |'()| so that
+it's preserved during tangling.
+
+@l
+(defvar *empty-list* (make-instance 'marker :name "()" :value '()))
+
+(defun read-list (stream char)
+  (if (char= (peek-char t stream t nil t) #\))
+      (progn (read-char stream t nil t) *empty-list*)
+      (funcall (get-macro-character #\( nil) stream char)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-macro-character #\( #'read-list nil (readtable-for-mode mode)))
 
 @ \TeX\ mode material, such as commentary, section names, \etc. is
 accumulated using the following function, which simply reads from the given
@@ -541,14 +651,16 @@ needed by the reader: package definitions, structure definitions that are
 used with the \.{#S} reader macro, \etc.
 
 @l
-(defstruct (start-code (:constructor make-start-code (evalp &optional name)))
-  evalp name)
+(defclass start-code-marker (marker)
+  ((evalp :reader evaluated-code-p :initarg :evalp))
+  (:default-initargs :evalp nil))
 
 (defun start-code-reader (stream sub-char arg)
   (declare (ignore stream arg))
-  (make-start-code (ecase sub-char
-                     ((#\L #\P) nil)
-                     (#\E t))))
+  (make-instance 'start-code-marker
+                 :evalp (ecase sub-char
+                          ((#\L #\P) nil)
+                          ((#\E) t))))
 
 (dolist (sub-char '(#\l #\p #\e))
   (set-control-code sub-char #'start-code-reader '(:TeX)))
@@ -590,7 +702,9 @@ only during weaving.
            (definition-p (eql (peek-char nil stream nil nil t) #\=)))
       (if definition-p
           (if definition-allowed-p
-              (progn (read-char stream) (make-start-code nil name))
+              (progn
+                (read-char stream)
+                (make-instance 'start-code-marker :name name))
               @<Signal an error about section definition in Lisp mode@>)
           (if definition-allowed-p
                @<Signal an error about section name use in \TeX\ mode@>
@@ -611,7 +725,7 @@ only during weaving.
     (error "Can't use a section name in TeX mode: ~A" name)
   (name-section ()
     :report "Name the current section and start the code part."
-    (make-start-code nil name))
+    (make-instance 'start-code-marker :name name))
   (cite-section ()
     :report "Assume the section is just being cited."
     (find-section name)))
@@ -676,8 +790,8 @@ part is detected, we also set the name of the current section, which may be
     (setq form (read stream nil *eof* nil))
     (cond ((eof-p form) (go eof))
           ((typep form 'section) (go commentary))
-          ((start-code-p form)
-           (setf (section-name section) (start-code-name form))
+          ((typep form 'start-code-marker)
+           (setf (section-name section) (marker-name form))
            (go lisp))
           (t (push form commentary)))))
 
@@ -687,20 +801,22 @@ part was begun by a \.{@@e} control code, we evaluate the code forms as we
 read them.
 
 @<Accumulate Lisp-mode material in |code|@>=
+(check-type form start-code-marker)
 (with-mode :lisp
-  (let ((evalp (start-code-evalp form)))
+  (let ((evalp (evaluated-code-p form)))
     (loop
-      (setq form (read stream nil *eof* nil))
+      (setq form (read-preserving-whitespace stream nil *eof* nil))
       (cond ((eof-p form) (go eof))
             ((typep form 'section) (go commentary))
-            ((start-code-p form)
+            ((typep form 'start-code-marker)
              (error "Can't start a section with a code part"))
-            (t (when evalp (eval form))
+            (t (when evalp (eval (tangle form)))
                (push form code))))))
 
 @ @<Setup named section code, number, and cross-references@>=
 (let ((named-section (find-section (section-name section)))
-      (number (section-number section)))
+      (number (section-number section))
+      (code (section-code section)))
   (set-named-section-code named-section code append-p)
   (when (or (not (slot-boundp named-section 'number))
             (not append-p))

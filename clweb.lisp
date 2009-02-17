@@ -145,6 +145,12 @@
   (COND ((ATOM FORM) (VALUES FORM NIL))
         ((TYPEP (CAR FORM) 'NAMED-SECTION)
          (VALUES (APPEND (SECTION-CODE (CAR FORM)) (TANGLE-1 (CDR FORM))) T))
+        ((TYPEP (CAR FORM) 'MARKER)
+         (VALUES
+          (IF (MARKER-BOUNDP (CAR FORM))
+              (CONS (MARKER-VALUE (CAR FORM)) (TANGLE-1 (CDR FORM)))
+              (TANGLE-1 (CDR FORM)))
+          T))
         (T
          (MULTIPLE-VALUE-BIND
              (A CAR-EXPANDED-P)
@@ -222,8 +228,46 @@
 (DEFMACRO WITH-MODE (MODE &BODY BODY)
   `(LET ((*READTABLE* (READTABLE-FOR-MODE ,MODE)))
      ,@BODY))
-(DEFVAR *EOF* (MAKE-SYMBOL "EOF"))
-(DEFUN EOF-P (CHAR) (EQ CHAR *EOF*))
+(DEFCLASS MARKER NIL
+          ((NAME :ACCESSOR MARKER-NAME :INITARG :NAME)
+           (VALUE :ACCESSOR MARKER-VALUE :INITARG :VALUE))
+          (:DEFAULT-INITARGS :NAME NIL))
+(DEFGENERIC MARKER-BOUNDP (MARKER))
+(DEFMETHOD MARKER-BOUNDP ((MARKER MARKER)) (SLOT-BOUNDP MARKER 'VALUE))
+(DEFMETHOD PRINT-OBJECT ((OBJECT MARKER) STREAM)
+           (LET ((NAME (MARKER-NAME OBJECT)))
+             (IF NAME
+                 (PRINT-UNREADABLE-OBJECT (OBJECT STREAM :TYPE T :IDENTITY NIL)
+                   (PRINC NAME STREAM))
+                 (PRINT-UNREADABLE-OBJECT
+                     (OBJECT STREAM :TYPE T :IDENTITY T)))))
+(DEFVAR *EOF* (MAKE-INSTANCE 'MARKER :NAME "EOF"))
+(DEFUN EOF-P (X) (EQ X *EOF*))
+(DEFVAR *NEWLINE* (MAKE-INSTANCE 'MARKER :NAME "Newline"))
+(SET-MACRO-CHARACTER #\Newline (CONSTANTLY *NEWLINE*) NIL
+                     (READTABLE-FOR-MODE :LISP))
+(DEFCLASS COMMENT-MARKER (MARKER) ((TEXT :READER COMMENT-TEXT :INITARG :TEXT)))
+(DEFMETHOD PRINT-OBJECT ((OBJECT COMMENT-MARKER) STREAM)
+           (PRINT-UNREADABLE-OBJECT (OBJECT STREAM :TYPE T :IDENTITY NIL)
+             (PRIN1 (COMMENT-TEXT OBJECT) STREAM)))
+(DEFUN COMMENT-READER (STREAM CHAR)
+  (IF (CHAR= (PEEK-CHAR NIL STREAM NIL NIL T) #\Newline)
+      (PROGN (READ-CHAR STREAM T NIL T) (VALUES))
+      (MAKE-INSTANCE 'COMMENT-MARKER :TEXT
+                     (WITH-OUTPUT-TO-STRING (S)
+                       (WRITE-CHAR CHAR S)
+                       (DO ()
+                           ((CHAR= (PEEK-CHAR NIL STREAM NIL #\Newline T)
+                                   #\Newline))
+                         (WRITE-CHAR (READ-CHAR STREAM T NIL T) S))))))
+(SET-MACRO-CHARACTER #\; #'COMMENT-READER NIL (READTABLE-FOR-MODE :LISP))
+(DEFVAR *EMPTY-LIST* (MAKE-INSTANCE 'MARKER :NAME "()" :VALUE 'NIL))
+(DEFUN READ-LIST (STREAM CHAR)
+  (IF (CHAR= (PEEK-CHAR T STREAM T NIL T) #\))
+      (PROGN (READ-CHAR STREAM T NIL T) *EMPTY-LIST*)
+      (FUNCALL (GET-MACRO-CHARACTER #\( NIL) STREAM CHAR)))
+(DOLIST (MODE '(:LISP :INNER-LISP))
+  (SET-MACRO-CHARACTER #\( #'READ-LIST NIL (READTABLE-FOR-MODE MODE)))
 (DEFUN SNARF-UNTIL-CONTROL-CHAR
        (STREAM
         &OPTIONAL RESTRICTED
@@ -255,12 +299,13 @@
   (MAKE-INSTANCE (ECASE SUB-CHAR (#\  'SECTION) (#\* 'STARRED-SECTION))))
 (DOLIST (SUB-CHAR '(#\  #\*))
   (SET-CONTROL-CODE SUB-CHAR #'START-SECTION-READER '(:LIMBO :TEX :LISP)))
-(DEFSTRUCT (START-CODE (:CONSTRUCTOR MAKE-START-CODE (EVALP &OPTIONAL NAME)))
-  EVALP
-  NAME)
+(DEFCLASS START-CODE-MARKER (MARKER)
+          ((EVALP :READER EVALUATED-CODE-P :INITARG :EVALP))
+          (:DEFAULT-INITARGS :EVALP NIL))
 (DEFUN START-CODE-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE STREAM ARG))
-  (MAKE-START-CODE (ECASE SUB-CHAR ((#\L #\P) NIL) (#\E T))))
+  (MAKE-INSTANCE 'START-CODE-MARKER :EVALP
+                 (ECASE SUB-CHAR ((#\L #\P) NIL) ((#\E) T))))
 (DOLIST (SUB-CHAR '(#\l #\p #\e))
   (SET-CONTROL-CODE SUB-CHAR #'START-CODE-READER '(:TEX)))
 (DEFVAR *END-CONTROL-TEXT* (MAKE-SYMBOL "@>"))
@@ -278,7 +323,9 @@
            (DEFINITION-P (EQL (PEEK-CHAR NIL STREAM NIL NIL T) #\=)))
       (IF DEFINITION-P
           (IF DEFINITION-ALLOWED-P
-              (PROGN (READ-CHAR STREAM) (MAKE-START-CODE NIL NAME))
+              (PROGN
+               (READ-CHAR STREAM)
+               (MAKE-INSTANCE 'START-CODE-MARKER :NAME NAME))
               (RESTART-CASE
                (ERROR "Can't define a named section in Lisp mode: ~A" NAME)
                (USE-SECTION NIL :REPORT
@@ -288,7 +335,7 @@
                (ERROR "Can't use a section name in TeX mode: ~A" NAME)
                (NAME-SECTION NIL :REPORT
                 "Name the current section and start the code part."
-                (MAKE-START-CODE NIL NAME))
+                (MAKE-INSTANCE 'START-CODE-MARKER :NAME NAME))
                (CITE-SECTION NIL :REPORT
                 "Assume the section is just being cited." (FIND-SECTION NAME)))
               (FIND-SECTION NAME))))))
@@ -300,7 +347,8 @@
            (SETF (SECTION-CODE SECTION) (NREVERSE CODE))
            (WHEN (SECTION-NAME SECTION)
              (LET ((NAMED-SECTION (FIND-SECTION (SECTION-NAME SECTION)))
-                   (NUMBER (SECTION-NUMBER SECTION)))
+                   (NUMBER (SECTION-NUMBER SECTION))
+                   (CODE (SECTION-CODE SECTION)))
                (SET-NAMED-SECTION-CODE NAMED-SECTION CODE APPEND-P)
                (WHEN
                    (OR (NOT (SLOT-BOUNDP NAMED-SECTION 'NUMBER))
@@ -320,28 +368,30 @@
                              (T (PUSH FORM COMMENTARY)))))
      COMMENTARY
       (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
+      (CHECK-TYPE FORM SECTION)
       (SETQ SECTION FORM COMMENTARY 'NIL CODE 'NIL)
       (WITH-MODE :TEX
                  (LOOP (PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM) COMMENTARY)
                        (SETQ FORM (READ STREAM NIL *EOF* NIL))
                        (COND ((EOF-P FORM) (GO EOF))
                              ((TYPEP FORM 'SECTION) (GO COMMENTARY))
-                             ((START-CODE-P FORM)
-                              (SETF (SECTION-NAME SECTION)
-                                      (START-CODE-NAME FORM))
+                             ((TYPEP FORM 'START-CODE-MARKER)
+                              (SETF (SECTION-NAME SECTION) (MARKER-NAME FORM))
                               (GO LISP))
                              (T (PUSH FORM COMMENTARY)))))
      LISP
+      (CHECK-TYPE FORM START-CODE-MARKER)
       (WITH-MODE :LISP
-                 (LET ((EVALP (START-CODE-EVALP FORM)))
-                   (LOOP (SETQ FORM (READ STREAM NIL *EOF* NIL))
-                         (COND ((EOF-P FORM) (GO EOF))
-                               ((TYPEP FORM 'SECTION) (GO COMMENTARY))
-                               ((START-CODE-P FORM)
-                                (ERROR
-                                 "Can't start a section with a code part"))
-                               (T (WHEN EVALP (EVAL FORM))
-                                (PUSH FORM CODE))))))
+                 (LET ((EVALP (EVALUATED-CODE-P FORM)))
+                   (LOOP
+                    (SETQ FORM
+                            (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
+                    (COND ((EOF-P FORM) (GO EOF))
+                          ((TYPEP FORM 'SECTION) (GO COMMENTARY))
+                          ((TYPEP FORM 'START-CODE-MARKER)
+                           (ERROR "Can't start a section with a code part"))
+                          (T (WHEN EVALP (EVAL (TANGLE FORM)))
+                           (PUSH FORM CODE))))))
      EOF
       (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
       (RETURN (NREVERSE SECTIONS)))))
