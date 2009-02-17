@@ -126,13 +126,16 @@ consists of a name, the combined code parts of all of the physical sections
 with that name, and the number of the first such section.
 
 And that's what we store in the {\sc BST}: nodes that look like sections,
-inasmuch as they have specialized |section-name| and |section-code| methods,
-but are not actually instances of the class |section|.
+inasmuch as they have specialized |section-name|, |section-code|, and
+|section-number| methods, but are not actually instances of the class
+|section|.
 
 @l
 (defclass named-section (binary-search-tree)
   ((key :accessor section-name :initarg :name)
-   (value :accessor section-code :initarg :code)))
+   (value :accessor section-code :initarg :code)
+   (number :accessor section-number)
+   (see-also :accessor see-also :initform '())))
 
 @ Setting the code for a named section usually involves appending the given
 forms to whatever forms were already defined for that section, which allows
@@ -309,20 +312,15 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
                    (values new-form expanded)))))
     (expand form nil)))
 
-@ Both of the high-level tangling routines use the following function,
-which loops over the sections read from the given stream one at a time,
-stores the code for the named sections as a side-effect, and returns a list
-of Lisp forms from the code parts of the unnamed sections. If the second
-argument is |t|, code for named sections will be appended to the code
-already defined, if any; otherwise, old code will be replaced with the new.
+@ A little utility function invokes the main section reader and returns a
+list of all of the forms in all of the unnamed sections' code parts.
 
 @l
 (defun read-code-parts (stream append-p)
-  (loop for section in (read-sections stream)
-        as name = (section-name section)
-        as code = (section-code section)
-        if name do (set-named-section-code (find-section name) code append-p)
-        else append code))
+  (apply #'append
+         (map 'list
+              #'section-code
+              (remove-if #'section-name (read-sections stream append-p)))))
 
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so
@@ -624,10 +622,11 @@ tiny state machine that models the global syntax of a \WEB\ file.
 explicit closing delimiters.) It returns a list of |section| objects.
 
 @l
-(defun read-sections (stream)
+(defun read-sections (stream append-p)
   (flet ((finish-section (section commentary code)
            (setf (section-commentary section) (nreverse commentary))
            (setf (section-code section) (nreverse code))
+           (when (section-name section) @<Setup named section...@>)
            section))
     (prog (form commentary code section sections)
      limbo
@@ -698,3 +697,14 @@ read them.
              (error "Can't start a section with a code part"))
             (t (when evalp (eval form))
                (push form code))))))
+
+@ @<Setup named section code, number, and cross-references@>=
+(let ((named-section (find-section (section-name section)))
+      (number (section-number section)))
+  (set-named-section-code named-section code append-p)
+  (when (or (not (slot-boundp named-section 'number))
+            (not append-p))
+    (setf (section-number named-section) number))
+  (if append-p
+      (pushnew number (see-also named-section))
+      (setf (see-also named-section) (list number))))
