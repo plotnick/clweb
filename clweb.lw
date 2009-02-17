@@ -766,7 +766,7 @@ by |snarf-until-control-char| when its second argument is true.
 (with-mode :limbo
   (loop
     (push (snarf-until-control-char stream t) commentary)
-    (setq form (read stream nil *eof* nil))
+    (setq form (read-preserving-whitespace stream nil *eof* nil))
     (cond ((eof-p form) (go eof))
           ((typep form 'section) (go commentary))
           (t (push form commentary)))))
@@ -787,7 +787,7 @@ part is detected, we also set the name of the current section, which may be
 (with-mode :TeX
   (loop
     (push (snarf-until-control-char stream) commentary)
-    (setq form (read stream nil *eof* nil))
+    (setq form (read-preserving-whitespace stream nil *eof* nil))
     (cond ((eof-p form) (go eof))
           ((typep form 'section) (go commentary))
           ((typep form 'start-code-marker)

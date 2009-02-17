@@ -362,7 +362,9 @@
       (SETQ SECTION (MAKE-INSTANCE 'LIMBO-SECTION))
       (WITH-MODE :LIMBO
                  (LOOP (PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM T) COMMENTARY)
-                       (SETQ FORM (READ STREAM NIL *EOF* NIL))
+                       (SETQ FORM
+                               (READ-PRESERVING-WHITESPACE STREAM NIL *EOF*
+                                                           NIL))
                        (COND ((EOF-P FORM) (GO EOF))
                              ((TYPEP FORM 'SECTION) (GO COMMENTARY))
                              (T (PUSH FORM COMMENTARY)))))
@@ -372,7 +374,9 @@
       (SETQ SECTION FORM COMMENTARY 'NIL CODE 'NIL)
       (WITH-MODE :TEX
                  (LOOP (PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM) COMMENTARY)
-                       (SETQ FORM (READ STREAM NIL *EOF* NIL))
+                       (SETQ FORM
+                               (READ-PRESERVING-WHITESPACE STREAM NIL *EOF*
+                                                           NIL))
                        (COND ((EOF-P FORM) (GO EOF))
                              ((TYPEP FORM 'SECTION) (GO COMMENTARY))
                              ((TYPEP FORM 'START-CODE-MARKER)
