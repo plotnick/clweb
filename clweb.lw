@@ -554,6 +554,27 @@ it's preserved during tangling.
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\( #'read-list nil (readtable-for-mode mode)))
 
+@ Similarly, we want to preserve the distinction between a form quoted
+with |#\'| and one quoted (for whatever reason) with |quote|.
+
+@l
+(defclass quote-marker (marker)
+  ((value :accessor quoted-form :initarg :form)))
+
+(defmethod print-object ((object quote-marker) stream)
+  (print-unreadable-object (object stream :type t :identity nil)
+    (format stream "'~S" (quoted-form object))))
+
+(defmethod marker-value ((marker quote-marker))
+  (list 'quote (quoted-form marker)))
+
+(defun single-quote-reader (stream char)
+  (declare (ignore char))
+  (make-instance 'quote-marker :form (read stream t nil t)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-macro-character #\' #'single-quote-reader nil (readtable-for-mode mode)))
+
 @ \TeX\ mode material, such as commentary, section names, \etc. is
 accumulated using the following function, which simply reads from the given
 stream until either {\sc EOF}, or a {\it control character\/} (defined
