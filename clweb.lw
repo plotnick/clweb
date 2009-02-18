@@ -527,7 +527,7 @@ appear in the output.
 
 @ @<Read characters up to, but not including, the next newline@>=
 (with-output-to-string (s)
-  (write-char char s) ; include the opening #\;
+  (write-char char s) ; include the opening |#\;|
   (do ()
       ((char= (peek-char nil stream nil #\Newline t) #\Newline))
     (write-char (read-char stream t nil t) s)))
@@ -535,7 +535,7 @@ appear in the output.
 @ The standard Lisp reader does not distinguish between |nil| and the empty
 list, but we want to preserve the distinction so that we can output what
 was given as input. The simplest way to do this seems to be to override the
-reader macro function for `\.{(}'. However, we don't want to re-implement
+reader macro function for |#\(|. However, we don't want to re-implement
 the (quite complex) logic needed for reading an arbitrary list, so in the
 non-empty-list case we fall back to using the reader macro function in the
 standard readtable.
