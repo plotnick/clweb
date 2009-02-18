@@ -634,14 +634,20 @@ reader macro functions that implement the control codes.
     (set-dispatch-macro-character #\@ sub-char function
                                   (readtable-for-mode mode))))
 
-@ The control code \.{@@@@} yields the string `\.{"@@"}' in all modes.
-However, since |#\@| is a {\it non-terminating\/} macro character, you
-don't usually need to use this control code in Lisp mode.
+@ The control code \.{@@@@} yields the string `\.{"@@"}' in all modes
+except restricted mode; there it yields `\.{"@@@@"}', because control
+strings are re-scanned during weaving.
 
 @l
 (set-control-code #\@ (lambda (stream sub-char arg)
-                        (declare (ignore stream arg))
-                        (string sub-char)))
+                        (declare (ignore sub-char stream arg))
+                        (string "@"))
+                  (remove ':restricted *modes*))
+
+(set-control-code #\@ (lambda (stream sub-char arg)
+                        (declare (ignore sub-char stream arg))
+                        (string "@@"))
+                  '(:restricted))
 
 @ Sections are introduced by the two section-starting control codes, \.{@@ }
 and~\.{@@*}, which differ only in the way they are output during weaving.
