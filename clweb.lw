@@ -449,12 +449,21 @@ given forms with |*readtable*| bound appropriately for the given mode.
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
-@ We define a class of objects called {\it markers\/} that denote objects
-in source code, but that would ordinarily never be returned by |read|.
-Markers may be {\it bound\/} to a value, which will be used in place of
-an occurrence of that marker when the containing form is tangled. They
-may also be unbound, in which case they are removed from their containing
-form.
+
+@ We frequently need an object to use as the |eof-value| argument to
+|read|. It need not be a symbol; it need not even be an atom.
+
+@l
+(defvar *eof* (make-symbol "EOF"))
+(defun eof-p (object) (eq object *eof*))
+(deftype eof () '(satisfies eof-p)) ; should be `(eql ,*eof*)
+
+@ Next, we define a class of objects called {\it markers\/} that denote
+objects in source code, but that would ordinarily never be returned by
+|read|.  Markers may be {\it bound\/} to a value, which will be used in
+place of an occurrence of that marker when the containing form is
+tangled. They may also be unbound, in which case they are removed from
+their containing form.
 
 @l
 (defclass marker ()
@@ -476,15 +485,6 @@ pretty-printing functions for markers that we use during weaving.
         (print-unreadable-object (object stream :type t :identity nil)
           (princ name stream))
         (print-unreadable-object (object stream :type t :identity t)))))
-
-@ Some markers are used purely for their identity as objects, such as this
-one representing end-of-file. This marker should never appear in a form to
-be evaluated, but is often used as the |eof-value| argument to the various
-reader functions.
-
-@l
-(defvar *eof* (make-instance 'marker :name "EOF"))
-(defun eof-p (x) (eq x *eof*))
 
 @ We preserve newlines in Lisp code so that we don't have to rely on the
 pretty-printer to decide where to break lines. They are represented in
@@ -794,9 +794,10 @@ by |snarf-until-control-char| when its second argument is true.
   (loop
     (push (snarf-until-control-char stream t) commentary)
     (setq form (read-preserving-whitespace stream nil *eof* nil))
-    (cond ((eof-p form) (go eof))
-          ((typep form 'section) (go commentary))
-          (t (push form commentary)))))
+    (typecase form
+      (eof (go eof))
+      (section (go commentary))
+      (t (push form commentary)))))
 
 @ @<Initialize section variables@>=
 (check-type form section)
@@ -815,12 +816,12 @@ part is detected, we also set the name of the current section, which may be
   (loop
     (push (snarf-until-control-char stream) commentary)
     (setq form (read-preserving-whitespace stream nil *eof* nil))
-    (cond ((eof-p form) (go eof))
-          ((typep form 'section) (go commentary))
-          ((typep form 'start-code-marker)
-           (setf (section-name section) (marker-name form))
-           (go lisp))
-          (t (push form commentary)))))
+    (typecase form
+      (eof (go eof))
+      (section (go commentary))
+      (start-code-marker (setf (section-name section) (marker-name form))
+                         (go lisp))
+      (t (push form commentary)))))
 
 @ The code part of a section consists of zero or more Lisp forms and is
 terminated by either {\sc EOF} or the start of a new section. If the code
@@ -833,12 +834,12 @@ read them.
   (let ((evalp (evaluated-code-p form)))
     (loop
       (setq form (read-preserving-whitespace stream nil *eof* nil))
-      (cond ((eof-p form) (go eof))
-            ((typep form 'section) (go commentary))
-            ((typep form 'start-code-marker)
-             (error "Can't start a section with a code part"))
-            (t (when evalp (eval (tangle form)))
-               (push form code))))))
+      (typecase form
+        (eof (go eof))
+        (section (go commentary))
+        (start-code-marker (error "Can't start a section with a code part"))
+        (t (when evalp (eval (tangle form)))
+           (push form code))))))
 
 @ @<Setup named section code, number, and cross-references@>=
 (let ((named-section (find-section (section-name section)))

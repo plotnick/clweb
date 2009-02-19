@@ -228,6 +228,9 @@
 (DEFMACRO WITH-MODE (MODE &BODY BODY)
   `(LET ((*READTABLE* (READTABLE-FOR-MODE ,MODE)))
      ,@BODY))
+(DEFVAR *EOF* (MAKE-SYMBOL "EOF"))
+(DEFUN EOF-P (OBJECT) (EQ OBJECT *EOF*))
+(DEFTYPE EOF () '(SATISFIES EOF-P))
 (DEFCLASS MARKER NIL
           ((NAME :ACCESSOR MARKER-NAME :INITARG :NAME)
            (VALUE :ACCESSOR MARKER-VALUE :INITARG :VALUE))
@@ -241,8 +244,6 @@
                    (PRINC NAME STREAM))
                  (PRINT-UNREADABLE-OBJECT
                      (OBJECT STREAM :TYPE T :IDENTITY T)))))
-(DEFVAR *EOF* (MAKE-INSTANCE 'MARKER :NAME "EOF"))
-(DEFUN EOF-P (X) (EQ X *EOF*))
 (DEFVAR *NEWLINE* (MAKE-INSTANCE 'MARKER :NAME "Newline"))
 (SET-MACRO-CHARACTER #\Newline (CONSTANTLY *NEWLINE*) NIL
                      (READTABLE-FOR-MODE :LISP))
@@ -303,8 +304,14 @@
                                   (READTABLE-FOR-MODE MODE))))
 (SET-CONTROL-CODE #\@
                   (LAMBDA (STREAM SUB-CHAR ARG)
-                    (DECLARE (IGNORE STREAM ARG))
-                    (STRING SUB-CHAR)))
+                    (DECLARE (IGNORE SUB-CHAR STREAM ARG))
+                    (STRING "@"))
+                  (REMOVE ':RESTRICTED *MODES*))
+(SET-CONTROL-CODE #\@
+                  (LAMBDA (STREAM SUB-CHAR ARG)
+                    (DECLARE (IGNORE SUB-CHAR STREAM ARG))
+                    (STRING "@@"))
+                  '(:RESTRICTED))
 (DEFUN START-SECTION-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE STREAM ARG))
   (MAKE-INSTANCE (ECASE SUB-CHAR (#\  'SECTION) (#\* 'STARRED-SECTION))))
@@ -376,9 +383,10 @@
                        (SETQ FORM
                                (READ-PRESERVING-WHITESPACE STREAM NIL *EOF*
                                                            NIL))
-                       (COND ((EOF-P FORM) (GO EOF))
-                             ((TYPEP FORM 'SECTION) (GO COMMENTARY))
-                             (T (PUSH FORM COMMENTARY)))))
+                       (TYPECASE FORM
+                         (EOF (GO EOF))
+                         (SECTION (GO COMMENTARY))
+                         (T (PUSH FORM COMMENTARY)))))
      COMMENTARY
       (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
       (CHECK-TYPE FORM SECTION)
@@ -388,12 +396,13 @@
                        (SETQ FORM
                                (READ-PRESERVING-WHITESPACE STREAM NIL *EOF*
                                                            NIL))
-                       (COND ((EOF-P FORM) (GO EOF))
-                             ((TYPEP FORM 'SECTION) (GO COMMENTARY))
-                             ((TYPEP FORM 'START-CODE-MARKER)
-                              (SETF (SECTION-NAME SECTION) (MARKER-NAME FORM))
-                              (GO LISP))
-                             (T (PUSH FORM COMMENTARY)))))
+                       (TYPECASE FORM
+                         (EOF (GO EOF))
+                         (SECTION (GO COMMENTARY))
+                         (START-CODE-MARKER
+                          (SETF (SECTION-NAME SECTION) (MARKER-NAME FORM))
+                          (GO LISP))
+                         (T (PUSH FORM COMMENTARY)))))
      LISP
       (CHECK-TYPE FORM START-CODE-MARKER)
       (WITH-MODE :LISP
@@ -401,12 +410,14 @@
                    (LOOP
                     (SETQ FORM
                             (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
-                    (COND ((EOF-P FORM) (GO EOF))
-                          ((TYPEP FORM 'SECTION) (GO COMMENTARY))
-                          ((TYPEP FORM 'START-CODE-MARKER)
-                           (ERROR "Can't start a section with a code part"))
-                          (T (WHEN EVALP (EVAL (TANGLE FORM)))
-                           (PUSH FORM CODE))))))
+                    (TYPECASE FORM
+                      (EOF (GO EOF))
+                      (SECTION (GO COMMENTARY))
+                      (START-CODE-MARKER
+                       (ERROR "Can't start a section with a code part"))
+                      (T
+                       (WHEN EVALP (EVAL (TANGLE FORM)))
+                       (PUSH FORM CODE))))))
      EOF
       (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
       (RETURN (NREVERSE SECTIONS)))))
