@@ -852,3 +852,367 @@ read them.
   (if append-p
       (pushnew number (see-also named-section))
       (setf (see-also named-section) (list number))))
+
+@*Weaving. Most of the hard work is done while reading the sections in,
+so weaving consists almost entirely of pretty-printing.
+
+@l
+(defparameter *tex-prologue* (format nil "\\input clwebmac~%"))
+
+@ @l
+(defun weave (filespec &key
+              (output-file nil)
+              (verbose *load-verbose*)
+              (print *load-print*)
+              (if-does-not-exist t)
+              (external-format :default))
+  (unless output-file
+    (setq output-file (merge-pathnames (make-pathname :type "tex") filespec)))
+  (load-web filespec
+            :verbose verbose
+            :print print
+            :if-does-not-exist if-does-not-exist
+            :external-format external-format)
+  (weave-sections *sections* output-file))
+
+@ @l
+(defun weave-sections (sections output-file)
+  (with-open-file (output output-file
+                   :direction :output
+                   :if-exists :supersede)
+    (princ *tex-prologue* output)
+    (loop with *print-case* = :downcase
+          with *print-escape* = nil
+          with *print-pretty* = t
+          with *print-pprint-dispatch* = *weave-pprint-dispatch*
+          with *print-right-margin* = 1000
+          for section across sections
+          do (pprint section output)
+          finally (format output "~&\\bye~%"))))
+
+@ We set up our own pretty-print dispatch table for weaving, and a utility
+function for setting its entries.
+
+@l
+(defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
+
+(defun set-weave-dispatch (type-specifier function &optional (priority 0))
+  (set-pprint-dispatch type-specifier function priority
+                       *weave-pprint-dispatch*))
+
+@ \TeX-mode material consists of a list of strings containing pure \TeX\ text
+and lists of (inner-)Lisp forms.
+
+@l
+(defun print-TeX (stream tex-mode-material)
+  (dolist (x tex-mode-material)
+    (etypecase x
+      (string (write-string x stream))
+      (list (dolist (form x)
+              (write form :stream stream))))))
+
+@ Control text (like section names) and comments are read as strings,
+but actually contain \TeX-mode material. We use this routine to re-read
+such strings in \TeX\/ mode.
+
+FIXME: We should have some error-recovery here.
+
+@l
+(defun read-TeX-from-string (input-string)
+  (with-input-from-string (stream input-string)
+    (with-mode :TeX
+      (loop for text = (snarf-until-control-char stream)
+            for forms = (read-preserving-whitespace stream nil *eof* nil)
+            collect text
+            until (eof-p forms) collect forms))))
+
+@ @l
+(defun print-commentary (stream section)
+  (print-TeX stream (section-commentary section)))
+
+(defun print-section (stream section)
+  (format stream "~&\\~:[M~;N{1}~]{~D}" ; `\.{\{1\}}' should be depth
+          (typep section 'starred-section)
+          (section-number section))
+  (print-commentary stream section)
+  (when (section-name section)
+    (write-string "\\Y" stream)
+    (print-section-name stream (find-section (section-name section)))
+    (write-string "${}\\E{}$" stream))
+  (dolist (form (section-code section))
+    (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
+      (write form :stream stream))))
+
+(set-weave-dispatch 'limbo-section #'print-commentary 1)
+(set-weave-dispatch 'section #'print-section)
+
+@ @l
+(defun print-section-name (stream named-section)
+  (format stream "\\X~D:" (section-number named-section))
+  (print-TeX stream (read-TeX-from-string (section-name named-section)))
+  (write-string "\\X" stream))
+
+(set-weave-dispatch 'named-section #'print-section-name)
+
+@ Some of the markers get simple specialized pretty-printing functions.
+
+@l
+(set-weave-dispatch `(eql ,*newline*)
+                    (lambda (stream obj)
+                      (declare (ignore obj))
+                      (terpri stream)))
+
+(set-weave-dispatch `(eql ,*empty-list*)
+                    (lambda (stream obj)
+                      (declare (ignore obj))
+                      (write-string "\\(\\)" stream)))
+
+(set-weave-dispatch 'quote-marker
+                    (lambda (stream obj)
+                      (write-string "\\'" stream)
+                      (print-list stream (quoted-form obj))))
+
+(set-weave-dispatch 'comment-marker
+                    (lambda (stream obj)
+                      (print-TeX stream
+                                 (read-TeX-from-string (comment-text obj)))))
+
+@ Because we're outputting \TeX, we need to carefully escape characters that
+\TeX\ treats as special. Unfortunately, because \TeX's syntax is so malleable
+(not unlike Lisp's), it's nontrivial to decide what to escape, how, and when.
+
+The following routine is the basis for most of the escaping. It writes the
+given string to an output stream, escaping the characters given in the
+|escape-chars| a-list. The entries in this a-list should be of the form
+`(\metasyn{characters}~.~\metasyn{replacement})', where
+\metasyn{characters} is a string of characters to be escaped with
+\metasyn{replacement}, which may be a single character, in which case that
+character is output before any occurrences of \metasyn{character}, or a
+string, in which case it is output instead of the character being considered.
+
+@l
+(defun write-escaped-string (stream string escape-chars)
+  (dotimes (i (length string))
+    (let* ((char (char string i))
+           (escape (cdr (assoc char escape-chars :test #'find))))
+      (etypecase escape
+        (character (write-char escape stream)
+                   (write-char char stream))
+        (string (write-string escape stream))
+        (null (write-char char stream))))))
+
+(defparameter *tex-escape-alist*
+  '((" \\%&#$^_|~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
+
+@ @l
+(defun print-string (stream string)
+  (write-string "\\.{\"" stream)
+  (write-escaped-string stream string
+                        (list* '("{}" . #\\)
+                               '("\\" . "\\\\\\\\")
+                               '("\"" . "\\\\\"")
+                               *tex-escape-alist*))
+  (write-string "\"}" stream))
+
+(set-weave-dispatch 'string #'print-string)
+
+@ @l
+(defun print-char (stream char)
+  (let ((graphicp (and (graphic-char-p char)
+                       (standard-char-p char)))
+        (name (char-name char)))
+    (write-string "{\\tt \\#\\\\" stream)
+    (write-escaped-string stream
+                          (if (and name (not graphicp))
+                              name
+                              (make-string 1 :initial-element char))
+                          (list* '("{}" . #\\) *tex-escape-alist*))
+    (write-string "}" stream)))
+
+(set-weave-dispatch 'character #'print-char)
+
+@ Some symbols are printed using a special format for emphasis. These
+symbols include (but are not limited to) the Common Lisp special operators,
+$\lambda$-list keywords, and symbols whose names begin with `DEF'.
+
+@l
+(defun def-p (symbol)
+  (let* ((name (symbol-name symbol))
+         (len (length name)))
+    (and (> len 3) (string= name "DEF" :end1 3))))
+
+(deftype semi-special ()
+  `(or (satisfies special-operator-p)
+       (member cond loop ,@lambda-list-keywords)
+       (satisfies def-p)))
+
+@ @l
+(defun print-symbol (stream symbol &optional
+                     (specialp (typep symbol 'semi-special)) &aux
+                     (keywordp (keywordp symbol)))
+  (write-string (cond
+                  (specialp "\\&{")
+                  (keywordp "\\:{")
+                  (t "\\\\{"))
+                stream)
+  (write-escaped-string stream
+                        (write-to-string symbol :escape nil :pretty nil)
+                        (list* '("*" . "\\/$\\ast$")
+                               '("&" . "\\AM ")
+                               *tex-escape-alist*))
+  (write-string "}" stream))
+
+(set-weave-dispatch 'symbol #'print-symbol)
+
+@ Rather than tracking and attempting to duplicate the exact indentation
+given in the input file, we use a set of heuristics (described below)
+to do indentation, but respect the line breaks given in the input.
+The indentation itself is done using the alignment tab macros of plain
+\TeX.
+
+@ @l
+(defun maybe-print-newline (stream obj)
+  (when (eq obj *newline*)
+    (write-string "\\cr" stream)
+    (pprint-newline :mandatory stream)
+    t))
+
+@ Now, suppose we are outputting a compound form $f$. We first examine the
+|car| of $f$: if it not |fboundp| (i.e., it's a data list), we use the
+following simple routine, which indents to the first column after the
+opening parenthesis.
+
+@l
+(defun print-list (stream list)
+  (write-string "\\(" stream)
+  (pprint-logical-block (stream list :per-line-prefix "&" :suffix "\\)")
+    (loop
+      (pprint-exit-if-list-exhausted)
+      (let ((next (pprint-pop)))
+        (unless (maybe-print-newline stream next)
+          (write-char #\Space stream)
+          (write next :stream stream))))))
+
+@ But if the |car| of some form $f$ is |fboundp|, then we use a slightly
+more sophisticated algorithm. First, we decide which of two indentation
+styles to use: {\it fun-call style\/} or {\it body style}. Fun-call style
+is the indentation style used for almost all compound forms in Common Lisp:
+the second and subsequent subforms are aligned directly under the start of
+the first subform, unless the second subform is on the same line as the
+first, in which case the third and subsequent subforms are aligned under
+the start of the second.
+
+The |car| of the form is printed in {\bf boldface} if it is a ``special''
+operator (determined via some simple heuristics).
+
+@l
+(defun print-fun-call (stream form)
+  (write-string "\\(" stream)
+  (pprint-logical-block (stream form :per-line-prefix "&" :suffix "\\)")
+    (pprint-exit-if-list-exhausted)
+    (let ((operator (pprint-pop)))
+      (print-symbol stream operator))
+    (pprint-exit-if-list-exhausted)
+    (let ((next (pprint-pop)))
+      (cond ((maybe-print-newline stream next) @<Print the rest...@>)
+            (t (write-char #\Space stream)
+               (pprint-logical-block (stream (cdr form) :per-line-prefix "&")
+                 @<Print the rest...@>))))))
+
+@ @<Print the rest of the fun-call form@>=
+(loop
+  (pprint-exit-if-list-exhausted)
+  (let ((next (pprint-pop)))
+    (unless (maybe-print-newline stream next)
+      (write-char #\Space stream)
+      (write next :stream stream))))
+
+@ We'll need a function that can reliably extract a $\lambda$-list from a
+function designator.
+
+@e
+#+sbcl
+(progn
+  (require 'sb-introspect)
+  (import 'sb-introspect:function-arglist))
+
+@ For special forms and macros with a |&body| parameter (or a |&rest|
+parameter that should have been a |&body| parameter), we indent all of the
+subforms before the body by two quads from the opening parenthesis, and the
+body subforms by one quad.
+
+@l
+(defun lambda-list-body (operator)
+  "Return the position of the &body parameter in OPERATOR's lambda-list."
+  (labels ((clean-arglist (arglist)
+             "Remove &whole, &enviroment, and &aux elements from ARGLIST."
+             (cond ((null arglist) '())
+                   ((member (car arglist) '(&whole &environment))
+                    (clean-arglist (cddr arglist)))
+                   ((eq (car arglist) '&aux) '())
+                   (t (cons (car arglist) (clean-arglist (cdr arglist)))))))
+   (let* ((lambda-list (remove '&optional
+                               (clean-arglist
+                                (function-arglist operator))))
+          (body (or (position '&body lambda-list)
+                    (let ((rest (position '&rest lambda-list)))
+                      (when (and rest
+                                 (let ((restarg (symbol-name
+                                                 (elt lambda-list (1+ rest)))))
+                                   (string= restarg "BODY")))
+                        rest)))))
+     body)))
+
+(defun operator-with-body-p (operator)
+  (and (fboundp operator)
+       (lambda-list-body operator)))
+
+(defun print-form-with-body (stream list)
+  (write-string "\\(" stream)
+  (pprint-logical-block (stream list :per-line-prefix "&" :suffix "\\)")
+    (pprint-exit-if-list-exhausted)
+    (print-symbol stream (pprint-pop) t)
+    (macrolet ((print-next (indentation)
+                 `(progn
+                    (pprint-exit-if-list-exhausted)
+                    (let ((next (pprint-pop)))
+                      (cond ((maybe-print-newline stream next)
+                             (write-string ,indentation stream))
+                            (t (write-char #\Space stream)
+                               (write next :stream stream)))))))
+      (dotimes (i (lambda-list-body (car list)))
+        (print-next "\\qquad"))
+      (loop
+        (print-next "\\quad")))))
+
+(set-weave-dispatch '(cons (and symbol (satisfies operator-with-body-p)))
+                     #'print-form-with-body 0)
+
+(set-weave-dispatch '(cons (and symbol (satisfies fboundp)))
+                     #'print-fun-call -1)
+
+(set-weave-dispatch 'cons #'print-list -2)
+
+@ Since we don't provide a backquote macro function implementation, our
+handling of backquoted forms is necessarily implementation-specific.
+We assume that the implementation exposes enough of its internal machinery
+for us to use.
+
+@ @e
+#+sbcl
+(progn
+  (import sb-impl::*backq-tokens*)
+  (import '(sb-impl::pprint-backquote sb-impl::pprint-backq-comma)))
+
+@ @l
+#+sbcl
+(progn
+  (set-pprint-dispatch '(cons (eql backq-list)) #'pprint-backquote)
+  (set-pprint-dispatch '(cons (eql backq-list*)) #'pprint-backquote)
+  (set-pprint-dispatch '(cons (eql backq-append)) #'pprint-backquote)
+  (set-pprint-dispatch '(cons (eql backq-nconc)) #'pprint-backquote)
+  (set-pprint-dispatch '(cons (eql backq-cons)) #'pprint-backquote)
+  (set-pprint-dispatch '(cons (eql backq-vector)) #'pprint-backquote)
+  (set-pprint-dispatch '(cons (eql backq-comma)) #'pprint-backq-comma)
+  (set-pprint-dispatch '(cons (eql backq-comma-at)) #'pprint-backq-comma)
+  (set-pprint-dispatch '(cons (eql backq-comma-dot)) #'pprint-backq-comma))
