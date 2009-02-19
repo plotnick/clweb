@@ -282,9 +282,10 @@
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\' #'SINGLE-QUOTE-READER NIL (READTABLE-FOR-MODE MODE)))
 (DEFUN SNARF-UNTIL-CONTROL-CHAR
-       (STREAM
-        &OPTIONAL CONTROL-TEXT-P
-        &AUX (CONTROL-CHARS (IF CONTROL-TEXT-P '(#\@) '(#\@ #\|))))
+       (STREAM CONTROL-CHARS
+        &AUX
+        (CONTROL-CHARS
+         (IF (LISTP CONTROL-CHARS) CONTROL-CHARS (LIST CONTROL-CHARS))))
   (WITH-OUTPUT-TO-STRING (STRING)
     (LOOP FOR CHAR = (PEEK-CHAR NIL STREAM NIL *EOF* NIL) UNTIL
           (OR (EOF-P CHAR) (MEMBER CHAR CONTROL-CHARS)) DO
@@ -307,13 +308,7 @@
 (SET-CONTROL-CODE #\@
                   (LAMBDA (STREAM SUB-CHAR ARG)
                     (DECLARE (IGNORE SUB-CHAR STREAM ARG))
-                    (STRING "@"))
-                  (REMOVE ':RESTRICTED *MODES*))
-(SET-CONTROL-CODE #\@
-                  (LAMBDA (STREAM SUB-CHAR ARG)
-                    (DECLARE (IGNORE SUB-CHAR STREAM ARG))
-                    (STRING "@@"))
-                  '(:RESTRICTED))
+                    (STRING "@")))
 (DEFUN START-SECTION-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE STREAM ARG))
   (MAKE-INSTANCE (ECASE SUB-CHAR (#\  'SECTION) (#\* 'STARRED-SECTION))))
@@ -333,8 +328,8 @@
 (DEFUN READ-CONTROL-TEXT (STREAM)
   (WITH-MODE :RESTRICTED
              (APPLY #'CONCATENATE 'STRING
-                    (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM T) AS X =
-                          (READ-PRESERVING-WHITESPACE STREAM T NIL T) COLLECT
+                    (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM #\@) AS X
+                          = (READ-PRESERVING-WHITESPACE STREAM T NIL T) COLLECT
                           TEXT UNTIL (EQ X *END-CONTROL-TEXT*) COLLECT X))))
 (DEFUN MAKE-SECTION-NAME-READER (DEFINITION-ALLOWED-P)
   (LAMBDA (STREAM SUB-CHAR ARG)
@@ -381,7 +376,7 @@
      LIMBO
       (SETQ SECTION (MAKE-INSTANCE 'LIMBO-SECTION))
       (WITH-MODE :LIMBO
-                 (LOOP (PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM T) COMMENTARY)
+                 (LOOP (PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM #\@) COMMENTARY)
                        (SETQ FORM
                                (READ-PRESERVING-WHITESPACE STREAM NIL *EOF*
                                                            NIL))
@@ -394,17 +389,17 @@
       (CHECK-TYPE FORM SECTION)
       (SETQ SECTION FORM COMMENTARY 'NIL CODE 'NIL)
       (WITH-MODE :TEX
-                 (LOOP (PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM) COMMENTARY)
-                       (SETQ FORM
-                               (READ-PRESERVING-WHITESPACE STREAM NIL *EOF*
-                                                           NIL))
-                       (TYPECASE FORM
-                         (EOF (GO EOF))
-                         (SECTION (GO COMMENTARY))
-                         (START-CODE-MARKER
-                          (SETF (SECTION-NAME SECTION) (MARKER-NAME FORM))
-                          (GO LISP))
-                         (T (PUSH FORM COMMENTARY)))))
+                 (LOOP
+                  (PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM '(#\@ #\|))
+                        COMMENTARY)
+                  (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
+                  (TYPECASE FORM
+                    (EOF (GO EOF))
+                    (SECTION (GO COMMENTARY))
+                    (START-CODE-MARKER
+                     (SETF (SECTION-NAME SECTION) (MARKER-NAME FORM))
+                     (GO LISP))
+                    (T (PUSH FORM COMMENTARY)))))
      LISP
       (CHECK-TYPE FORM START-CODE-MARKER)
       (WITH-MODE :LISP
@@ -453,9 +448,9 @@
 (DEFUN READ-TEX-FROM-STRING (INPUT-STRING)
   (WITH-INPUT-FROM-STRING (STREAM INPUT-STRING)
     (WITH-MODE :RESTRICTED
-               (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM) FOR FORMS =
-                     (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL) COLLECT
-                     TEXT UNTIL (EOF-P FORMS) COLLECT FORMS))))
+               (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM #\|) FOR FORMS
+                     = (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL)
+                     COLLECT TEXT UNTIL (EOF-P FORMS) COLLECT FORMS))))
 (DEFUN PRINT-COMMENTARY (STREAM SECTION)
   (PRINT-TEX STREAM (SECTION-COMMENTARY SECTION)))
 (DEFUN PRINT-SECTION (STREAM SECTION)

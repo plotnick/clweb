@@ -576,20 +576,17 @@ with |#\'| and one quoted (for whatever reason) with |quote|.
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\' #'single-quote-reader nil (readtable-for-mode mode)))
 
-@ \TeX\ mode material, such as commentary, section names, \etc. is
-accumulated using the following function, which simply reads from the given
-stream until either {\sc EOF}, or a {\it control character\/} (defined
-below) is encountered. We can then call |read| on the stream, whereby the
-appropriate reader macro will pick up the object whose printed
-representation follows.
-
-A {\it control character\/} is normally one of \.{@@} or \v, but when reading
-control text and limbo text, the latter is not recognized as such.
+@ We accumulate \TeX\ mode material such as commentary, section names,
+\etc. using the following function, which reads from |stream| until
+encountering either {\sc EOF} or a {\it control character\/}. The set of
+control characters is given by the |control-chars| argument, which should
+be a designator for a list of characters.
 
 @l
-(defun snarf-until-control-char (stream &optional control-text-p &aux
-                                 (control-chars
-                                  (if control-text-p '(#\@) '(#\@ #\|))))
+(defun snarf-until-control-char (stream control-chars &aux
+                                 (control-chars (if (listp control-chars)
+                                                    control-chars
+                                                    (list control-chars))))
   (with-output-to-string (string)
     (loop for char = (peek-char nil stream nil *eof* nil)
           until (or (eof-p char) (member char control-chars))
@@ -636,20 +633,13 @@ reader macro functions that implement the control codes.
     (set-dispatch-macro-character #\@ sub-char function
                                   (readtable-for-mode mode))))
 
-@ The control code \.{@@@@} yields the string `\.{"@@"}' in all modes
-except restricted mode; there it yields `\.{"@@@@"}', because control
-strings are re-scanned during weaving.
+@ The control code \.{@@@@} yields the string `\.{"@@"}' in all modes, but
+it should really only be used in \TeX\ text.
 
 @l
 (set-control-code #\@ (lambda (stream sub-char arg)
                         (declare (ignore sub-char stream arg))
-                        (string "@"))
-                  (remove ':restricted *modes*))
-
-(set-control-code #\@ (lambda (stream sub-char arg)
-                        (declare (ignore sub-char stream arg))
-                        (string "@@"))
-                  '(:restricted))
+                        (string "@")))
 
 @ Sections are introduced by the two section-starting control codes, \.{@@ }
 and~\.{@@*}, which differ only in the way they are output during weaving.
@@ -694,10 +684,11 @@ used with the \.{#S} reader macro, \etc.
 (dolist (sub-char '(#\l #\p #\e))
   (set-control-code sub-char #'start-code-reader '(:TeX)))
 
-@ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text
-that extends to the matching \.{@@>}. Such text is known as {\it control text}.
-During weaving, control text is re-scanned to pick up inner-Lisp-mode
-material, but during tangling we treat it as a simple string.
+@ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
+called {\it control text}, that extends to the matching \.{@@>}. When we
+first read control text, we ignore inner-Lisp material (that is, Lisp forms
+surrounded by \pb). During weaving, we'll re-scan it to pick up such
+material.
 
 @l
 (defvar *end-control-text* (make-symbol "@>"))
@@ -706,7 +697,7 @@ material, but during tangling we treat it as a simple string.
 (defun read-control-text (stream)
   (with-mode :restricted
     (apply #'concatenate 'string
-           (loop for text = (snarf-until-control-char stream t)
+           (loop for text = (snarf-until-control-char stream #\@)
                  as x = (read-preserving-whitespace stream t nil t)
                  collect text
                  until (eq x *end-control-text*) collect x))))
@@ -785,16 +776,14 @@ explicit closing delimiters.) It returns a list of |section| objects.
       (push (finish-section section commentary code) sections)
       (return (nreverse sections)))))
 
-@ Limbo text is \TeX\ text that proceeds the first section marker. We treat
-it as commentary for a special section with no code. It can only end with
-{\sc EOF} or the start of a regular section. Note that inner-Lisp material
-is not allowed in limbo text: \v\ is not recognized as a control character
-by |snarf-until-control-char| when its second argument is true.
+@ Limbo text is \TeX\ text that proceeds the first section marker, and we
+treat it as commentary for a special section with no code. Note that
+inner-Lisp material is not recognized in limbo text.
 
 @<Accumulate limbo text in |commentary|@>=
 (with-mode :limbo
   (loop
-    (push (snarf-until-control-char stream t) commentary)
+    (push (snarf-until-control-char stream #\@) commentary)
     (setq form (read-preserving-whitespace stream nil *eof* nil))
     (typecase form
       (eof (go eof))
@@ -816,7 +805,7 @@ part is detected, we also set the name of the current section, which may be
 @<Accumulate \TeX-mode material in |commentary|@>=
 (with-mode :TeX
   (loop
-    (push (snarf-until-control-char stream) commentary)
+    (push (snarf-until-control-char stream '(#\@ #\|)) commentary)
     (setq form (read-preserving-whitespace stream nil *eof* nil))
     (typecase form
       (eof (go eof))
@@ -914,14 +903,15 @@ and lists of (inner-)Lisp forms.
               (write form :stream stream))))))
 
 @ Control text (like section names) and comments are initially read as
-strings, but actually contain restricted \TeX-mode material. This routine
-re-reads such a string and picks up any inner-Lisp material.
+strings containing pure \TeX\ text, but they actually contain restricted
+\TeX-mode material, which may include inner-Lisp material. This routine
+re-reads such strings and picks up any inner-Lisp material.
 
 @l
 (defun read-TeX-from-string (input-string)
   (with-input-from-string (stream input-string)
     (with-mode :restricted
-      (loop for text = (snarf-until-control-char stream)
+      (loop for text = (snarf-until-control-char stream #\|)
             for forms = (read-preserving-whitespace stream nil *eof* nil)
             collect text
             until (eof-p forms) collect forms))))
