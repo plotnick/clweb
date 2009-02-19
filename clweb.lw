@@ -454,9 +454,10 @@ given forms with |*readtable*| bound appropriately for the given mode.
 |read|. It need not be a symbol; it need not even be an atom.
 
 @l
-(defvar *eof* (make-symbol "EOF"))
-(defun eof-p (object) (eq object *eof*))
-(deftype eof () '(satisfies eof-p)) ; should be `(eql ,*eof*)
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defvar *eof* (make-symbol "EOF")))
+(defun eof-p (x) (eq x *eof*))
+(deftype eof () '(satisfies eof-p)) ; should be |`(eql ,*eof*)|
 
 @ Next, we define a class of objects called {\it markers\/} that denote
 objects in source code, but that would ordinarily never be returned by
