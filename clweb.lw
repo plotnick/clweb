@@ -514,7 +514,7 @@ with the semicolon and ending just before the next newline, which we leave
 for the newline reader to pick up. But as a special exception, if the
 comment is empty (that is, consists solely of a single semicolon), the
 newline is consumed, and we return zero values. This provides for
-``soft-newlines''---that is, newlines in the source file that will not
+`soft-newlines'---that is, newlines in the source file that will not
 appear in the output.
 
 @l
@@ -578,32 +578,33 @@ with |#\'| and one quoted (for whatever reason) with |quote|.
 @ \TeX\ mode material, such as commentary, section names, \etc. is
 accumulated using the following function, which simply reads from the given
 stream until either {\sc EOF}, or a {\it control character\/} (defined
-below) is encountered. The caller should then invoke |read| on the stream,
-whereby the appropriate reader macro will pick up the object whose printed
+below) is encountered. We can then call |read| on the stream, whereby the
+appropriate reader macro will pick up the object whose printed
 representation follows.
 
-A {\it control character\/} is normally one of \.{@@} or \v, but in
-restricted mode and text in limbo, the latter is not recognized as such.
+A {\it control character\/} is normally one of \.{@@} or \v, but when reading
+control text and limbo text, the latter is not recognized as such.
 
 @l
-(defun snarf-until-control-char (stream &optional restricted &aux
+(defun snarf-until-control-char (stream &optional control-text-p &aux
                                  (control-chars
-                                  (if restricted '(#\@) '(#\@ #\|))))
+                                  (if control-text-p '(#\@) '(#\@ #\|))))
   (with-output-to-string (string)
     (loop for char = (peek-char nil stream nil *eof* nil)
           until (or (eof-p char) (member char control-chars))
             do (write-char (read-char stream) string))))
 
-@ In \TeX\ mode, we allow embedded Lisp code to be surrounded by \pb, where
-it is read in inner-Lisp mode, which is almost, but not quite, the same as
-Lisp mode.
+@ In \TeX\ mode (including restricted contexts), we allow embedded Lisp
+code to be surrounded by \pb, where it is read in inner-Lisp mode, which is
+almost, but not quite, the same as Lisp mode.
 
 @l
 (defun read-inner-lisp (stream char)
   (with-mode :inner-lisp
     (read-delimited-list char stream t)))
 
-(set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode :TeX))
+(dolist (mode '(:TeX :restricted))
+  (set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode mode)))
 
 @ The call to |read-delimited-list| in |read-inner-lisp| will only stop at
 the closing \v\ if we set it to be a terminating macro character,
@@ -692,9 +693,9 @@ used with the \.{#S} reader macro, \etc.
 (dolist (sub-char '(#\l #\p #\e))
   (set-control-code sub-char #'start-code-reader '(:TeX)))
 
-@ Several control codes, including \.{@@<}, consist of restricted \TeX\ text
+@ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text
 that extends to the matching \.{@@>}. Such text is known as {\it control text}.
-During weaving, control text will be re-scanned to pick up inner-Lisp-mode
+During weaving, control text is re-scanned to pick up inner-Lisp-mode
 material, but during tangling we treat it as a simple string.
 
 @l
@@ -911,16 +912,14 @@ and lists of (inner-)Lisp forms.
       (list (dolist (form x)
               (write form :stream stream))))))
 
-@ Control text (like section names) and comments are read as strings,
-but actually contain \TeX-mode material. We use this routine to re-read
-such strings in \TeX\/ mode.
-
-FIXME: We should have some error-recovery here.
+@ Control text (like section names) and comments are initially read as
+strings, but actually contain restricted \TeX-mode material. This routine
+re-reads such a string and picks up any inner-Lisp material.
 
 @l
 (defun read-TeX-from-string (input-string)
   (with-input-from-string (stream input-string)
-    (with-mode :TeX
+    (with-mode :restricted
       (loop for text = (snarf-until-control-char stream)
             for forms = (read-preserving-whitespace stream nil *eof* nil)
             collect text
