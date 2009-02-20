@@ -9,8 +9,7 @@
 (defpackage "COMMON-LISP-WEB"
   (:nicknames "CLWEB")
   (:use "COMMON-LISP")
-  (:export "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE" "WEAVE")
-  #+sbcl(:import-from "SB-INTROSPECT" "FUNCTION-ARGLIST"))
+  (:export "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE" "WEAVE"))
 (in-package "CLWEB")
 
 @*Tangling \& weaving. The two primary operations that a literate programming
@@ -294,6 +293,8 @@ comments. If a marker is not bound (as is the case for newlines and comments),
 it is simply removed from the form.
 
 @l
+@<Define |marker| class@>
+
 (defun tangle-1 (form)
   (cond ((atom form) (values form nil))
         ((typep (car form) 'named-section)
@@ -468,7 +469,7 @@ place of an occurrence of that marker when the containing form is
 tangled. They may also be unbound, in which case they are removed from
 their containing form.
 
-@l
+@<Define |marker|...@>=
 (defclass marker ()
   ((name :accessor marker-name :initarg :name)
    (value :accessor marker-value :initarg :value))
@@ -1172,6 +1173,16 @@ from the opening parenthesis, and the body subforms by one quad.
 
 (set-weave-dispatch '(cons (and symbol (satisfies operator-with-body-p)))
                      #'print-form-with-body 0)
+
+@ We'll need a function that can reliably extract a $\lambda$-list from a
+function designator. Under SBCL, such a routine is available in the
+"SB-INTROSPECT" package.
+
+@e
+#+sbcl
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (require 'sb-introspect)
+  (import (find-symbol "FUNCTION-ARGLIST" "SB-INTROSPECT")))
 
 @ This routine returns the position of the |&body| parameter in |operator|'s
 $\lambda$-list, or |nil| if there is no such parameter. The little |labels|
