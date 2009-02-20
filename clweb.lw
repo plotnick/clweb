@@ -464,7 +464,7 @@ given forms with |*readtable*| bound appropriately for the given mode.
 
 @ Next, we define a class of objects called {\it markers\/} that denote
 objects in source code, but that would ordinarily never be returned by
-|read|.  Markers may be {\it bound\/} to a value, which will be used in
+|read|. Markers may be {\it bound\/} to a value, which will be used in
 place of an occurrence of that marker when the containing form is
 tangled. They may also be unbound, in which case they are removed from
 their containing form.
@@ -1079,21 +1079,26 @@ outputs some indentation, and continues on to the next object. The
 indentation is computed by the |:indent| argument, which should be a form
 that evaluates to a string. That form is re-evaluated when and only when a
 non-newline object has just been printed and the list is still non-empty.
-(This allows routines like |print-form-with-body|, below, to keep track of
-the number of sub-forms that have been printed.)
+This allows routines like |print-form-with-body|, below, to keep track of
+the number of sub-forms that have been printed.
+
+If the |:first| argument is supplied, that object is used instead of the
+next item from the pprint list for the first iteration. This facility is
+to support one-token look-ahead in the caller.
 
 @l
 (defmacro print-remaining-objects-and-newlines (stream &key
-                                                (indent nil indent-supplied-p))
+                                                (first nil first-supplied-p)
+                                                indent)
   (let ((obj (gensym)) (next (gensym)) (indentation (gensym)))
-    `(do ((,obj (pprint-pop) ,next)
+    `(do ((,obj ,(if first-supplied-p first '(pprint-pop)) ,next)
           (,next)
           (,indentation ,indent))
          (nil)
        (declare (ignorable ,indentation))
        (cond ((eq ,obj *newline*)
               (format ,stream "\\cr~:@_")
-              ,@(when indent-supplied-p
+              ,@(when indent
                   (list `(write-string ,indentation ,stream)))
               (pprint-exit-if-list-exhausted)
               (setq ,next (pprint-pop)))
@@ -1140,12 +1145,16 @@ This routine also has a slightly negative priority, but higher than that of
   (pprint-logical-block (stream form :per-line-prefix "&" :suffix "\\)")
     (write (pprint-pop) :stream stream)
     (pprint-exit-if-list-exhausted)
-    (cond ((eq (pprint-pop) *newline*)
-           (format stream "\\cr~:@_")
-           (print-remaining-objects-and-newlines stream))
-          (t (write-char #\Space stream)
-             (pprint-logical-block (stream (cdr form) :per-line-prefix "&")
-               (print-remaining-objects-and-newlines stream))))))
+    (let ((next (pprint-pop)))
+      (cond ((eq next *newline*)
+             (format stream "\\cr~:@_")
+             (print-remaining-objects-and-newlines stream))
+            (t (write-char #\Space stream)
+               (pprint-indent :current 0 stream)
+               (write-char #\& stream)
+               (print-remaining-objects-and-newlines stream
+                                                     :first next
+                                                     :indent "&"))))))
 
 (set-weave-dispatch '(cons (and symbol (satisfies fboundp)))
                      #'print-fun-call -1)
