@@ -5,14 +5,7 @@
 \def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
 
-@ @e
-(defpackage "COMMON-LISP-WEB"
-  (:nicknames "CLWEB")
-  (:use "COMMON-LISP")
-  (:export "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE" "WEAVE"))
-(in-package "CLWEB")
-
-@*Tangling \& weaving. The two primary operations that a literate programming
+@*Introduction. The two primary operations that a literate programming
 system makes available are {\it tangling\/} and {\/weaving\/}. The former
 creates a machine-readable output file from a \WEB, while the latter prepares
 the \WEB\ for formatting using \TeX\ or some other formatting engine.
@@ -26,11 +19,18 @@ instead of ordinary Lisp source. And finally, |weave| takes a \WEB\ as
 input and generates a \TeX\ source file containing the commentary parts
 of each section together with pretty-printed code parts.
 
-@ The fundamental unit of a \WEB\ is the {\it section}, which consists
-essentially of two parts, either of which may be null: a commentary part
-and a code part. Every section is automatically assigned a number,
-and each section is either {\it named\/} or {\it unnamed\/}. The code parts
-of named sections may be included in those of another (named or unnamed)
+@ @e
+(defpackage "COMMON-LISP-WEB"
+  (:nicknames "CLWEB")
+  (:use "COMMON-LISP")
+  (:export "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE" "WEAVE"))
+(in-package "CLWEB")
+
+@*Sections. The fundamental unit of a \WEB\ is the {\it section}, which
+consists essentially of two parts, either of which may be null: a commentary
+part and a code part. Every section is automatically assigned a number, and
+each section is either {\it named\/} or {\it unnamed\/}. The code parts of
+named sections may be included in those of another (named or unnamed)
 section via \.{@@<$ldots$@@>} commands, while unnamed sections are output
 or evaluated in the order in which they appear in the \WEB\ source file.
 
@@ -284,145 +284,6 @@ the shortest available prefix, since we detect ambiguous matches.)
           (call-next-method)
           new-name))))
 
-@*The tangler. Tangling involves recursively replacing each reference to a
-named section with the code accumulated for that section. The function
-|tangle-1| expands one level of such references, returning the
-possibly-expanded form, and a boolean representing whether or not any
-expansions were actually performed.
-
-Note that this is a splicing operation, not a simple replacement: if
-|@<foo@>\='(x y)|, then |(tangle-1 '(a @<foo@> b))|$\rarrow$|(a x y b)|,~|t|.
-
-Tangling also replaces {\it bound markers\/} with their associated values.
-Markers are objects that behave much like symbols: they have names, and may
-be bound to a value. We usually use them to stand for objects that would
-not ordinarily be returned or preserved by the reader, such as newlines and
-comments. If a marker is not bound (as is the case for newlines and comments),
-it is simply removed from the form.
-
-@l
-@<Define |marker| class@>
-
-(defun tangle-1 (form)
-  (cond ((atom form) (values form nil))
-        ((typep (car form) 'named-section)
-         (values (append (section-code (car form)) (tangle-1 (cdr form)))
-                 t))
-        ((typep (car form) 'marker)
-         (values (if (marker-boundp (car form))
-                     (cons (marker-value (car form)) (tangle-1 (cdr form)))
-                     (tangle-1 (cdr form)))
-                 t))
-        (t (multiple-value-bind (a car-expanded-p) (tangle-1 (car form))
-             (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
-               (values (if (and (eql a (car form))
-                                (eql d (cdr form)))
-                           form
-                           (cons a d))
-                       (or car-expanded-p cdr-expanded-p)))))))
-
-@ |tangle| repeatedly calls |tangle-1| on |form| until it can no longer be
-expanded. Like |tangle-1|, it returns the possibly-expanded form and an
-`expanded' flag.
-
-@l
-(defun tangle (form)
-  (labels ((expand (form expanded)
-             (multiple-value-bind (new-form newly-expanded-p)
-                 (tangle-1 form)
-               (if newly-expanded-p
-                   (expand new-form t)
-                   (values new-form expanded)))))
-    (expand form nil)))
-
-@ A little utility function invokes the main section reader and returns a
-list of all of the forms in all of the unnamed sections' code parts.
-
-@l
-(defun read-code-parts (stream append-p)
-  (apply #'append
-         (map 'list
-              #'section-code
-              (remove-if #'section-name (read-sections stream append-p)))))
-
-@ We're now ready for the high-level tangler interface. We begin with
-|load-web|, which uses a helper function, |load-web-from-stream|, so
-that it can handle input from a file or an arbitrary stream. The logic
-is straightfoward: loop over the tangled forms read from the stream,
-evaluating each one in turn.
-
-Note that like |load|, we bind |*readtable*| and |*package*| to their
-current values, so that assignments to those variables in the \WEB\ code
-will not effect the calling environment.
-
-@l
-(defun load-web-from-stream (stream verbose print &optional (append-p t))
-  (when verbose (format t "~&; loading WEB from ~S~%" (pathname stream)))
-  (let ((*readtable* *readtable*)
-        (*package* *package*))
-    (dolist (form (tangle (read-code-parts stream append-p)) t)
-      (if print
-          (let ((results (multiple-value-list (eval form))))
-            (format t "~&; ~{~S~^, ~}~%" results))
-          (eval form)))))
-
-(defun load-web (filespec &key
-                 (verbose *load-verbose*)
-                 (print *load-print*)
-                 (if-does-not-exist t)
-                 (external-format :default))
-  @<Initialize global variables@>
-  (if (streamp filespec)
-      (load-web-from-stream filespec verbose print)
-      (with-open-file (stream filespec
-                       :direction :input
-                       :external-format external-format
-                       :if-does-not-exist (if if-does-not-exist :error nil))
-        (load-web-from-stream stream verbose print))))
-
-@ This next function exists solely for the sake of front-ends that wish to
-load a piece of a \WEB, such as the author's `\.{clweb.el}'. Note that it
-does {\it not\/} initialize the global variables like |*named-sections*|;
-this allows for incremental redefinition.
-
-@l
-(defun load-sections-from-temp-file (file append-p &aux
-                                     (truename (probe-file file)))
-  (when truename
-    (unwind-protect
-         (with-open-file (stream truename :direction :input)
-           (load-web-from-stream stream nil t append-p))
-      (delete-file truename))))
-
-@ The file tangler operates by writing out the tangled code to a Lisp source
-file and then invoking the file compiler on that file.
-
-@l
-(defun tangle-file (input-file &rest args &key
-                    output-file
-                    (verbose *compile-verbose*)
-                    (print *compile-print*)
-                    (external-format :default) &allow-other-keys &aux
-                    (lisp-file (merge-pathnames (make-pathname :type "lisp")
-                                                input-file)))
-  (declare (ignore output-file print))
-  (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
-  @<Initialize global variables@>
-  (with-open-file (input input-file
-                   :direction :input
-                   :external-format external-format)
-    (with-open-file (lisp lisp-file
-                     :direction :output
-                     :if-exists :supersede
-                     :external-format external-format)
-      (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S.  DO NOT EDIT." input-file)
-      (dolist (form (tangle (read-code-parts input t)))
-        (pprint form lisp))))
-  (apply #'compile-file lisp-file args))
-
-@ Now that we've covered the high-level interfaces, we'll drop down to
-the lower levels, beginning with the reader.
-
 @*Reading. We recognize five distinct modes, or contexts, for reading.
 Limbo mode is for \TeX\ text that proceeds the first section in a file.
 \TeX\ mode is used for reading the commentary that begins a section.
@@ -477,7 +338,7 @@ place of an occurrence of that marker when the containing form is
 tangled. They may also be unbound, in which case they are removed from
 their containing form.
 
-@<Define |marker|...@>=
+@l
 (defclass marker ()
   ((name :accessor marker-name :initarg :name)
    (value :accessor marker-value :initarg :value))
@@ -935,7 +796,141 @@ read them.
       (pushnew number (see-also named-section))
       (setf (see-also named-section) (list number))))
 
-@*Weaving. Most of the hard work is done while reading the sections in,
+@*The tangler. Tangling involves recursively replacing each reference to a
+named section with the code accumulated for that section. The function
+|tangle-1| expands one level of such references, returning the
+possibly-expanded form, and a boolean representing whether or not any
+expansions were actually performed.
+
+Note that this is a splicing operation, not a simple replacement: if
+|@<foo@>\='(x y)|, then |(tangle-1 '(a @<foo@> b))|$\rarrow$|(a x y b)|,~|t|.
+
+Tangling also replaces {\it bound markers\/} with their associated values.
+Markers are objects that behave much like symbols: they have names, and may
+be bound to a value. We usually use them to stand for objects that would
+not ordinarily be returned or preserved by the reader, such as newlines and
+comments. If a marker is not bound (as is the case for newlines and comments),
+it is simply removed from the form.
+
+@l
+(defun tangle-1 (form)
+  (cond ((atom form) (values form nil))
+        ((typep (car form) 'named-section)
+         (values (append (section-code (car form)) (tangle-1 (cdr form)))
+                 t))
+        ((typep (car form) 'marker)
+         (values (if (marker-boundp (car form))
+                     (cons (marker-value (car form)) (tangle-1 (cdr form)))
+                     (tangle-1 (cdr form)))
+                 t))
+        (t (multiple-value-bind (a car-expanded-p) (tangle-1 (car form))
+             (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
+               (values (if (and (eql a (car form))
+                                (eql d (cdr form)))
+                           form
+                           (cons a d))
+                       (or car-expanded-p cdr-expanded-p)))))))
+
+@ |tangle| repeatedly calls |tangle-1| on |form| until it can no longer be
+expanded. Like |tangle-1|, it returns the possibly-expanded form and an
+`expanded' flag.
+
+@l
+(defun tangle (form)
+  (labels ((expand (form expanded)
+             (multiple-value-bind (new-form newly-expanded-p)
+                 (tangle-1 form)
+               (if newly-expanded-p
+                   (expand new-form t)
+                   (values new-form expanded)))))
+    (expand form nil)))
+
+@ A little utility function invokes the main section reader and returns a
+list of all of the forms in all of the unnamed sections' code parts.
+
+@l
+(defun read-code-parts (stream append-p)
+  (apply #'append
+         (map 'list
+              #'section-code
+              (remove-if #'section-name (read-sections stream append-p)))))
+
+@ We're now ready for the high-level tangler interface. We begin with
+|load-web|, which uses a helper function, |load-web-from-stream|, so
+that it can handle input from a file or an arbitrary stream. The logic
+is straightfoward: loop over the tangled forms read from the stream,
+evaluating each one in turn.
+
+Note that like |load|, we bind |*readtable*| and |*package*| to their
+current values, so that assignments to those variables in the \WEB\ code
+will not effect the calling environment.
+
+@l
+(defun load-web-from-stream (stream verbose print &optional (append-p t))
+  (when verbose (format t "~&; loading WEB from ~S~%" (pathname stream)))
+  (let ((*readtable* *readtable*)
+        (*package* *package*))
+    (dolist (form (tangle (read-code-parts stream append-p)) t)
+      (if print
+          (let ((results (multiple-value-list (eval form))))
+            (format t "~&; ~{~S~^, ~}~%" results))
+          (eval form)))))
+
+(defun load-web (filespec &key
+                 (verbose *load-verbose*)
+                 (print *load-print*)
+                 (if-does-not-exist t)
+                 (external-format :default))
+  @<Initialize global variables@>
+  (if (streamp filespec)
+      (load-web-from-stream filespec verbose print)
+      (with-open-file (stream filespec
+                       :direction :input
+                       :external-format external-format
+                       :if-does-not-exist (if if-does-not-exist :error nil))
+        (load-web-from-stream stream verbose print))))
+
+@ This next function exists solely for the sake of front-ends that wish to
+load a piece of a \WEB, such as the author's `\.{clweb.el}'. Note that it
+does {\it not\/} initialize the global variables like |*named-sections*|;
+this allows for incremental redefinition.
+
+@l
+(defun load-sections-from-temp-file (file append-p &aux
+                                     (truename (probe-file file)))
+  (when truename
+    (unwind-protect
+         (with-open-file (stream truename :direction :input)
+           (load-web-from-stream stream nil t append-p))
+      (delete-file truename))))
+
+@ The file tangler operates by writing out the tangled code to a Lisp source
+file and then invoking the file compiler on that file.
+
+@l
+(defun tangle-file (input-file &rest args &key
+                    output-file
+                    (verbose *compile-verbose*)
+                    (print *compile-print*)
+                    (external-format :default) &allow-other-keys &aux
+                    (lisp-file (merge-pathnames (make-pathname :type "lisp")
+                                                input-file)))
+  (declare (ignore output-file print))
+  (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
+  @<Initialize global variables@>
+  (with-open-file (input input-file
+                   :direction :input
+                   :external-format external-format)
+    (with-open-file (lisp lisp-file
+                     :direction :output
+                     :if-exists :supersede
+                     :external-format external-format)
+      (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S.  DO NOT EDIT." input-file)
+      (dolist (form (tangle (read-code-parts input t)))
+        (pprint form lisp))))
+  (apply #'compile-file lisp-file args))
+
+@*The weaver. Most of the hard work is done while reading the sections in,
 so weaving consists almost entirely of pretty-printing.
 
 @ We set up our own pretty-print dispatch table for weaving, and a utility
