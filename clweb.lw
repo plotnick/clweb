@@ -1036,8 +1036,10 @@ re-reads such strings and picks up any inner-Lisp material.
     (print-TeX stream commentary)
     (when (and commentary code) (write-string "\\Y" stream))
     (when name
-      (print-section-name stream (find-section (section-name section)))
-      (write-string "${}\\E{}$" stream))
+      (let ((named-section (find-section (section-name section))))
+        (print-section-name stream named-section)
+        (format stream "${}~:[\\mathrel+~;~]\\E{}$"
+                (= (section-number section) (section-number named-section)))))
     (dolist (form code)
       (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
         (write form :stream stream))))
