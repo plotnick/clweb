@@ -9,7 +9,8 @@
 (defpackage "COMMON-LISP-WEB"
   (:nicknames "CLWEB")
   (:use "COMMON-LISP")
-  (:export "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE" "WEAVE"))
+  (:export "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE" "WEAVE")
+  #+sbcl(:import-from "SB-INTROSPECT" "FUNCTION-ARGLIST"))
 (in-package "CLWEB")
 
 @*Tangling \& weaving. The two primary operations that a literate programming
@@ -426,7 +427,8 @@ original \WEB\ and \CWEB\ used for macro definitions and the like;
 those features are simply unnecessary with Lisp.
 
 @l
-(defparameter *modes* '(:limbo :TeX :lisp :inner-lisp :restricted))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *modes* '(:limbo :TeX :lisp :inner-lisp :restricted)))
 (deftype mode () `(member ,@*modes*))
 
 @ We use seperate readtables for each mode, which are accessed via
@@ -847,8 +849,15 @@ read them.
 @*Weaving. Most of the hard work is done while reading the sections in,
 so weaving consists almost entirely of pretty-printing.
 
+@ We set up our own pretty-print dispatch table for weaving, and a utility
+function for setting its entries.
+
 @l
-(defparameter *tex-prologue* (format nil "\\input clwebmac~%"))
+(defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
+
+(defun set-weave-dispatch (type-specifier function &optional (priority 0))
+  (set-pprint-dispatch type-specifier function priority
+                       *weave-pprint-dispatch*))
 
 @ @l
 (defun weave (filespec &key
@@ -867,6 +876,8 @@ so weaving consists almost entirely of pretty-printing.
   (weave-sections *sections* output-file))
 
 @ @l
+(defparameter *tex-prologue* (format nil "\\input clwebmac~%"))
+
 (defun weave-sections (sections output-file)
   (with-open-file (output output-file
                    :direction :output
@@ -881,26 +892,19 @@ so weaving consists almost entirely of pretty-printing.
           do (pprint section output)
           finally (format output "~&\\bye~%"))))
 
-@ We set up our own pretty-print dispatch table for weaving, and a utility
-function for setting its entries.
-
-@l
-(defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
-
-(defun set-weave-dispatch (type-specifier function &optional (priority 0))
-  (set-pprint-dispatch type-specifier function priority
-                       *weave-pprint-dispatch*))
-
 @ \TeX-mode material consists of a list of strings containing pure \TeX\ text
 and lists of (inner-)Lisp forms.
 
 @l
+(defvar *inner-lisp* nil)
+
 (defun print-TeX (stream tex-mode-material)
   (dolist (x tex-mode-material)
     (etypecase x
       (string (write-string x stream))
-      (list (dolist (form x)
-              (write form :stream stream))))))
+      (list (let ((*inner-lisp* t))
+              (dolist (form x)
+                (write form :stream stream)))))))
 
 @ Control text (like section names) and comments are initially read as
 strings containing pure \TeX\ text, but they actually contain restricted
@@ -931,7 +935,8 @@ re-reads such strings and picks up any inner-Lisp material.
     (write-string "${}\\E{}$" stream))
   (dolist (form (section-code section))
     (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
-      (write form :stream stream))))
+      (write form :stream stream)))
+  (write-string "\\fi" stream))
 
 (set-weave-dispatch 'limbo-section #'print-commentary 1)
 (set-weave-dispatch 'section #'print-section)
@@ -1021,188 +1026,177 @@ string, in which case it is output instead of the character being considered.
 
 (set-weave-dispatch 'character #'print-char)
 
-@ Some symbols are printed using a special format for emphasis. These
-symbols include (but are not limited to) the Common Lisp special operators,
-$\lambda$-list keywords, and symbols whose names begin with `DEF'.
+@ Some symbols are sometimes printed using a special format for
+emphasis. These symbols include (but are not limited to) the Common Lisp
+special operators, $\lambda$-list keywords, and symbols whose names begin
+with `DEF'.
 
 @l
+(defvar *highlight-special-symbols* nil)
+
 (defun def-p (symbol)
   (let* ((name (symbol-name symbol))
          (len (length name)))
     (and (> len 3) (string= name "DEF" :end1 3))))
 
-(deftype semi-special ()
-  `(or (satisfies special-operator-p)
-       (member cond loop ,@lambda-list-keywords)
-       (satisfies def-p)))
+(defun highlight-symbol-p (symbol)
+  (cond ((or (special-operator-p symbol)
+             (member symbol '(cond loop)))
+         (member :special-operator *highlight-special-symbols*))
+        ((operator-with-body-p symbol)
+         (member :body *highlight-special-symbols*))
+        ((member symbol lambda-list-keywords)
+         (member :lambda-list-keyword *highlight-special-symbols*))
+        ((def-p symbol)
+         (member :def *highlight-special-symbols*))))
 
 @ @l
-(defun print-symbol (stream symbol &optional
-                     (specialp (typep symbol 'semi-special)) &aux
-                     (keywordp (keywordp symbol)))
-  (write-string (cond
-                  (specialp "\\&{")
-                  (keywordp "\\:{")
-                  (t "\\\\{"))
-                stream)
-  (write-escaped-string stream
-                        (write-to-string symbol :escape nil :pretty nil)
-                        (list* '("*" . "\\/$\\ast$")
-                               '("&" . "\\AM ")
-                               *tex-escape-alist*))
-  (write-string "}" stream))
+(defun print-symbol (stream symbol)
+  (let ((group-p (cond ((highlight-symbol-p symbol)
+                        (write-string "\\&{" stream))
+                       ((keywordp symbol)
+                        (write-string "\\:{" stream))
+                       (*inner-lisp*
+                        (write-string "\\\\{" stream)))))
+    (write-escaped-string stream
+                          (write-to-string symbol :escape nil :pretty nil)
+                          (list* '("*" . "\\/$\\ast$")
+                                 '("&" . "\\AM ")
+                                 *tex-escape-alist*))
+    (when group-p (write-string "}" stream))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
 
 @ Rather than tracking and attempting to duplicate the exact indentation
 given in the input file, we use a set of heuristics (described below)
 to do indentation, but respect the line breaks given in the input.
-The indentation itself is done using the alignment tab macros of plain
-\TeX.
 
-@ @l
-(defun maybe-print-newline (stream obj)
-  (when (eq obj *newline*)
-    (write-string "\\cr" stream)
-    (pprint-newline :mandatory stream)
-    t))
+This macro aids with that task. It takes objects from the current
+pretty-printing list using |pprint-pop|, and either writes that object to
+|stream|, or, if it is a newline marker, ends the current line, optionally
+outputs some indentation, and continues on to the next object. The
+indentation is computed by the |:indent| argument, which should be a form
+that evaluates to a string. That form is re-evaluated when and only when a
+non-newline object has just been printed and the list is still non-empty.
+(This allows routines like |print-form-with-body|, below, to keep track of
+the number of sub-forms that have been printed.)
+
+@l
+(defmacro print-remaining-objects-and-newlines (stream &key
+                                                (indent nil indent-supplied-p))
+  (let ((obj (gensym)) (next (gensym)) (indentation (gensym)))
+    `(do ((,obj (pprint-pop) ,next)
+          (,next)
+          (,indentation ,indent))
+         (nil)
+       (declare (ignorable ,indentation))
+       (cond ((eq ,obj *newline*)
+              (format ,stream "\\cr~:@_")
+              ,@(when indent-supplied-p
+                  (list `(write-string ,indentation ,stream)))
+              (pprint-exit-if-list-exhausted)
+              (setq ,next (pprint-pop)))
+             (t (write ,obj :stream ,stream)
+                (pprint-exit-if-list-exhausted)
+                (setq ,next (pprint-pop)
+                      ,@(when indent `(,indentation ,indent)))
+                (unless (eq ,next *newline*)
+                  (write-char #\Space ,stream)))))))
 
 @ Now, suppose we are outputting a compound form $f$. We first examine the
 |car| of $f$: if it not |fboundp| (i.e., it's a data list), we use the
 following simple routine, which indents to the first column after the
 opening parenthesis.
 
+We set a slightly negative priority for this routine, since almost every
+other list-printing routine is more specialized, and should be used instead
+when applicable.
+
 @l
 (defun print-list (stream list)
   (write-string "\\(" stream)
   (pprint-logical-block (stream list :per-line-prefix "&" :suffix "\\)")
-    (loop
-      (pprint-exit-if-list-exhausted)
-      (let ((next (pprint-pop)))
-        (unless (maybe-print-newline stream next)
-          (write-char #\Space stream)
-          (write next :stream stream))))))
+    (print-remaining-objects-and-newlines stream)))
 
-@ But if the |car| of some form $f$ is |fboundp|, then we use a slightly
-more sophisticated algorithm. First, we decide which of two indentation
-styles to use: {\it fun-call style\/} or {\it body style}. Fun-call style
-is the indentation style used for almost all compound forms in Common Lisp:
-the second and subsequent subforms are aligned directly under the start of
-the first subform, unless the second subform is on the same line as the
-first, in which case the third and subsequent subforms are aligned under
-the start of the second.
+(set-weave-dispatch 'cons #'print-list -2)
 
-The |car| of the form is printed in {\bf boldface} if it is a ``special''
-operator (determined via some simple heuristics).
+@ If the |car| of some form $f$ is |fboundp|, but we don't have a more
+specific pretty-printing routine, then we choose between two generic
+indentation styles: {\it fun-call style\/} and {\it body style}.
+
+Fun-call style is the indentation style used for almost all compound forms
+in Common Lisp: the second and subsequent subforms are aligned directly
+under the start of the first subform, unless the second subform is on the
+same line as the first, in which case the third and subsequent subforms are
+aligned under the start of the second. (Read that again and you'll get it).
+
+This routine also has a slightly negative priority, but higher than that of
+|print-list|.
 
 @l
 (defun print-fun-call (stream form)
   (write-string "\\(" stream)
   (pprint-logical-block (stream form :per-line-prefix "&" :suffix "\\)")
+    (write (pprint-pop) :stream stream)
     (pprint-exit-if-list-exhausted)
-    (let ((operator (pprint-pop)))
-      (print-symbol stream operator))
+    (cond ((eq (pprint-pop) *newline*)
+           (format stream "\\cr~:@_")
+           (print-remaining-objects-and-newlines stream))
+          (t (write-char #\Space stream)
+             (pprint-logical-block (stream (cdr form) :per-line-prefix "&")
+               (print-remaining-objects-and-newlines stream))))))
+
+(set-weave-dispatch '(cons (and symbol (satisfies fboundp)))
+                     #'print-fun-call -1)
+
+@ Body-style indentation is used, unsurprisingly, for forms with a |&body|
+parameter (or a |&rest| parameter that should have been a |&body|
+parameter). We indent all of the subforms before the |&body| by two quads
+from the opening parenthesis, and the body subforms by one quad.
+
+@l
+(defun print-form-with-body (stream form)
+  (write-string "\\(" stream)
+  (pprint-logical-block (stream form :per-line-prefix "&" :suffix "\\)")
+    (write (pprint-pop) :stream stream)
     (pprint-exit-if-list-exhausted)
-    (let ((next (pprint-pop)))
-      (cond ((maybe-print-newline stream next) @<Print the rest...@>)
-            (t (write-char #\Space stream)
-               (pprint-logical-block (stream (cdr form) :per-line-prefix "&")
-                 @<Print the rest...@>))))))
+    (write-char #\Space stream)
+    (let ((body (or (lambda-list-body (car form)) -1))
+          (i 0))
+      (print-remaining-objects-and-newlines
+       stream
+       :indent (if (<= (incf i) body) "\\2" "\\1")))))
 
-@ @<Print the rest of the fun-call form@>=
-(loop
-  (pprint-exit-if-list-exhausted)
-  (let ((next (pprint-pop)))
-    (unless (maybe-print-newline stream next)
-      (write-char #\Space stream)
-      (write next :stream stream))))
+(defun operator-with-body-p (operator)
+  (and (fboundp operator) (lambda-list-body operator)))
 
-@ We'll need a function that can reliably extract a $\lambda$-list from a
-function designator.
+(set-weave-dispatch '(cons (and symbol (satisfies operator-with-body-p)))
+                     #'print-form-with-body 0)
 
-@e
-#+sbcl
-(progn
-  (require 'sb-introspect)
-  (import 'sb-introspect:function-arglist))
-
-@ For special forms and macros with a |&body| parameter (or a |&rest|
-parameter that should have been a |&body| parameter), we indent all of the
-subforms before the body by two quads from the opening parenthesis, and the
-body subforms by one quad.
+@ This routine returns the position of the |&body| parameter in |operator|'s
+$\lambda$-list, or |nil| if there is no such parameter. The little |labels|
+function is used to remove |&whole|, |&enviroment|, and |&aux| arguments
+from the argument list.
 
 @l
 (defun lambda-list-body (operator)
-  "Return the position of the &body parameter in OPERATOR's lambda-list."
   (labels ((clean-arglist (arglist)
-             "Remove &whole, &enviroment, and &aux elements from ARGLIST."
              (cond ((null arglist) '())
                    ((member (car arglist) '(&whole &environment))
                     (clean-arglist (cddr arglist)))
                    ((eq (car arglist) '&aux) '())
                    (t (cons (car arglist) (clean-arglist (cdr arglist)))))))
-   (let* ((lambda-list (remove '&optional
-                               (clean-arglist
-                                (function-arglist operator))))
-          (body (or (position '&body lambda-list)
-                    (let ((rest (position '&rest lambda-list)))
-                      (when (and rest
-                                 (let ((restarg (symbol-name
-                                                 (elt lambda-list (1+ rest)))))
-                                   (string= restarg "BODY")))
-                        rest)))))
-     body)))
+   (let ((lambda-list (remove '&optional
+                              (clean-arglist (function-arglist operator)))))
+     (or (position '&body lambda-list)
+         @<Position of a |&rest| parameter named `BODY' in |lambda-list|@>))))
 
-(defun operator-with-body-p (operator)
-  (and (fboundp operator)
-       (lambda-list-body operator)))
+@ Some macros don't use a |&body| parameter, but should. So we accept a
+|&rest| parameter whose name is `BODY' as being close enough.
 
-(defun print-form-with-body (stream list)
-  (write-string "\\(" stream)
-  (pprint-logical-block (stream list :per-line-prefix "&" :suffix "\\)")
-    (pprint-exit-if-list-exhausted)
-    (print-symbol stream (pprint-pop) t)
-    (macrolet ((print-next (indentation)
-                 `(progn
-                    (pprint-exit-if-list-exhausted)
-                    (let ((next (pprint-pop)))
-                      (cond ((maybe-print-newline stream next)
-                             (write-string ,indentation stream))
-                            (t (write-char #\Space stream)
-                               (write next :stream stream)))))))
-      (dotimes (i (lambda-list-body (car list)))
-        (print-next "\\qquad"))
-      (loop
-        (print-next "\\quad")))))
-
-(set-weave-dispatch '(cons (and symbol (satisfies operator-with-body-p)))
-                     #'print-form-with-body 0)
-
-(set-weave-dispatch '(cons (and symbol (satisfies fboundp)))
-                     #'print-fun-call -1)
-
-(set-weave-dispatch 'cons #'print-list -2)
-
-@ Since we don't provide a backquote macro function implementation, our
-handling of backquoted forms is necessarily implementation-specific.
-We assume that the implementation exposes enough of its internal machinery
-for us to use.
-
-@ @e
-#+sbcl
-(progn
-  (import sb-impl::*backq-tokens*)
-  (import '(sb-impl::pprint-backquote sb-impl::pprint-backq-comma)))
-
-@ @l
-#+sbcl
-(progn
-  (set-pprint-dispatch '(cons (eql backq-list)) #'pprint-backquote)
-  (set-pprint-dispatch '(cons (eql backq-list*)) #'pprint-backquote)
-  (set-pprint-dispatch '(cons (eql backq-append)) #'pprint-backquote)
-  (set-pprint-dispatch '(cons (eql backq-nconc)) #'pprint-backquote)
-  (set-pprint-dispatch '(cons (eql backq-cons)) #'pprint-backquote)
-  (set-pprint-dispatch '(cons (eql backq-vector)) #'pprint-backquote)
-  (set-pprint-dispatch '(cons (eql backq-comma)) #'pprint-backq-comma)
-  (set-pprint-dispatch '(cons (eql backq-comma-at)) #'pprint-backq-comma)
-  (set-pprint-dispatch '(cons (eql backq-comma-dot)) #'pprint-backq-comma))
+@<Position of a |&rest|...@>=
+(let ((rest (position '&rest lambda-list)))
+  (when rest
+    (let ((restarg (symbol-name (elt lambda-list (1+ rest)))))
+      (when (string= restarg "BODY")
+        rest))))

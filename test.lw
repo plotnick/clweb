@@ -26,5 +26,13 @@ pretty-printing capabilities of |weave|.
     (loop for x = (read stream nil nil nil) ; |x| is a loop-local variable
           while x collect x)))
 
-(defvar *non-standard-output* *standard-output*
-  "It ain't that non-standard.")
+(defvar *data-list* '(a b c if 2 3)
+  "Some stuff.")
+
+(defun body-forms ()
+  (multiple-value-bind (a b c)
+      (three-values)
+    (body-form-1)
+    (body-form-2)))
+
+
