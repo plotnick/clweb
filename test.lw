@@ -35,4 +35,6 @@ pretty-printing capabilities of |weave|.
     (body-form-1)
     (body-form-2)))
 
-
+(defmacro backq-forms (foo bar list &aux (var (gensym)))
+  `(dolist (,var ,list ,list)
+     (funcall ,(foo `(,@bar)) ,var)))
