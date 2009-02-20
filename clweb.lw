@@ -702,6 +702,19 @@ only during weaving.
     :report "Assume the section is just being cited."
     (find-section name)))
 
+@ We need one last utility before coming to the main section reader.
+When we're accumulating text, we don't want to bother with empty strings.
+So we use the following macro, which is like |push|, but does nothing if
+the new object is an empty string or |nil|.
+
+@l
+(defmacro maybe-push (obj place &aux (g (gensym)))
+  `(let ((,g ,obj))
+     (when (typecase ,g
+             (string (plusp (length ,g)))
+             (t ,g))
+       (push ,g ,place))))
+
 @ We come now to the heart of the \WEB\ parser. This function is a
 tiny state machine that models the global syntax of a \WEB\ file.
 (We can't just use reader macros since sections and their parts lack
@@ -735,7 +748,7 @@ inner-Lisp material is not recognized in limbo text.
 @<Accumulate limbo text in |commentary|@>=
 (with-mode :limbo
   (loop
-    (push (snarf-until-control-char stream #\@) commentary)
+    (maybe-push (snarf-until-control-char stream #\@) commentary)
     (setq form (read-preserving-whitespace stream nil *eof* nil))
     (typecase form
       (eof (go eof))
@@ -757,7 +770,7 @@ part is detected, we also set the name of the current section, which may be
 @<Accumulate \TeX-mode material in |commentary|@>=
 (with-mode :TeX
   (loop
-    (push (snarf-until-control-char stream '(#\@ #\|)) commentary)
+    (maybe-push (snarf-until-control-char stream '(#\@ #\|)) commentary)
     (setq form (read-preserving-whitespace stream nil *eof* nil))
     (typecase form
       (eof (go eof))
@@ -1005,24 +1018,31 @@ re-reads such strings and picks up any inner-Lisp material.
             until (eof-p forms) collect forms))))
 
 @ @l
-(defun print-commentary (stream section)
-  (print-TeX stream (section-commentary section)))
+(defun print-limbo (stream section)
+  (let ((commentary (section-commentary section)))
+    (when commentary
+      (print-TeX stream commentary))))
 
+(set-weave-dispatch 'limbo-section #'print-limbo 1)
+
+@ @l
 (defun print-section (stream section)
   (format stream "~&\\~:[M~;N{1}~]{~D}" ; `\.{\{1\}}' should be depth
           (typep section 'starred-section)
           (section-number section))
-  (print-commentary stream section)
-  (when (section-name section)
-    (write-string "\\Y" stream)
-    (print-section-name stream (find-section (section-name section)))
-    (write-string "${}\\E{}$" stream))
-  (dolist (form (section-code section))
-    (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
-      (write form :stream stream)))
+  (let ((commentary (section-commentary section))
+        (name (section-name section))
+        (code (section-code section)))
+    (print-TeX stream commentary)
+    (when (and commentary code) (write-string "\\Y" stream))
+    (when name
+      (print-section-name stream (find-section (section-name section)))
+      (write-string "${}\\E{}$" stream))
+    (dolist (form code)
+      (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
+        (write form :stream stream))))
   (write-string "\\fi" stream))
 
-(set-weave-dispatch 'limbo-section #'print-commentary 1)
 (set-weave-dispatch 'section #'print-section)
 
 @ @l
