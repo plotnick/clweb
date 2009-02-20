@@ -58,6 +58,9 @@ instances themselves are around in any case.
                                :adjustable t
                                :fill-pointer 0))
 
+(defun current-section ()
+  (elt *sections* (1- (fill-pointer *sections*))))
+
 (defmethod initialize-instance :after ((section section) &rest initargs &key)
   (declare (ignore initargs))
   (setf (section-number section) (vector-push-extend section *sections*)))
@@ -135,6 +138,7 @@ inasmuch as they have specialized |section-name|, |section-code|, and
   ((key :accessor section-name :initarg :name)
    (value :accessor section-code :initarg :code)
    (number :accessor section-number)
+   (used-by :accessor used-by :initform '())
    (see-also :accessor see-also :initform '())))
 
 @ Setting the code for a named section usually involves appending the given
@@ -680,7 +684,9 @@ only during weaving.
               @<Signal an error about section definition in Lisp mode@>)
           (if definition-allowed-p
                @<Signal an error about section name use in \TeX\ mode@>
-               (find-section name))))))
+               (let ((named-section (find-section name)))
+                 (pushnew (current-section) (used-by named-section))
+                 named-section))))))
 
 (set-control-code #\< (make-section-name-reader t) '(:TeX))
 (set-control-code #\< (make-section-name-reader nil) '(:lisp :inner-lisp))
@@ -806,8 +812,8 @@ read them.
             (not append-p))
     (setf (section-number named-section) number))
   (if append-p
-      (pushnew number (see-also named-section))
-      (setf (see-also named-section) (list number))))
+      (pushnew section (see-also named-section))
+      (setf (see-also named-section) (list section))))
 
 @*The tangler. Tangling involves recursively replacing each reference to a
 named section with the code accumulated for that section. The function
@@ -1030,22 +1036,31 @@ re-reads such strings and picks up any inner-Lisp material.
   (format stream "~&\\~:[M~;N{1}~]{~D}" ; `\.{\{1\}}' should be depth
           (typep section 'starred-section)
           (section-number section))
-  (let ((commentary (section-commentary section))
-        (name (section-name section))
-        (code (section-code section)))
+  (let* ((commentary (section-commentary section))
+         (name (section-name section))
+         (named-section (and name (find-section name)))
+         (code (section-code section)))
     (print-TeX stream commentary)
     (when (and commentary code) (write-string "\\Y" stream))
-    (when name
-      (let ((named-section (find-section (section-name section))))
-        (print-section-name stream named-section)
-        (format stream "${}~:[\\mathrel+~;~]\\E{}$"
-                (= (section-number section) (section-number named-section)))))
+    (when named-section
+      (print-section-name stream named-section)
+      (format stream "${}~:[\\mathrel+~;~]\\E{}$"
+              (= (section-number section) (section-number named-section))))
     (dolist (form code)
       (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
-        (write form :stream stream))))
+        (write form :stream stream)))
+    (when named-section
+      (print-xrefs stream #\A section (see-also named-section))
+      (print-xrefs stream #\U section (used-by named-section))))
   (write-string "\\fi" stream))
 
 (set-weave-dispatch 'section #'print-section)
+
+@ @l
+(defun print-xrefs (stream kind section xrefs)
+  (when (setq xrefs (remove section xrefs))
+    (format stream "~&\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}."
+            kind (sort (mapcar #'section-number xrefs) #'<))))
 
 @ @l
 (defun print-section-name (stream named-section)
