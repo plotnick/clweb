@@ -17,3 +17,24 @@ demonstrates how a named section may be defined piecewise.
 @ @<Natural...@>=1
 @ @<Natural...@>=@<The only even...@>
 
+@*Baz. The sole purpose of this section is to exercise some of the
+pretty-printing capabilities of |weave|.
+
+@l
+(defun read-from-file (file &key direction)
+  (with-open-file (stream file :direction direction)
+    (loop for x = (read stream nil nil nil) ; |x| is a loop-local variable
+          while x collect x)))
+
+(defvar *data-list* '(a b c if 2 3)
+  "Some stuff.")
+
+(defun body-forms ()
+  (multiple-value-bind (a b c)
+      (three-values)
+    (body-form-1)
+    (body-form-2)))
+
+(defmacro backq-forms (foo bar list &aux (var (gensym)))
+  `(dolist (,var ,list ,list)
+     (funcall ,(foo `(,@bar)) ,var)))

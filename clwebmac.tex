@@ -1,0 +1,11 @@
+\input cwebmac
+
+\let\1=\quad
+\let\2=\qquad
+
+\def\({(\kern.05em\cleartabs}
+\def\){\kern.05em)}
+\def\:#1{\leavevmode\hbox{\it:#1\/\kern.05em}} % keyword
+\def\'{\leavevmode{\bf '\/}} % quote
+\def\`{\leavevmode{\bf `\/}} % backquote
+\def\C#1{\leavevmode{\bf \char`,#1\/}\kern.025em} % Comma(-at, -dot)
