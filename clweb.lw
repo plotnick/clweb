@@ -153,9 +153,9 @@ development.
 @ When we look up a named section, the name used to perform the lookup,
 the name for the section in the tree, or both may be an abbreviation of
 the full section name. Any prefix of the full name is allowed, followed by
-`$\ldots$': e.g., |@<foo...@>| is an acceptable abbreviation for either
-|@<foo bar@>| or |@<foo baz@>|. It is a correctable error if a prefix is
-ambiguous.
+`$\ldots$': e.g., \.{@@<foo...@@>} is an acceptable abbreviation for either
+\.{@@<foo bar@@>} or \.{@@<foo baz@@>}. It is a correctable error if a prefix
+is ambiguous.
 
 @l
 (defmethod find-or-insert (item (root named-section) &key
@@ -211,12 +211,12 @@ a section by name, and creates a new one if no such section exists.
       (multiple-value-bind (section present-p)
           (find-or-insert name *named-sections*)
         (when present-p
-          ;; Update the section name in case the new one is longer.
+          ;; Update the section name in case the new one is better.
           (setf (section-name section) name))
         (values section present-p))))
 
-@ Section names are normalized processed by |squeeze|, which trims leading
-and trailing whitespace and replaces all runs of one or more whitespace
+@ Section names are normalized by |squeeze|, which trims leading and
+trailing whitespace, and replaces all runs of one or more whitespace
 characters with a single space.
 
 @l
@@ -225,19 +225,22 @@ characters with a single space.
 
 (defun squeeze (string)
   (flet ((whitespace-p (char) (find char *whitespace* :test #'char=)))
-    (coerce
-     (loop with squeezing = nil
-           for char across (string-trim *whitespace* string)
-           if (not squeezing)
-             if (whitespace-p char) do (setq squeezing t) and collect #\Space
-             else collect char
-           else
-             unless (whitespace-p char)
-               do (setq squeezing nil) and collect char)
-     'simple-string)))
+    (coerce @<Collect characters of |string|, squeezing whitespace@>
+            'simple-string)))
 
-@ We need some special comparison routines for section names that deal with
-abbreviations.
+@ @<Collect characters...@>=
+(loop with squeezing = nil
+      for char across (string-trim *whitespace* string)
+      if (not squeezing)
+        if (whitespace-p char) do (setq squeezing t) and collect #\Space
+        else collect char
+      else
+        unless (whitespace-p char) do (setq squeezing nil) and collect char)
+
+@ Here's a little utility routine that makes working with section names
+easier. Given a name, it returns two values: |t| or~|nil| depending on
+whether the name is a prefix or not, and the length of the non-`\.{...}'
+segment of the name.
 
 @l
 (defun section-name-prefix-p (name)
@@ -246,6 +249,10 @@ abbreviations.
         (values t (- len 3))
         (values nil len))))
 
+@ Next we need some special comparison routines for section names that
+handle abbreviations.
+
+@l
 (defun section-name-equal (name1 name2)
   (multiple-value-bind (prefix-1-p len1) (section-name-prefix-p name1)
     (multiple-value-bind (prefix-2-p len2) (section-name-prefix-p name2)
@@ -263,7 +270,8 @@ abbreviations.
 
 @ We only actually update the name of a section in two cases: if the new
 name is not an abbreviation but the old one was, or if they are both
-abbreviations, but the new one is shorter.
+abbreviations, but the new one is shorter. (We only need to compare against
+the shortest available prefix, since we detect ambiguous matches.)
 
 @l
 (defmethod (setf section-name) :around (new-name (section named-section))
