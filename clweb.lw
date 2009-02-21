@@ -1050,15 +1050,21 @@ re-reads such strings and picks up any inner-Lisp material.
       (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
         (write form :stream stream)))
     (when named-section
-      (print-xrefs stream #\A section (see-also named-section))
-      (print-xrefs stream #\U section (used-by named-section))))
+      (print-xrefs stream #\A (remove section (see-also named-section)))
+      (print-xrefs stream #\U (remove section (used-by named-section)))))
   (write-string "\\fi" stream))
 
 (set-weave-dispatch 'section #'print-section)
 
-@ @l
-(defun print-xrefs (stream kind section xrefs)
-  (when (setq xrefs (remove section xrefs))
+@ The cross-references lists use the macros \.{\\A} (for `also'), \.{\\U}
+(for `use'), \.{\\Q} (for `quote'), and their pluralized variants, along
+with the conjunction macros \.{\\ET} (for two section numbers) and~\.{\\ETs}
+(for between the last of three or more).
+
+@l
+(defun print-xrefs (stream kind xrefs)
+  (when xrefs
+    ;; This was fifteen lines of code in \CWEB. I love |format|.
     (format stream "~&\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}."
             kind (sort (mapcar #'section-number xrefs) #'<))))
 
