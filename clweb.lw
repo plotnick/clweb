@@ -909,8 +909,7 @@ current values, so that assignments to those variables in the \WEB\ code
 will not effect the calling environment.
 
 @l
-(defun load-web-from-stream (stream verbose print &optional (append-p t))
-  (when verbose (format t "~&; loading WEB from ~S~%" (pathname stream)))
+(defun load-web-from-stream (stream print &optional (append-p t))
   (let ((*readtable* *readtable*)
         (*package* *package*))
     (dolist (form (tangle (read-code-parts stream append-p)) t)
@@ -925,13 +924,14 @@ will not effect the calling environment.
                  (if-does-not-exist t)
                  (external-format :default))
   @<Initialize global variables@>
+  (when verbose (format t "~&; loading WEB from ~S~%" filespec))
   (if (streamp filespec)
-      (load-web-from-stream filespec verbose print)
+      (load-web-from-stream filespec print)
       (with-open-file (stream filespec
                        :direction :input
                        :external-format external-format
                        :if-does-not-exist (if if-does-not-exist :error nil))
-        (load-web-from-stream stream verbose print))))
+        (load-web-from-stream stream print))))
 
 @ This next function exists solely for the sake of front-ends that wish to
 load a piece of a \WEB, such as the author's `\.{clweb.el}'. Note that it
@@ -944,7 +944,7 @@ this allows for incremental redefinition.
   (when truename
     (unwind-protect
          (with-open-file (stream truename :direction :input)
-           (load-web-from-stream stream nil t append-p))
+           (load-web-from-stream stream t append-p))
       (delete-file truename))))
 
 @ The file tangler operates by writing out the tangled code to a Lisp source
