@@ -368,9 +368,11 @@ pretty-printer to decide where to break lines. They are represented in
 code forms by a unique unbound marker.
 
 @l
-(defvar *newline* (make-instance 'marker :name "Newline"))
+(defclass newline-marker (marker) ())
+(defun newline-p (obj) (typep obj 'newline-marker))
+(defvar *newline* (make-instance 'newline-marker))
 
-(set-pprint-dispatch `(eql ,*newline*)
+(set-pprint-dispatch 'newline-marker
                      (lambda (stream obj)
                        (declare (ignore obj))
                        (terpri stream)))
@@ -430,9 +432,11 @@ Note that we bind the |*empty-list*| marker to the value |'()| so that
 it's preserved during tangling.
 
 @l
-(defvar *empty-list* (make-instance 'marker :name "()" :value '()))
+(defclass empty-list-marker (marker) () (:default-initargs :value '()))
+(defun empty-list-p (obj) (typep obj 'empty-list-marker))
+(defvar *empty-list* (make-instance 'empty-list-marker))
 
-(set-pprint-dispatch `(eql ,*empty-list*)
+(set-pprint-dispatch 'empty-list-marker
                      (lambda (stream obj)
                        (write-string (marker-value obj) stream)))
 
@@ -729,8 +733,9 @@ explicit closing delimiters.) It returns a list of |section| objects.
 @l
 (defun read-sections (stream append-p)
   (flet ((finish-section (section commentary code)
-           (setf (section-commentary section) (nreverse commentary))
-           (setf (section-code section) (nreverse code))
+           @<Trim whitespace and reverse...@>
+           (setf (section-commentary section) commentary)
+           (setf (section-code section) code)
            (when (section-name section) @<Setup named section...@>)
            section))
     (prog (form commentary code section sections)
@@ -790,6 +795,10 @@ terminated by either {\sc EOF} or the start of a new section. If the code
 part was begun by a \.{@@e} control code, we evaluate the code forms as we
 read them.
 
+We also don't push newline markers if no code has been accumulated yet, nor
+do we accumulate more than one in a row. This simplifies the logic of the
+weaver.
+
 @<Accumulate Lisp-mode material in |code|@>=
 (check-type form start-code-marker)
 (with-mode :lisp
@@ -800,8 +809,23 @@ read them.
         (eof (go eof))
         (section (go commentary))
         (start-code-marker (error "Can't start a section with a code part"))
+        (newline-marker (unless (or (null code) (newline-p (car code)))
+                          (push form code)))
         (t (when evalp (eval (tangle form)))
            (push form code))))))
+
+@ We trim trailing whitespace from the last string in |commentary|, leading
+whitespace from the first, and any trailing newline marker from |code|.
+(Leading newlines are handled in |@<Accumulate Lisp-mode...@>|.)
+We then reverse both lists.
+
+@<Trim whitespace and reverse |commentary| and |code|@>=
+(when (stringp (car commentary))
+  (rplaca commentary (string-right-trim *whitespace* (car commentary))))
+(setq commentary (nreverse commentary))
+(when (stringp (car commentary))
+  (rplaca commentary (string-left-trim *whitespace* (car commentary))))
+(setq code (nreverse (if (newline-p (car code)) (cdr code) code)))
 
 @ @<Setup named section code, number, and cross-references@>=
 (let ((named-section (find-section (section-name section)))
@@ -979,20 +1003,18 @@ function for setting its entries.
   (weave-sections *sections* output-file))
 
 @ @l
-(defparameter *tex-prologue* (format nil "\\input clwebmac~%"))
-
 (defun weave-sections (sections output-file)
   (with-open-file (output output-file
                    :direction :output
                    :if-exists :supersede)
-    (princ *tex-prologue* output)
+    (format output "\\input clwebmac~%")
     (loop with *print-case* = :downcase
           with *print-escape* = nil
           with *print-pretty* = t
           with *print-pprint-dispatch* = *weave-pprint-dispatch*
           with *print-right-margin* = 1000
           for section across sections
-          do (pprint section output)
+          do (write section :stream output)
           finally (format output "~&\\bye~%"))))
 
 @ \TeX-mode material consists of a list of strings containing pure \TeX\ text
@@ -1041,18 +1063,22 @@ re-reads such strings and picks up any inner-Lisp material.
          (named-section (and name (find-section name)))
          (code (section-code section)))
     (print-TeX stream commentary)
-    (when (and commentary code) (write-string "\\Y" stream))
+    (fresh-line stream)
+    (when (and commentary code)
+      (format stream "\\Y~%"))
     (when named-section
       (print-section-name stream named-section)
-      (format stream "${}~:[\\mathrel+~;~]\\E{}$"
+      (format stream "${}~:[\\mathrel+~;~]\\E{}$~%"
               (= (section-number section) (section-number named-section))))
-    (dolist (form code)
-      (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
-        (write form :stream stream)))
+    (when code
+      (dolist (form code)
+        (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
+          (write form :stream stream)))
+      (fresh-line stream))
     (when named-section
       (print-xrefs stream #\A (remove section (see-also named-section)))
       (print-xrefs stream #\U (remove section (used-by named-section)))))
-  (write-string "\\fi" stream))
+  (format stream "\\fi~%"))
 
 (set-weave-dispatch 'section #'print-section)
 
@@ -1065,7 +1091,7 @@ with the conjunction macros \.{\\ET} (for two section numbers) and~\.{\\ETs}
 (defun print-xrefs (stream kind xrefs)
   (when xrefs
     ;; This was fifteen lines of code in \CWEB. I love |format|.
-    (format stream "~&\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}."
+    (format stream "\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}.~%"
             kind (sort (mapcar #'section-number xrefs) #'<))))
 
 @ @l
@@ -1079,12 +1105,12 @@ with the conjunction macros \.{\\ET} (for two section numbers) and~\.{\\ETs}
 @ Some of the markers get simple specialized pretty-printing functions.
 
 @l
-(set-weave-dispatch `(eql ,*newline*)
+(set-weave-dispatch 'newline-marker
                     (lambda (stream obj)
                       (declare (ignore obj))
                       (terpri stream)))
 
-(set-weave-dispatch `(eql ,*empty-list*)
+(set-weave-dispatch 'empty-list-marker
                     (lambda (stream obj)
                       (declare (ignore obj))
                       (write-string "\\(\\)" stream)))
