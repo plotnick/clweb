@@ -696,10 +696,9 @@
                                  *TEX-ESCAPE-ALIST*))
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
-(DEFMACRO PRINT-REMAINING-OBJECTS-AND-NEWLINES
-          (STREAM &KEY (FIRST NIL FIRST-SUPPLIED-P) INDENT)
+(DEFMACRO PRINT-REMAINING-OBJECTS-AND-NEWLINES (STREAM &KEY INDENT)
   (LET ((OBJ (GENSYM)) (NEXT (GENSYM)) (INDENTATION (GENSYM)))
-    `(DO ((,OBJ ,(IF FIRST-SUPPLIED-P FIRST '(PPRINT-POP)) ,NEXT)
+    `(DO ((,OBJ (PPRINT-POP) ,NEXT)
           (,NEXT)
           (,INDENTATION ,INDENT))
          (NIL)
@@ -714,11 +713,11 @@
          (SETQ ,NEXT (PPRINT-POP) ,@(WHEN INDENT `(,INDENTATION ,INDENT)))
          (UNLESS (EQ ,NEXT *NEWLINE*) (WRITE-CHAR ,#\  ,STREAM)))))))
 (DEFMACRO PRINT-LIST-WITH-LOGICAL-BLOCK
-          ((STREAM LIST)
+          ((STREAM LIST &OPTIONAL SUPPRESS-PREFIX)
            &BODY BODY
            &AUX (STREAM-VAR (GENSYM)) (LIST-VAR (GENSYM)))
   `(LET ((,STREAM-VAR ,STREAM) (,LIST-VAR ,LIST))
-     (WRITE-STRING ,"\\(" ,STREAM-VAR)
+     ,@(UNLESS SUPPRESS-PREFIX `((WRITE-STRING ,"\\(" ,STREAM-VAR)))
      (IF *INNER-LISP*
          (PPRINT-LOGICAL-BLOCK (,STREAM-VAR ,LIST-VAR :SUFFIX "\\)") ,@BODY)
          (PPRINT-LOGICAL-BLOCK
@@ -729,22 +728,21 @@
                                  (PRINT-REMAINING-OBJECTS-AND-NEWLINES STREAM)))
 (SET-WEAVE-DISPATCH 'CONS #'PRINT-LIST -2)
 (DEFUN PRINT-FUN-CALL (STREAM FORM)
-  (PRINT-LIST-WITH-LOGICAL-BLOCK (STREAM FORM)
-                                 (WRITE (PPRINT-POP) :STREAM STREAM)
-                                 (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-                                 (LET ((NEXT (PPRINT-POP)))
-                                   (COND
-                                    ((EQ NEXT *NEWLINE*)
-                                     (UNLESS *INNER-LISP*
-                                       (FORMAT STREAM "\\cr~:@_"))
-                                     (PRINT-REMAINING-OBJECTS-AND-NEWLINES
-                                      STREAM))
-                                    (T (WRITE-CHAR #\  STREAM)
-                                     (PPRINT-INDENT :CURRENT 0 STREAM)
-                                     (UNLESS *INNER-LISP*
-                                       (WRITE-CHAR #\& STREAM))
-                                     (PRINT-REMAINING-OBJECTS-AND-NEWLINES
-                                      STREAM :FIRST NEXT :INDENT "&"))))))
+  (COND
+   ((OR (< (LENGTH FORM) 3) (NOTANY #'NEWLINE-P FORM))
+    (FORMAT STREAM "~<\\(~;~@{~W~^ ~}~;\\)~:>" FORM))
+   (T
+    (LET ((FIRST (FIRST FORM)) (SECOND (SECOND FORM)))
+      (COND
+       ((NEWLINE-P SECOND)
+        (PRINT-LIST-WITH-LOGICAL-BLOCK (STREAM FORM)
+                                       (PRINT-REMAINING-OBJECTS-AND-NEWLINES
+                                        STREAM)))
+       (T (WRITE-STRING "\\(" STREAM) (WRITE FIRST :STREAM STREAM)
+        (WRITE-CHAR #\  STREAM)
+        (PRINT-LIST-WITH-LOGICAL-BLOCK (STREAM (CDR FORM) T)
+                                       (PRINT-REMAINING-OBJECTS-AND-NEWLINES
+                                        STREAM))))))))
 (SET-WEAVE-DISPATCH '(CONS (AND SYMBOL (SATISFIES FBOUNDP))) #'PRINT-FUN-CALL
                     -1)
 (DEFUN PRINT-FORM-WITH-BODY (STREAM FORM)
