@@ -1590,8 +1590,7 @@ from the argument list.
 
 (set-weave-dispatch 'quote-marker
                     (lambda (stream obj)
-                      (write-string "\\'" stream)
-                      (print-list stream (quoted-form obj))))
+                      (format stream "\\'~W" (quoted-form obj))))
 
 (set-weave-dispatch 'comment-marker
                     (lambda (stream obj)
@@ -1602,8 +1601,7 @@ from the argument list.
 @ @l
 (set-weave-dispatch 'backquote-marker
                     (lambda (stream obj)
-                      (write-string "\\`" stream)
-                      (write (backq-form obj) :stream stream)))
+                      (format stream "\\`~W" (backq-form obj))))
 
 (set-weave-dispatch 'comma-marker
                     (lambda (stream obj)

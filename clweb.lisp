@@ -794,8 +794,7 @@
                       (WRITE-STRING "\\(\\)" STREAM)))
 (SET-WEAVE-DISPATCH 'QUOTE-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (WRITE-STRING "\\'" STREAM)
-                      (PRINT-LIST STREAM (QUOTED-FORM OBJ))))
+                      (FORMAT STREAM "\\'~W" (QUOTED-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'COMMENT-MARKER
                     (LAMBDA (STREAM OBJ)
                       (WRITE-STRING "\\C{" STREAM)
@@ -804,8 +803,7 @@
                       (WRITE-STRING "}" STREAM)))
 (SET-WEAVE-DISPATCH 'BACKQUOTE-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (WRITE-STRING "\\`" STREAM)
-                      (WRITE (BACKQ-FORM OBJ) :STREAM STREAM)))
+                      (FORMAT STREAM "\\`~W" (BACKQ-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'COMMA-MARKER
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\CO{~@[~C~]}~W" (COMMA-MODIFIER OBJ)
