@@ -6,6 +6,8 @@
 \def\({(\kern.05em\cleartabs}
 \def\){\kern.05em)}
 \def\:#1{\leavevmode\hbox{\it:#1\/\kern.05em}} % keyword
-\def\'{\leavevmode{\bf '\/}} % quote
-\def\`{\leavevmode{\bf `\/}} % backquote
-\def\C#1{\leavevmode{\bf \char`,#1\/}\kern.025em} % Comma(-at, -dot)
+\def\'{\leavevmode'\kern.025em} % quote
+\def\`{\leavevmode`\kern.025em} % backquote
+\def\#{\leavevmode{\eightrm\raise0.25ex\hbox{\char'43}}}
+\def\CH#1{\leavevmode$\backslash$\.{#1}} % character
+\def\CO#1{\leavevmode,#1\kern.025em} % comma(-at, -dot)

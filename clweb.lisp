@@ -179,12 +179,13 @@
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\( #'LIST-READER NIL (READTABLE-FOR-MODE MODE)))
 (DEFCLASS QUOTE-MARKER (MARKER)
-          ((FORM :READER QUOTED-FORM :INITARG :FORM) (QUOTE :INITARG :QUOTE)))
+          ((FORM :READER QUOTED-FORM :INITARG :FORM)
+           (QUOTE :READER QUOTE-MARKER-QUOTE :INITARG :QUOTE)))
 (DEFMETHOD MARKER-BOUNDP ((MARKER QUOTE-MARKER)) T)
 (DEFMETHOD MARKER-VALUE ((MARKER QUOTE-MARKER))
            (LIST (SLOT-VALUE MARKER 'QUOTE) (SLOT-VALUE MARKER 'FORM)))
 (DEFMETHOD PRINT-OBJECT ((OBJ QUOTE-MARKER) STREAM)
-           (FORMAT STREAM "'~W" (QUOTED-FORM OBJ)))
+           (FORMAT STREAM "(~W ~W)" (QUOTE-MARKER-QUOTE OBJ) (QUOTED-FORM OBJ)))
 (DEFUN SINGLE-QUOTE-READER (STREAM CHAR)
   (DECLARE (IGNORE CHAR))
   (MAKE-INSTANCE 'QUOTE-MARKER :QUOTE 'QUOTE :FORM (READ STREAM T NIL T)))
@@ -642,22 +643,6 @@
   (PRINT-TEX STREAM (READ-TEX-FROM-STRING (SECTION-NAME NAMED-SECTION)))
   (WRITE-STRING "\\X" STREAM))
 (SET-WEAVE-DISPATCH 'NAMED-SECTION #'PRINT-SECTION-NAME)
-(SET-WEAVE-DISPATCH 'NEWLINE-MARKER
-                    (LAMBDA (STREAM OBJ)
-                      (DECLARE (IGNORE OBJ))
-                      (TERPRI STREAM)))
-(SET-WEAVE-DISPATCH 'EMPTY-LIST-MARKER
-                    (LAMBDA (STREAM OBJ)
-                      (DECLARE (IGNORE OBJ))
-                      (WRITE-STRING "\\(\\)" STREAM)))
-(SET-WEAVE-DISPATCH 'QUOTE-MARKER
-                    (LAMBDA (STREAM OBJ)
-                      (WRITE-STRING "\\'" STREAM)
-                      (PRINT-LIST STREAM (QUOTED-FORM OBJ))))
-(SET-WEAVE-DISPATCH 'COMMENT-MARKER
-                    (LAMBDA (STREAM OBJ)
-                      (PRINT-TEX STREAM
-                                 (READ-TEX-FROM-STRING (COMMENT-TEXT OBJ)))))
 (DEFUN WRITE-ESCAPED-STRING (STREAM STRING ESCAPE-CHARS)
   (DOTIMES (I (LENGTH STRING))
     (LET* ((CHAR (CHAR STRING I))
@@ -667,7 +652,7 @@
         (STRING (WRITE-STRING ESCAPE STREAM))
         (NULL (WRITE-CHAR CHAR STREAM))))))
 (DEFPARAMETER *TEX-ESCAPE-ALIST*
-  '((" \\%&#$^_|~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
+  '((" \\%&#$^_~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 (DEFUN PRINT-STRING (STREAM STRING)
   (WRITE-STRING "\\.{\"" STREAM)
   (WRITE-ESCAPED-STRING STREAM STRING
@@ -678,12 +663,13 @@
 (DEFUN PRINT-CHAR (STREAM CHAR)
   (LET ((GRAPHICP (AND (GRAPHIC-CHAR-P CHAR) (STANDARD-CHAR-P CHAR)))
         (NAME (CHAR-NAME CHAR)))
-    (WRITE-STRING "{\\tt \\#\\\\" STREAM)
+    (WRITE-STRING "\\#\\CH{" STREAM)
     (WRITE-ESCAPED-STRING STREAM
                           (IF (AND NAME (NOT GRAPHICP)) NAME
                               (MAKE-STRING 1 :INITIAL-ELEMENT CHAR))
                           (LIST* '("{}" . #\\) *TEX-ESCAPE-ALIST*))
-    (WRITE-STRING "}" STREAM)))
+    (WRITE-STRING "}" STREAM)
+    CHAR))
 (SET-WEAVE-DISPATCH 'CHARACTER #'PRINT-CHAR)
 (DEFVAR *HIGHLIGHT-SPECIAL-SYMBOLS* NIL)
 (DEFUN DEF-P (SYMBOL)
@@ -797,14 +783,34 @@
             (WHEN REST
               (LET ((RESTARG (SYMBOL-NAME (ELT LAMBDA-LIST (1+ REST)))))
                 (WHEN (STRING= RESTARG "BODY") REST))))))))
+(SET-WEAVE-DISPATCH 'NEWLINE-MARKER
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (TERPRI STREAM)))
+(SET-WEAVE-DISPATCH 'EMPTY-LIST-MARKER
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (WRITE-STRING "\\(\\)" STREAM)))
+(SET-WEAVE-DISPATCH 'QUOTE-MARKER
+                    (LAMBDA (STREAM OBJ)
+                      (WRITE-STRING "\\'" STREAM)
+                      (PRINT-LIST STREAM (QUOTED-FORM OBJ))))
+(SET-WEAVE-DISPATCH 'COMMENT-MARKER
+                    (LAMBDA (STREAM OBJ)
+                      (PRINT-TEX STREAM
+                                 (READ-TEX-FROM-STRING (COMMENT-TEXT OBJ)))))
 (SET-WEAVE-DISPATCH 'BACKQUOTE-MARKER
-                    (LAMBDA (STREAM MARKER)
+                    (LAMBDA (STREAM OBJ)
                       (WRITE-STRING "\\`" STREAM)
-                      (WRITE (BACKQ-FORM MARKER) :STREAM STREAM)))
+                      (WRITE (BACKQ-FORM OBJ) :STREAM STREAM)))
 (SET-WEAVE-DISPATCH 'COMMA-MARKER
-                    (LAMBDA (STREAM MARKER)
-                      (FORMAT STREAM "\\C{~@[~C~]}~W" (COMMA-MODIFIER MARKER)
-                              (COMMA-FORM MARKER))))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\CO{~@[~C~]}~W" (COMMA-MODIFIER OBJ)
+                              (COMMA-FORM OBJ))))
+(SET-WEAVE-DISPATCH 'FUNCTION-MARKER
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\#\\'~S" (QUOTED-FORM OBJ)))
+                    1)
 (SET-WEAVE-DISPATCH 'SIMPLE-VECTOR-MARKER
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\#~@[~D~]~S"

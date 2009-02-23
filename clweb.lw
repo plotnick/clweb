@@ -4,6 +4,10 @@
 
 \def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
+\def\WEB{{\tt WEB}}
+\def\CWEB{{\tt CWEB}}
+\def\etc.{{\it \char`&c.}} % doesn't handle spacefactor
+\def\metasyn#1{\leavevmode $\langle${\it #1}$\rangle$} % metasyntactic variable
 
 @*Introduction. The two primary operations that a literate programming
 system makes available are {\it tangling\/} and {\/weaving\/}. The former
@@ -334,7 +338,8 @@ given forms with |*readtable*| bound appropriately for the given mode.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defvar *eof* (make-symbol "EOF")))
 (defun eof-p (x) (eq x *eof*))
-(deftype eof () '(satisfies eof-p)) ; should be |`(eql ,*eof*)|
+;; This should be |`(eql ,*eof*)|, but SBCL doesn't like that.
+(deftype eof () '(satisfies eof-p))
 
 @ Next, we define a class of objects called {\it markers\/} that denote
 abstract objects in source code. Some of these objects, such as newlines
@@ -429,20 +434,20 @@ preserved during tangling, and that like newlines, we only need one.
 
 @ {\it Single-Quote.} Similarly, we want to preserve the distinction
 between a form quoted with |#\'| and one quoted (for whatever reason) with
-|quote|. We'll use this marker class for \.{#'}, too, which is why it's a
+|quote|. We'll use this marker class for \.{\#'}, too, which is why it's a
 little more general than one might think is needed.
 
 @l
 (defclass quote-marker (marker)
   ((form :reader quoted-form :initarg :form)
-   (quote :initarg :quote)))
+   (quote :reader quote-marker-quote :initarg :quote)))
 
 (defmethod marker-boundp ((marker quote-marker)) t)
 (defmethod marker-value ((marker quote-marker))
   (list (slot-value marker 'quote) (slot-value marker 'form)))
 
 (defmethod print-object ((obj quote-marker) stream)
-  (format stream "'~W" (quoted-form obj)))
+  (format stream "(~W ~W)" (quote-marker-quote obj) (quoted-form obj)))
 
 (defun single-quote-reader (stream char)
   (declare (ignore char))
@@ -644,9 +649,9 @@ the length specification and consequent possible abbreviation.
 @ Sharpsign asterisk is similar to sharpsign left-parenthesis, but the token
 following the asterisk must be composed entirely of \.{0}s and \.{1}s, which
 are used to initialize a simple bit vector. It supports the same kind of
-abbreviation that \.{#()} does.
+abbreviation that \.{\#()} does.
 
-But note the use of the word `token' above. By defining \.{#*} in terms of the
+But note the use of the word `token' above. By defining \.{\#*} in terms of the
 {\it token\/} following the \.{*}, the authors of the standard have made it
 very, very difficult for a portable program to emulate the specified behavior,
 since only the built-in reader knows how to tokenize for the current
@@ -778,9 +783,9 @@ reader macro functions that implement the control codes.
 
 @l
 (dolist (mode *modes*)
-  ;; The CL standard does not say that calling MAKE-DISPATCH-MACRO-CHARACTER
+  ;; The CL standard does not say that calling |make-dispatch-macro-character|
   ;; on a character that's already a dispatching macro character is supposed
-  ;; to signal an error, but SBCL does so; hence the IGNORE-ERRORS.
+  ;; to signal an error, but SBCL does so; hence the |ignore-errors|.
   (ignore-errors
     (make-dispatch-macro-character #\@ t (readtable-for-mode mode))))
 
@@ -826,7 +831,7 @@ is evaluated at read-time {\it in addition to\/} being tangled and therefore
 evaluated at run-time and possibly compile-time, too. Sections containing
 evaluated code-parts should be used only for establishing state that is
 needed by the reader: package definitions, structure definitions that are
-used with the \.{#S} reader macro, \etc.
+used with the \.{\#S} reader macro, \etc.
 
 @l
 (defclass start-code-marker (marker)
@@ -1046,7 +1051,8 @@ possibly-expanded form, and a boolean representing whether or not any
 expansions were actually performed.
 
 Note that this is a splicing operation, not a simple replacement: if
-|@<foo@>\='(x y)|, then |(tangle-1 '(a @<foo@> b))|$\rarrow$|(a x y b)|,~|t|.
+\X$n$:foo\X$\mathrel\E$|(x y)|, then
+\(\\{tangle-1} \'(\\{a} \X$n$:foo\X\ \\{b}\)\)$\to$|(a x y b)|,~|t|.
 
 Tangling also replaces bound markers with their associated values, and
 removes unbound markers.
@@ -1300,29 +1306,6 @@ with the conjunction macros \.{\\ET} (for two section numbers) and~\.{\\ETs}
 
 (set-weave-dispatch 'named-section #'print-section-name)
 
-@ Some of the markers get simple specialized pretty-printing functions.
-
-@l
-(set-weave-dispatch 'newline-marker
-                    (lambda (stream obj)
-                      (declare (ignore obj))
-                      (terpri stream)))
-
-(set-weave-dispatch 'empty-list-marker
-                    (lambda (stream obj)
-                      (declare (ignore obj))
-                      (write-string "\\(\\)" stream)))
-
-(set-weave-dispatch 'quote-marker
-                    (lambda (stream obj)
-                      (write-string "\\'" stream)
-                      (print-list stream (quoted-form obj))))
-
-(set-weave-dispatch 'comment-marker
-                    (lambda (stream obj)
-                      (print-TeX stream
-                                 (read-TeX-from-string (comment-text obj)))))
-
 @ Because we're outputting \TeX, we need to carefully escape characters that
 \TeX\ treats as special. Unfortunately, because \TeX's syntax is so malleable
 (not unlike Lisp's), it's nontrivial to decide what to escape, how, and when.
@@ -1348,7 +1331,7 @@ string, in which case it is output instead of the character being considered.
         (null (write-char char stream))))))
 
 (defparameter *tex-escape-alist*
-  '((" \\%&#$^_|~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
+  '((" \\%&#$^_~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 
 @ @l
 (defun print-string (stream string)
@@ -1367,13 +1350,14 @@ string, in which case it is output instead of the character being considered.
   (let ((graphicp (and (graphic-char-p char)
                        (standard-char-p char)))
         (name (char-name char)))
-    (write-string "{\\tt \\#\\\\" stream)
+    (write-string "\\#\\CH{" stream)
     (write-escaped-string stream
                           (if (and name (not graphicp))
                               name
                               (make-string 1 :initial-element char))
                           (list* '("{}" . #\\) *tex-escape-alist*))
-    (write-string "}" stream)))
+    (write-string "}" stream)
+    char))
 
 (set-weave-dispatch 'character #'print-char)
 
@@ -1556,7 +1540,7 @@ from the opening parenthesis, and the body subforms by one quad.
 
 @ We'll need a function that can reliably extract a $\lambda$-list from a
 function designator. Under SBCL, such a routine is available in the
-"SB-INTROSPECT" package.
+|sb-introspect| package.
 
 @e
 #+sbcl
@@ -1580,10 +1564,10 @@ from the argument list.
    (let ((lambda-list (remove '&optional
                               (clean-arglist (function-arglist operator)))))
      (or (position '&body lambda-list)
-         @<Position of a |&rest| parameter named `BODY' in |lambda-list|@>))))
+         @<Position of a |&rest| parameter named `body' in |lambda-list|@>))))
 
 @ Some macros don't use a |&body| parameter, but should. So we accept a
-|&rest| parameter whose name is `BODY' as being close enough.
+|&rest| parameter whose name is `body' as being close enough.
 
 @<Position of a |&rest|...@>=
 (let ((rest (position '&rest lambda-list)))
@@ -1595,16 +1579,45 @@ from the argument list.
 @ Markers.
 
 @l
+(set-weave-dispatch 'newline-marker
+                    (lambda (stream obj)
+                      (declare (ignore obj))
+                      (terpri stream)))
+
+(set-weave-dispatch 'empty-list-marker
+                    (lambda (stream obj)
+                      (declare (ignore obj))
+                      (write-string "\\(\\)" stream)))
+
+(set-weave-dispatch 'quote-marker
+                    (lambda (stream obj)
+                      (write-string "\\'" stream)
+                      (print-list stream (quoted-form obj))))
+
+(set-weave-dispatch 'comment-marker
+                    (lambda (stream obj)
+                      (print-TeX stream
+                                 (read-TeX-from-string (comment-text obj)))))
+
+@ @l
 (set-weave-dispatch 'backquote-marker
-                    (lambda (stream marker)
+                    (lambda (stream obj)
                       (write-string "\\`" stream)
-                      (write (backq-form marker) :stream stream)))
+                      (write (backq-form obj) :stream stream)))
 
 (set-weave-dispatch 'comma-marker
-                    (lambda (stream marker)
-                      (format stream "\\C{~@[~C~]}~W"
-                              (comma-modifier marker)
-                              (comma-form marker))))
+                    (lambda (stream obj)
+                      (format stream "\\CO{~@[~C~]}~W"
+                              (comma-modifier obj)
+                              (comma-form obj))))
+
+@ @l
+; Need a higher priority than |quote-marker|.
+(set-weave-dispatch 'function-marker
+                    (lambda (stream obj)
+                      (format stream "\\#\\'~S" (quoted-form obj)))
+                    1)
+
 @ @l
 (set-weave-dispatch 'simple-vector-marker
                     (lambda (stream obj)
@@ -1613,6 +1626,7 @@ from the argument list.
                                    (slot-value obj 'length))
                               (slot-value obj 'list))))
 
+; Need a higher priority than |simple-vector-marker|.
 (set-weave-dispatch 'simple-bit-vector-marker
                     (lambda (stream obj)
                       (format stream "\\#~@[~D~]*~A"
@@ -1622,7 +1636,7 @@ from the argument list.
                                                 (ecase bit (0 #\0) (1 #\1)))
                                               (slot-value obj 'list))
                                       'string)))
-                    1) ; need a higher priority than |simple-vector-marker|
+                    1)
 
 @ @l
 (set-weave-dispatch 'readtime-eval-marker
