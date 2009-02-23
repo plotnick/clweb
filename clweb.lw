@@ -279,14 +279,15 @@ the shortest available prefix, since we detect ambiguous matches.)
 
 @l
 (defmethod (setf section-name) :around (new-name (section named-section))
-  (multiple-value-bind (new-prefix-p new-len)
-      (section-name-prefix-p new-name)
-    (multiple-value-bind (old-prefix-p old-len)
-        (section-name-prefix-p (section-name section))
-      (if (or (and old-prefix-p (not new-prefix-p))
-              (and old-prefix-p new-prefix-p (< new-len old-len)))
-          (call-next-method)
-          new-name))))
+  (when new-name
+    (multiple-value-bind (new-prefix-p new-len)
+        (section-name-prefix-p new-name)
+      (multiple-value-bind (old-prefix-p old-len)
+          (section-name-prefix-p (section-name section))
+        (if (or (and old-prefix-p (not new-prefix-p))
+                (and old-prefix-p new-prefix-p (< new-len old-len)))
+            (call-next-method)
+            new-name)))))
 
 @*Reading. We recognize five distinct modes, or contexts, for reading.
 Limbo mode is for \TeX\ text that proceeds the first section in a file.
@@ -336,66 +337,128 @@ given forms with |*readtable*| bound appropriately for the given mode.
 (deftype eof () '(satisfies eof-p)) ; should be |`(eql ,*eof*)|
 
 @ Next, we define a class of objects called {\it markers\/} that denote
-objects in source code, but that would ordinarily never be returned by
-|read|. Markers may be {\it bound\/} to a value, which will be used in
-place of an occurrence of that marker when the containing form is
-tangled. They may also be unbound, in which case they are removed from
-their containing form.
+abstract objects in source code. Some of these objects, such as newlines
+and comments, are ones that would ordinarily be ignored by the reader.
+Others, such as \.{()} and~\.{'}, are indistinguishable after reading from
+other, semantically equivalent objects (here, |nil| and |quote|), but we
+want to preserve the distinction for the purposes of output. In fact, nearly
+every standard macro character in Common Lisp is `lossy', in the sense that
+the original source code form can not be reliably recovered from the object
+returned by |read|.
+
+But during weaving, we want to more closely approximate the original source
+code than would be possible using the standard reader. Markers are our
+solution to this problem: we define reader macro functions for all of the
+standard macro characters that return markers that let us reconstruct, to
+varying degrees of accuracy, what was originally given in the source.
+
+Aside from defining whatever slots are necessary for a given marker class,
+markers may also be {\it bound\/} to a value, which will be used in place
+of an occurrence of that marker when the containing form is tangled. If a
+marker is bound---i.e., if |marker-boundp| returns non-nil when called
+with it as an argument---then the tangler will call |marker-value| to
+obtain the associated value. Otherwise, the marker will be silently dropped
+from its containing form: this is useful, e.g., for newlines and comments.
 
 @l
 (defclass marker ()
-  ((name :accessor marker-name :initarg :name)
-   (value :accessor marker-value :initarg :value))
-  (:default-initargs :name nil))
+  ((value :reader marker-value :initarg :value)))
 
 (defgeneric marker-boundp (marker))
 (defmethod marker-boundp ((marker marker))
   (slot-boundp marker 'value))
 
-@ This is purely for debugging purposes; later, we'll define define
-pretty-printing functions for markers that we use during weaving.
+@ We also define |print-object| methods for all marker classes. These
+methods are distinct from the pretty-printing routines used by the weaver,
+and usually less precise, in that they don't try to approximate the original
+source form. The idea of these methods to produce a printed reprsentation of
+an object that is semantically equivalent to the one originally specified.
+
+The simple method defined here suffices for many marker types: it simply
+prints the marker's value if it is bound.
 
 @l
-(defmethod print-object ((object marker) stream)
-  (let ((name (marker-name object)))
-    (if name
-        (print-unreadable-object (object stream :type t :identity nil)
-          (princ name stream))
-        (print-unreadable-object (object stream :type t :identity t)))))
+(defmethod print-object ((obj marker) stream)
+  (when (marker-boundp obj)
+    (write (marker-value obj) :stream stream)))
 
-@ We preserve newlines in Lisp code so that we don't have to rely on the
-pretty-printer to decide where to break lines. They are represented in
-code forms by a unique unbound marker.
+@ Our first marker is for newlines, which we preserve so that we don't have
+to rely on the pretty-printer to decide where to break lines. They are
+represented in code forms by an unbound marker (so they will simply be
+dropped by the tangler). Since all newlines are equivalent to all other
+newlines, the reader macro function always returns the same instance.
+
+We also define a predicate for newline markers, because the section reader
+below will want to take special action in the presence of newlines.
 
 @l
 (defclass newline-marker (marker) ())
 (defun newline-p (obj) (typep obj 'newline-marker))
+
 (defvar *newline* (make-instance 'newline-marker))
-
-(set-pprint-dispatch 'newline-marker
-                     (lambda (stream obj)
-                       (declare (ignore obj))
-                       (terpri stream)))
-
 (set-macro-character #\Newline (constantly *newline*)
                      nil (readtable-for-mode :lisp))
 
-@ Comments in Lisp code also need to be preserved for output during
-weaving. We use a derived marker class with a special slot for storing the
-text of the comment, so that they can remain unbound, and thus be stripped
-during tangling.
+@ The rest of the reader macro functions for standard macro characters are
+defined in the order given in section~2.4 of the ANSI Common Lisp standard.
+We override all of the standard macro characters except |#\)| and~|#\"|
+(the former because the standard reader macro function just signals an
+error, and the latter because we don't need markers for strings).
+
+@ {\it Left-Parenthesis.} The standard Lisp reader does not distinguish
+between |nil| and the empty list, but we want to preserve the distinction
+so that we can output what was given as input. However, we don't want to
+re-implement the (quite complex) logic needed for reading an arbitrary
+list, so in the non-empty-list case we fall back to using the reader macro
+function in the standard readtable.
+
+Note that we bind our empty-list marker to the value |'()| so that it's
+preserved during tangling, and that like newlines, we only need one.
+
+@l
+(defclass empty-list-marker (marker) () (:default-initargs :value '()))
+
+(defvar *empty-list* (make-instance 'empty-list-marker))
+(defun list-reader (stream char)
+  (if (char= (peek-char t stream t nil t) #\) )
+      (progn (read-char stream t nil t) *empty-list*)
+      (funcall (get-macro-character #\( nil) stream char)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-macro-character #\( #'list-reader nil (readtable-for-mode mode)))
+
+@ {\it Single-Quote.} Similarly, we want to preserve the distinction
+between a form quoted with |#\'| and one quoted (for whatever reason) with
+|quote|. We'll use this marker class for \.{#'}, too, which is why it's a
+little more general than one might think is needed.
+
+@l
+(defclass quote-marker (marker)
+  ((form :reader quoted-form :initarg :form)
+   (quote :initarg :quote)))
+
+(defmethod marker-boundp ((marker quote-marker)) t)
+(defmethod marker-value ((marker quote-marker))
+  (list (slot-value marker 'quote) (slot-value marker 'form)))
+
+(defmethod print-object ((obj quote-marker) stream)
+  (format stream "'~W" (quoted-form obj)))
+
+(defun single-quote-reader (stream char)
+  (declare (ignore char))
+  (make-instance 'quote-marker :quote 'quote :form (read stream t nil t)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-macro-character #\' #'single-quote-reader nil (readtable-for-mode mode)))
+
+@ {\it Semicolon.} Comments in Lisp code also need to be preserved for
+output during weaving. We use a special slot for storing the text of the
+comment, so that they can remain unbound and thus be stripped during
+tangling.
 
 @l
 (defclass comment-marker (marker)
   ((text :reader comment-text :initarg :text)))
-
-(defmethod print-object ((object comment-marker) stream)
-  (print-unreadable-object (object stream :type t :identity nil)
-    (prin1 (comment-text object) stream)))
-
-(set-pprint-dispatch 'comment-marker
-                     (lambda (stream obj)
-                       (write-string (comment-text obj) stream)))
 
 @ Usually, to read a comment we accumulate all of the characters starting
 with the semicolon and ending just before the next newline, which we leave
@@ -420,78 +483,29 @@ appear in the output.
       ((char= (peek-char nil stream nil #\Newline t) #\Newline))
     (write-char (read-char stream t nil t) s)))
 
-@ The standard Lisp reader does not distinguish between |nil| and the empty
-list, but we want to preserve the distinction so that we can output what
-was given as input. The simplest way to do this seems to be to override the
-reader macro function for |#\(|. However, we don't want to re-implement
-the (quite complex) logic needed for reading an arbitrary list, so in the
-non-empty-list case we fall back to using the reader macro function in the
-standard readtable.
-
-Note that we bind the |*empty-list*| marker to the value |'()| so that
-it's preserved during tangling.
-
-@l
-(defclass empty-list-marker (marker) () (:default-initargs :value '()))
-(defun empty-list-p (obj) (typep obj 'empty-list-marker))
-(defvar *empty-list* (make-instance 'empty-list-marker))
-
-(set-pprint-dispatch 'empty-list-marker
-                     (lambda (stream obj)
-                       (write-string (marker-value obj) stream)))
-
-(defun read-list (stream char)
-  (if (char= (peek-char t stream t nil t) #\))
-      (progn (read-char stream t nil t) *empty-list*)
-      (funcall (get-macro-character #\( nil) stream char)))
-
-(dolist (mode '(:lisp :inner-lisp))
-  (set-macro-character #\( #'read-list nil (readtable-for-mode mode)))
-
-@ Similarly, we want to preserve the distinction between a form quoted
-with |#\'| and one quoted (for whatever reason) with |quote|.
-
-@l
-(defclass quote-marker (marker)
-  ((value :accessor quoted-form :initarg :form)))
-
-(defmethod print-object ((object quote-marker) stream)
-  (print-unreadable-object (object stream :type t :identity nil)
-    (format stream "'~S" (quoted-form object))))
-
-(set-pprint-dispatch 'quote-marker
-                     (lambda (stream obj)
-                       (format stream "'~W" (quoted-form obj))))
-
-(defmethod marker-value ((marker quote-marker))
-  (list 'quote (quoted-form marker)))
-
-(defun single-quote-reader (stream char)
-  (declare (ignore char))
-  (make-instance 'quote-marker :form (read stream t nil t)))
-
-(dolist (mode '(:lisp :inner-lisp))
-  (set-macro-character #\' #'single-quote-reader nil (readtable-for-mode mode)))
-
-@ Backquote is hairy, and so we use a kludge to avoid implementing the
-whole thing. What we do is set up our Lisp and inner-Lisp mode readtables
-so that the reader macro functions for |#\`| and |#\,| do the absolute
+@ {\it Backquote\/} is hairy, and so we use a kludge to avoid implementing
+the whole thing. Our reader macro functions for |#\`| and |#\,| do the absolute
 minimum amount of processing necessary to be able to reconstruct the forms
 that were read. Then, when the tangler asks for the |marker-value| of a
 backquote marker, we reconstruct the source form using the pretty-printer,
 and read it back in using the standard readtable. It's a sleazy trick, but
-it works.
+it works. (It's also the reason we need pretty-printing routines for all
+these markers.)
 
-We assume |read|-|print| equivalence (not unreasonable, since without it
-the file tangler won't work anyway).
+Of course, we assume |read|-|print| equivalence, but that's not
+unreasonable, since without it the file tangler won't work anyway.
 
 @l
 (defclass backquote-marker (marker)
-  ((value :accessor backq-form :initarg :form)))
+  ((form :reader backq-form :initarg :form)))
 
+(defmethod marker-boundp ((marker backquote-marker)) t)
 (defmethod marker-value ((marker backquote-marker))
-  (with-mode nil
-    (read-from-string (with-output-to-string (s) (pprint marker s)))))
+  (with-standard-io-syntax
+    (read-from-string (prin1-to-string marker))))
+
+(defmethod print-object ((obj backquote-marker) stream)
+  (format stream "`~W" (backq-form obj)))
 
 (defun backquote-reader (stream char)
   (declare (ignore char))
@@ -500,47 +514,232 @@ the file tangler won't work anyway).
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\` #'backquote-reader nil (readtable-for-mode mode)))
 
-(set-pprint-dispatch 'backquote-marker
-                     (lambda (stream obj)
-                       (format stream "`~W" (backq-form obj))))
+@ {\it Comma\/} is really just part of the backquote-syntax, and so we're
+after the same goal as above: reconstructing just enough of the original
+source so that the reader can do what it would have done had we not been
+here in the first place.
 
-@ @l
+@l
 (defclass comma-marker (marker)
-  ((value :accessor comma-form :initarg :form)
+  ((form :reader comma-form :initarg :form)
    (modifier :reader comma-modifier :initarg :modifier))
   (:default-initargs :modifier nil))
 
+(defmethod marker-boundp ((marker comma-marker)) t)
 (defmethod marker-value ((marker comma-marker))
-  (with-mode nil
-    (read-from-string (with-output-to-string (s) (pprint marker s)))))
+  (with-standard-io-syntax
+    (read-from-string (prin1-to-string marker))))
+
+(defmethod print-object ((obj comma-marker) stream)
+  (format stream ",~@[~C~]~W" (comma-modifier obj) (comma-form obj)))
 
 (defun comma-reader (stream char)
   (declare (ignore char))
-  (let ((c (read-char stream)))
-    (case c
-      (#\@ (make-instance 'comma-marker
-                          :modifier #\@
-                          :form (read stream t nil t)))
-      (#\. (make-instance 'comma-marker
-                          :modifier #\.
-                          :form (read stream t nil t)))
-      (t (unread-char c stream)
+  (let ((char (read-char stream)))
+    (case char
+      ((#\@ #\.) (make-instance 'comma-marker
+                                :modifier char
+                                :form (read stream t nil t)))
+      (t (unread-char char stream)
          (make-instance 'comma-marker :form (read stream t nil t))))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\, #'comma-reader nil (readtable-for-mode mode)))
 
-(set-pprint-dispatch 'comma-marker
-                     (lambda (stream obj)
-                       (format stream ",~@[~C~]~W"
-                               (comma-modifier obj)
-                               (comma-form obj))))
+@ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
+reader macros. Because it's a dispatching macro character, we have to
+handle each sub-char individually, and unfortunately we need to override
+most of them. We'll handle them in the order given in section~2.4.8
+of the CL standard.
 
-@ We accumulate \TeX\ mode material such as commentary, section names,
-\etc. using the following function, which reads from |stream| until
-encountering either {\sc EOF} or a {\it control character\/}. The set of
-control characters is given by the |control-chars| argument, which should
-be a designator for a list of characters.
+Note that we don't actually need to define tangle-time pretty-printing
+routines for any of these, as they all have values that can be printed
+using the standard printer. Of course, later we'll define pretty-printing
+routines for all of these in the weaver.
+
+@ Some of the reader macro functions store some value related to the occurrence
+of the macro character and then just invoke the reader macro function defined
+in the standard readtable.
+
+@l
+(defun call-standard-sharpm-fun (stream sub-char arg)
+  (funcall
+   (get-dispatch-macro-character #\# sub-char (readtable-for-mode nil))
+   stream sub-char arg))
+
+@ And sometimes, we have to do the reading and parsing ourselves, which means
+detecting errors. This condition class and associated signaling function allow
+|format|-style error reporting.
+
+@l
+(define-condition simple-reader-error (reader-error simple-condition) ()
+  (:report (lambda (condition stream)
+             (format stream "~S on ~S:~%~?"
+                     condition (stream-error-stream condition)
+                     (simple-condition-format-control condition)
+                     (simple-condition-format-arguments condition)))))
+
+(defun simple-reader-error (stream control &rest args)
+  (error 'simple-reader-error
+         :stream stream
+         :format-control control
+         :format-arguments args))
+
+@ Sharpsign single-quote is just like single-quote, except the form is
+`quoted' with |function| instead of |quote|.
+
+@l
+(defclass function-marker (quote-marker) ())
+
+(defun sharpsign-quote-reader (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (make-instance 'function-marker :quote 'function :form (read stream t nil t)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\' #'sharpsign-quote-reader ;
+                                (readtable-for-mode mode)))
+
+@ Sharpsign left-parenthesis and sharpsign asterisk create simple vectors and
+simple bit vectors, respectively. The feature that we care about preserving is
+the length specification and consequent possible abbreviation.
+
+@l
+(defclass simple-vector-marker (marker)
+  ((length :initarg :length)
+   (list  :initarg :list)
+   (element-type :initarg :element-type))
+  (:default-initargs :element-type t))
+
+(defmethod marker-boundp ((marker simple-vector-marker)) t)
+(defmethod marker-value ((marker simple-vector-marker))
+  (with-slots (list element-type) marker
+    (if (slot-boundp marker 'length)
+        (with-slots (length) marker
+          (fill (replace (make-array length :element-type element-type) list)
+                (car (last list))
+                :start (length list)))
+        (coerce list `(vector ,element-type)))))
+
+;; Adapted from SBCL's |sharp-left-paren|.
+(defun simple-vector-reader (stream sub-char arg)
+  (declare (ignore sub-char))
+  (let* ((list (read-delimited-list #\) stream t))
+         (length (handler-case (length list)
+                   (type-error (error)
+                     (declare (ignore error))
+                     (simple-reader-error
+                      stream "improper list in #(): ~S" list)))))
+    (unless *read-suppress*
+      (if arg
+          (if (> length arg)
+              (simple-reader-error
+               stream "vector longer than specified length: #~S~S" arg list)
+              (make-instance 'simple-vector-marker :length arg :list list))
+          (make-instance 'simple-vector-marker :list list)))))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\( #'simple-vector-reader ;
+                                (readtable-for-mode mode)))
+
+@ Sharpsign asterisk is similar to sharpsign left-parenthesis, but the token
+following the asterisk must be composed entirely of \.{0}s and \.{1}s, which
+are used to initialize a simple bit vector. It supports the same kind of
+abbreviation that \.{#()} does.
+
+But note the use of the word `token' above. By defining \.{#*} in terms of the
+{\it token\/} following the \.{*}, the authors of the standard have made it
+very, very difficult for a portable program to emulate the specified behavior,
+since only the built-in reader knows how to tokenize for the current
+readtable. What we do is resort to a dirty trick: we set up an echo stream,
+use the standard reader to parse the bit vector, then build our marker from
+the echoed characters.
+
+@l
+(defclass simple-bit-vector-marker (simple-vector-marker) ()
+  (:default-initargs :element-type 'bit))
+
+(defun simple-bit-vector-reader (stream sub-char arg)
+  (with-output-to-string (out)
+    (with-open-stream (echo (make-echo-stream stream out))
+      ;; NOTE: An SBCL bug prevents this from working at all.
+      (call-standard-sharpm-fun echo sub-char arg)
+      ;; FIXME: More stuff goes here.
+      )))
+
+#-sbcl
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\* #'simple-bit-vector-reader ;
+                                (readtable-for-mode mode)))
+
+@ Sharpsign dot permits read-time evaluation. Ordinarily, of course, the form
+evaluated is lost, as only the result of the evaluation is returned.
+
+@l
+(defclass readtime-eval-marker (marker)
+  ((form :reader read-eval-form :initarg :form)))
+
+(defun sharpsign-dot-reader (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (let ((form (read stream t nil t)))
+    (unless *read-suppress*
+      (unless *read-eval*
+        (simple-reader-error stream "can't read #. while *READ-EVAL* is NIL"))
+      (make-instance 'readtime-eval-marker :form form :value (eval form)))))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader ;
+                                (readtable-for-mode mode)))
+
+@ Sharpsign B, O, X, and~R all represent rational numbers in a specified radix,
+but that radix is discarded by the standard reader.
+
+@l
+(defclass radix-marker (marker)
+  ((base :reader radix-marker-base :initarg :base)))
+
+(defvar *radix-prefix-alist* '((#\B . 2) (#\O . 8) (#\X . 16) (#\R . nil)))
+
+(defun radix-reader (stream sub-char arg)
+  (make-instance 'radix-marker
+                 :base (or (cdr (assoc sub-char *radix-prefix-alist*)) arg) 
+                 :value (call-standard-sharpm-fun stream sub-char arg)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (dolist (sub-char '(#\B #\O #\X #\R))
+    (set-dispatch-macro-character #\# sub-char #'radix-reader ;
+                                  (readtable-for-mode mode))))
+
+@ Sharpsign~S requires determining the standard constructor function of the
+structure type named, which we simply can't do portably. So, we use the same
+trick we used for backquote above: we cache the form as given, then dump it
+out to a string and let the standard reader parse it when we need the value.
+
+@l
+(defclass structure-marker (marker)
+  ((form :reader structure-marker-form :initarg :form)))
+
+(defmethod marker-boundp ((marker structure-marker)) t)
+(defmethod marker-value ((marker structure-marker))
+  (with-standard-io-syntax
+    (read-from-string (prin1-to-string marker))))
+
+(defmethod print-object ((obj structure-marker) stream)
+  (format stream "#S~W" (structure-marker-form obj)))
+
+(defun structure-reader (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (make-instance 'structure-marker :form (read stream t nil t)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\S #'structure-reader ;
+                                (readtable-for-mode mode)))
+
+@ Okay, so much for the standard macro characters. Now we're ready to move
+on to \WEB-specific reading. We accumulate \TeX\ mode material such as
+commentary, section names, \etc. using the following function, which reads
+from |stream| until encountering either {\sc EOF} or a {\it control
+character\/}. The set of control characters is given by the |control-chars|
+argument, which should be a designator for a list of characters.
 
 @l
 (defun snarf-until-control-char (stream control-chars &aux
@@ -631,8 +830,9 @@ used with the \.{#S} reader macro, \etc.
 
 @l
 (defclass start-code-marker (marker)
-  ((evalp :reader evaluated-code-p :initarg :evalp))
-  (:default-initargs :evalp nil))
+  ((name :reader section-name :initarg :name)
+   (evalp :reader evaluated-code-p :initarg :evalp))
+  (:default-initargs :name nil :evalp nil))
 
 (defun start-code-reader (stream sub-char arg)
   (declare (ignore stream arg))
@@ -786,7 +986,7 @@ part is detected, we also set the name of the current section, which may be
     (typecase form
       (eof (go eof))
       (section (go commentary))
-      (start-code-marker (setf (section-name section) (marker-name form))
+      (start-code-marker (setf (section-name section) (section-name form))
                          (go lisp))
       (t (push form commentary)))))
 
@@ -848,12 +1048,8 @@ expansions were actually performed.
 Note that this is a splicing operation, not a simple replacement: if
 |@<foo@>\='(x y)|, then |(tangle-1 '(a @<foo@> b))|$\rarrow$|(a x y b)|,~|t|.
 
-Tangling also replaces {\it bound markers\/} with their associated values.
-Markers are objects that behave much like symbols: they have names, and may
-be bound to a value. We usually use them to stand for objects that would
-not ordinarily be returned or preserved by the reader, such as newlines and
-comments. If a marker is not bound (as is the case for newlines and comments),
-it is simply removed from the form.
+Tangling also replaces bound markers with their associated values, and
+removes unbound markers.
 
 @l
 (defun tangle-1 (form)
@@ -1373,7 +1569,7 @@ from the argument list.
       (when (string= restarg "BODY")
         rest))))
 
-@ Backquote printing is easy with the markers we've defined.
+@ Markers.
 
 @l
 (set-weave-dispatch 'backquote-marker
@@ -1386,3 +1582,39 @@ from the argument list.
                       (format stream "\\C{~@[~C~]}~W"
                               (comma-modifier marker)
                               (comma-form marker))))
+@ @l
+(set-weave-dispatch 'simple-vector-marker
+                    (lambda (stream obj)
+                      (format stream "\\#~@[~D~]~S"
+                              (and (slot-boundp obj 'length)
+                                   (slot-value obj 'length))
+                              (slot-value obj 'list))))
+
+(set-weave-dispatch 'simple-bit-vector-marker
+                    (lambda (stream obj)
+                      (format stream "\\#~@[~D~]*~A"
+                              (and (slot-boundp obj 'length)
+                                   (slot-value obj 'length))
+                              (coerce (mapcar (lambda (bit)
+                                                (ecase bit (0 #\0) (1 #\1)))
+                                              (slot-value obj 'list))
+                                      'string)))
+                    1) ; need a higher priority than |simple-vector-marker|
+
+@ @l
+(set-weave-dispatch 'readtime-eval-marker
+                    (lambda (stream obj)
+                      (format stream "\\#.~W" (read-eval-form obj))))
+
+@ @l
+(set-weave-dispatch 'radix-marker
+                    (lambda (stream obj)
+                      (let ((*print-radix* nil)
+                            (*print-base* (radix-marker-base obj)))
+                        (princ (marker-value obj) stream)
+                        (format stream "_{~D}" *print-base*))))
+
+@ @l
+(set-weave-dispatch 'structure-marker
+                    (lambda (stream obj)
+                      (format stream "\\#S~W" (structure-marker-form obj))))
