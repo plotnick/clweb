@@ -33,7 +33,10 @@ copacetic.
   (some-more-stuff))
 
 @*Baz. The sole purpose of this section is to exercise some of the
-pretty-printing capabilities of |weave|.
+pretty-printing capabilities of |weave|. Note that in inner-Lisp mode,
+newlines and such are ignored:
+|(defun foo (bar baz)
+   (baz (apply #'qux bar)))|
 
 @l
 (defun read-from-file (file &key direction)

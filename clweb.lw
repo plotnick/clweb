@@ -1214,7 +1214,9 @@ function for setting its entries.
           finally (format output "~&\\bye~%"))))
 
 @ \TeX-mode material consists of a list of strings containing pure \TeX\ text
-and lists of (inner-)Lisp forms.
+and lists of (inner-)Lisp forms. We set |*inner-lisp*| to true when we're
+printing inner-Lisp-mode material so that we can adjust our pretty-printing
+(e.g., we don't use alignment tabs in that context).
 
 @l
 (defvar *inner-lisp* nil)
@@ -1286,7 +1288,7 @@ with the conjunction macros \.{\\ET} (for two section numbers) and~\.{\\ETs}
 @l
 (defun print-xrefs (stream kind xrefs)
   (when xrefs
-    ;; This was fifteen lines of code in \CWEB. I love |format|.
+    ;; This was 16 lines of code over two sections in \CWEB. I love |format|.
     (format stream "\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}.~%"
             kind (sort (mapcar #'section-number xrefs) #'<))))
 
@@ -1445,9 +1447,10 @@ to support one-token look-ahead in the caller.
          (nil)
        (declare (ignorable ,indentation))
        (cond ((eq ,obj *newline*)
-              (format ,stream "\\cr~:@_")
-              ,@(when indent
-                  (list `(write-string ,indentation ,stream)))
+              (unless *inner-lisp*
+                (format ,stream "\\cr~:@_")
+                ,@(when indent
+                    (list `(write-string ,indentation ,stream))))
               (pprint-exit-if-list-exhausted)
               (setq ,next (pprint-pop)))
              (t (write ,obj :stream ,stream)
@@ -1456,6 +1459,27 @@ to support one-token look-ahead in the caller.
                       ,@(when indent `(,indentation ,indent)))
                 (unless (eq ,next *newline*)
                   (write-char #\Space ,stream)))))))
+
+@ The macro |pprint-logical-block| evaluates its |:per-line-prefix| argument,
+expecting it to be a string. However, when we're printing a list, we want a
+per-line-prefix (an alignment tab) only when we're not in inner-Lisp mode.
+This macro is a work-around. It also takes care of printing an appropriate
+prefix, since we're not allowed to have both an ordinary and a per-line prefix.
+
+@l
+(defmacro print-list-with-logical-block ((stream list) &body body &aux
+                                         (stream-var (gensym))
+                                         (list-var (gensym)))
+  `(let ((,stream-var ,stream)
+         (,list-var ,list))
+     (write-string "\\(" ,stream-var)
+     (if *inner-lisp*
+         (pprint-logical-block (,stream-var ,list-var :suffix "\\)")
+           ,@body)
+         (pprint-logical-block (,stream-var ,list-var
+                                :per-line-prefix "&"
+                                :suffix "\\)")
+           ,@body))))
 
 @ Now, suppose we are outputting a compound form $f$. We first examine the
 |car| of $f$: if it not |fboundp| (i.e., it's a data list), we use the
@@ -1468,8 +1492,7 @@ when applicable.
 
 @l
 (defun print-list (stream list)
-  (write-string "\\(" stream)
-  (pprint-logical-block (stream list :per-line-prefix "&" :suffix "\\)")
+  (print-list-with-logical-block (stream list)
     (print-remaining-objects-and-newlines stream)))
 
 (set-weave-dispatch 'cons #'print-list -2)
@@ -1489,17 +1512,18 @@ This routine also has a slightly negative priority, but higher than that of
 
 @l
 (defun print-fun-call (stream form)
-  (write-string "\\(" stream)
-  (pprint-logical-block (stream form :per-line-prefix "&" :suffix "\\)")
+  (print-list-with-logical-block (stream form)
     (write (pprint-pop) :stream stream)
     (pprint-exit-if-list-exhausted)
     (let ((next (pprint-pop)))
       (cond ((eq next *newline*)
-             (format stream "\\cr~:@_")
+             (unless *inner-lisp*
+               (format stream "\\cr~:@_"))
              (print-remaining-objects-and-newlines stream))
             (t (write-char #\Space stream)
                (pprint-indent :current 0 stream)
-               (write-char #\& stream)
+               (unless *inner-lisp*
+                 (write-char #\& stream))
                (print-remaining-objects-and-newlines stream
                                                      :first next
                                                      :indent "&"))))))
@@ -1514,8 +1538,7 @@ from the opening parenthesis, and the body subforms by one quad.
 
 @l
 (defun print-form-with-body (stream form)
-  (write-string "\\(" stream)
-  (pprint-logical-block (stream form :per-line-prefix "&" :suffix "\\)")
+  (print-list-with-logical-block (stream form)
     (write (pprint-pop) :stream stream)
     (pprint-exit-if-list-exhausted)
     (write-char #\Space stream)

@@ -717,42 +717,65 @@
          (NIL)
        (DECLARE (IGNORABLE ,INDENTATION))
        (COND
-        ((EQ ,OBJ *NEWLINE*) (FORMAT ,STREAM "\\cr~:@_")
-         ,@(WHEN INDENT (LIST `(WRITE-STRING ,INDENTATION ,STREAM)))
+        ((EQ ,OBJ *NEWLINE*)
+         (UNLESS *INNER-LISP*
+           (FORMAT ,STREAM "\\cr~:@_")
+           ,@(WHEN INDENT (LIST `(WRITE-STRING ,INDENTATION ,STREAM))))
          (PPRINT-EXIT-IF-LIST-EXHAUSTED) (SETQ ,NEXT (PPRINT-POP)))
         (T (WRITE ,OBJ :STREAM ,STREAM) (PPRINT-EXIT-IF-LIST-EXHAUSTED)
          (SETQ ,NEXT (PPRINT-POP) ,@(WHEN INDENT `(,INDENTATION ,INDENT)))
          (UNLESS (EQ ,NEXT *NEWLINE*) (WRITE-CHAR ,#\  ,STREAM)))))))
+(DEFMACRO PRINT-LIST-WITH-LOGICAL-BLOCK
+          ((STREAM LIST)
+           &BODY BODY
+           &AUX (STREAM-VAR (GENSYM)) (LIST-VAR (GENSYM)))
+  `(LET ((,STREAM-VAR ,STREAM) (,LIST-VAR ,LIST))
+     (WRITE-STRING ,"\\(" ,STREAM-VAR)
+     (IF *INNER-LISP*
+         (PPRINT-LOGICAL-BLOCK (,STREAM-VAR ,LIST-VAR :SUFFIX "\\)") ,@BODY)
+         (PPRINT-LOGICAL-BLOCK
+             (,STREAM-VAR ,LIST-VAR :PER-LINE-PREFIX "&" :SUFFIX "\\)")
+           ,@BODY))))
 (DEFUN PRINT-LIST (STREAM LIST)
-  (WRITE-STRING "\\(" STREAM)
-  (PPRINT-LOGICAL-BLOCK (STREAM LIST :PER-LINE-PREFIX "&" :SUFFIX "\\)")
-    (PRINT-REMAINING-OBJECTS-AND-NEWLINES STREAM)))
+  (PRINT-LIST-WITH-LOGICAL-BLOCK (STREAM LIST)
+                                 (PRINT-REMAINING-OBJECTS-AND-NEWLINES STREAM)))
 (SET-WEAVE-DISPATCH 'CONS #'PRINT-LIST -2)
 (DEFUN PRINT-FUN-CALL (STREAM FORM)
-  (WRITE-STRING "\\(" STREAM)
-  (PPRINT-LOGICAL-BLOCK (STREAM FORM :PER-LINE-PREFIX "&" :SUFFIX "\\)")
-    (WRITE (PPRINT-POP) :STREAM STREAM)
-    (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-    (LET ((NEXT (PPRINT-POP)))
-      (COND
-       ((EQ NEXT *NEWLINE*) (FORMAT STREAM "\\cr~:@_")
-        (PRINT-REMAINING-OBJECTS-AND-NEWLINES STREAM))
-       (T (WRITE-CHAR #\  STREAM) (PPRINT-INDENT :CURRENT 0 STREAM)
-        (WRITE-CHAR #\& STREAM)
-        (PRINT-REMAINING-OBJECTS-AND-NEWLINES STREAM :FIRST NEXT :INDENT
-                                              "&"))))))
+  (PRINT-LIST-WITH-LOGICAL-BLOCK (STREAM FORM)
+                                 (WRITE (PPRINT-POP) :STREAM STREAM)
+                                 (PPRINT-EXIT-IF-LIST-EXHAUSTED)
+                                 (LET ((NEXT (PPRINT-POP)))
+                                   (COND
+                                    ((EQ NEXT *NEWLINE*)
+                                     (UNLESS *INNER-LISP*
+                                       (FORMAT STREAM "\\cr~:@_"))
+                                     (PRINT-REMAINING-OBJECTS-AND-NEWLINES
+                                      STREAM))
+                                    (T (WRITE-CHAR #\  STREAM)
+                                     (PPRINT-INDENT :CURRENT 0 STREAM)
+                                     (UNLESS *INNER-LISP*
+                                       (WRITE-CHAR #\& STREAM))
+                                     (PRINT-REMAINING-OBJECTS-AND-NEWLINES
+                                      STREAM :FIRST NEXT :INDENT "&"))))))
 (SET-WEAVE-DISPATCH '(CONS (AND SYMBOL (SATISFIES FBOUNDP))) #'PRINT-FUN-CALL
                     -1)
 (DEFUN PRINT-FORM-WITH-BODY (STREAM FORM)
-  (WRITE-STRING "\\(" STREAM)
-  (PPRINT-LOGICAL-BLOCK (STREAM FORM :PER-LINE-PREFIX "&" :SUFFIX "\\)")
-    (WRITE (PPRINT-POP) :STREAM STREAM)
-    (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-    (WRITE-CHAR #\  STREAM)
-    (LET ((BODY (OR (LAMBDA-LIST-BODY (CAR FORM)) -1)) (I 0))
-      (PRINT-REMAINING-OBJECTS-AND-NEWLINES STREAM :INDENT
-                                            (IF (<= (INCF I) BODY) "\\2"
-                                                "\\1")))))
+  (PRINT-LIST-WITH-LOGICAL-BLOCK (STREAM FORM)
+                                 (WRITE (PPRINT-POP) :STREAM STREAM)
+                                 (PPRINT-EXIT-IF-LIST-EXHAUSTED)
+                                 (WRITE-CHAR #\  STREAM)
+                                 (LET ((BODY
+                                        (OR (LAMBDA-LIST-BODY (CAR FORM)) -1))
+                                       (I 0))
+                                   (PRINT-REMAINING-OBJECTS-AND-NEWLINES STREAM
+                                                                         :INDENT
+                                                                         (IF
+                                                                          (<=
+                                                                           (INCF
+                                                                            I)
+                                                                           BODY)
+                                                                          "\\2"
+                                                                          "\\1")))))
 (DEFUN OPERATOR-WITH-BODY-P (OPERATOR)
   (AND (FBOUNDP OPERATOR) (LAMBDA-LIST-BODY OPERATOR)))
 (SET-WEAVE-DISPATCH '(CONS (AND SYMBOL (SATISFIES OPERATOR-WITH-BODY-P)))
