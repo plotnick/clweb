@@ -1563,16 +1563,16 @@ from the argument list.
     (let ((lambda-list (remove '&optional
                                (clean-arglist (function-arglist operator)))))
       (or (position '&body lambda-list)
-          @<Position of a |&rest| parameter named `body' in |lambda-list|@>))))
+          @<Position of a body-like |&rest| parameter in |lambda-list|@>))))
 
 @ Some macros don't use a |&body| parameter, but should. So we accept a
-|&rest| parameter whose name is `body' as being close enough.
+|&rest| parameter whose name is `body' or `forms' as being close enough.
 
-@<Position of a |&rest|...@>=
+@<Position of a body-like |&rest|...@>=
 (let ((rest (position '&rest lambda-list)))
   (when rest
     (let ((restarg (symbol-name (elt lambda-list (1+ rest)))))
-      (when (string= restarg "BODY")
+      (when (or (string= restarg "BODY") (string= restarg "FORMS"))
         rest))))
 
 @ Markers.

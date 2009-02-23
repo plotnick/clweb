@@ -783,7 +783,8 @@
           (LET ((REST (POSITION '&REST LAMBDA-LIST)))
             (WHEN REST
               (LET ((RESTARG (SYMBOL-NAME (ELT LAMBDA-LIST (1+ REST)))))
-                (WHEN (STRING= RESTARG "BODY") REST))))))))
+                (WHEN (OR (STRING= RESTARG "BODY") (STRING= RESTARG "FORMS"))
+                  REST))))))))
 (SET-WEAVE-DISPATCH 'NEWLINE-MARKER
                     (LAMBDA (STREAM OBJ)
                       (DECLARE (IGNORE OBJ))
