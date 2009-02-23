@@ -1268,8 +1268,8 @@ re-reads such strings and picks up any inner-Lisp material.
          (code (section-code section)))
     (print-TeX stream commentary)
     (fresh-line stream)
-    (when (and commentary code)
-      (format stream "\\Y~%"))
+    (cond ((and commentary code) (format stream "\\Y\\B~%"))
+          (code (format stream "\\B~%")))
     (when named-section
       (print-section-name stream named-section)
       (format stream "${}~:[\\mathrel+~;~]\\E{}$~%"
@@ -1331,7 +1331,7 @@ string, in which case it is output instead of the character being considered.
         (null (write-char char stream))))))
 
 (defparameter *tex-escape-alist*
-  '((" \\%&#$^_~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
+  '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 
 @ @l
 (defun print-string (stream string)
@@ -1364,15 +1364,16 @@ string, in which case it is output instead of the character being considered.
 @ Some symbols are sometimes printed using a special format for
 emphasis. These symbols include (but are not limited to) the Common Lisp
 special operators, $\lambda$-list keywords, and symbols whose names begin
-with `DEF'.
+with `def'.
 
 @l
 (defvar *highlight-special-symbols* nil)
 
 (defun def-p (symbol)
-  (let* ((name (symbol-name symbol))
-         (len (length name)))
-    (and (> len 3) (string= name "DEF" :end1 3))))
+  (when (fboundp symbol)
+    (let* ((name (symbol-name symbol))
+           (len (length name)))
+      (and (> len 3) (string= name "DEF" :end1 3)))))
 
 (defun highlight-symbol-p (symbol)
   (cond ((or (special-operator-p symbol)
@@ -1520,6 +1521,9 @@ parameter (or a |&rest| parameter that should have been a |&body|
 parameter). We indent all of the subforms before the |&body| by two quads
 from the opening parenthesis, and the body subforms by one quad.
 
+We also use body-style indentation for definitions (i.e., for compound forms
+whose |car| begins with `def').
+
 @l
 (defun print-form-with-body (stream form)
   (print-list-with-logical-block (stream form)
@@ -1535,7 +1539,8 @@ from the opening parenthesis, and the body subforms by one quad.
 (defun operator-with-body-p (operator)
   (and (fboundp operator) (lambda-list-body operator)))
 
-(set-weave-dispatch '(cons (and symbol (satisfies operator-with-body-p)))
+(set-weave-dispatch '(cons (and symbol (or (satisfies operator-with-body-p)
+                                           (satisfies def-p))))
                      #'print-form-with-body 0)
 
 @ We'll need a function that can reliably extract a $\lambda$-list from a
@@ -1596,8 +1601,9 @@ from the argument list.
 
 (set-weave-dispatch 'comment-marker
                     (lambda (stream obj)
-                      (print-TeX stream
-                                 (read-TeX-from-string (comment-text obj)))))
+                      (write-string "\\C{" stream)
+                      (print-TeX stream (read-TeX-from-string (comment-text obj)))
+                      (write-string "}" stream)))
 
 @ @l
 (set-weave-dispatch 'backquote-marker

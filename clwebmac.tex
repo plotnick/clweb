@@ -1,13 +1,68 @@
 \input cwebmac
 
+\font\eightss=cmssq8
+\font\eightssi=cmssqi8
+\font\tenss=cmss10
+\font\tenssi=cmssi10
+\font\tenssb=cmssdc10
+\let\cmntfont=\tenssi
+\newskip\ttglue
+\def\tenpoint{\def\rm{\fam0\tenrm}%
+  \textfont0=\tenrm \scriptfont0=\sevenrm \scriptscriptfont0=\fiverm
+  \textfont1=\teni \scriptfont1=\seveni \scriptscriptfont1=\fivei
+  \textfont2=\tensy \scriptfont2=\sevensy \scriptscriptfont2=\fivesy
+  \textfont3=\tenex \scriptfont3=\tenex \scriptscriptfont3=\tenex
+  \def\it{\fam\itfam\tenit}%
+  \textfont\itfam=\tenit
+  \def\sl{\fam\slfam\tensl}%
+  \textfont\slfam=\tensl
+  \def\bf{\fam\bffam\tenbf}%
+  \textfont\bffam=\tenbf \scriptfont\bffam=\sevenbf \scriptscriptfont\bffam=\fivebf
+  \def\tt{\fam\ttfam\tentt}%
+  \textfont\ttfam=\tentt
+  \tt \ttglue=.5em plus.25em minus.15em
+  \normalbaselineskip=12pt
+  \let\sc=\eightrm
+  \setbox\strutbox=\hbox{\vrule height8.5pt depth3.5pt width0pt}%
+  \normalbaselines\rm}
+\let\mainfont=\tenpoint
+\def\codefont{\tenpoint
+  \def\rm{\fam0\tenss}%
+  \textfont0=\tenss \scriptfont0=\eightss % no scriptscriptfont
+  \textfont1=\tenssi \scriptfont1=\eightssi % no scriptscriptfont
+  \textfont2=\tensy \scriptfont2=\sevensy \scriptscriptfont2=\fivesy
+  \textfont3=\tenex \scriptfont3=\tenex \scriptscriptfont3=\tenex
+  \def\it{\fam\itfam\tenssi}%
+  \textfont\itfam=\tenssi
+  \def\bf{\fam\bffam\tenssb}%
+  \textfont\bffam=\tenssb % no scriptfont, scriptscriptfont
+  \normalbaselines\rm}
+
 \let\1=\quad
 \let\2=\qquad
 
-\def\({(\kern.05em\cleartabs}
-\def\){\kern.05em)}
-\def\:#1{\leavevmode\hbox{\it:#1\/\kern.05em}} % keyword
-\def\'{\leavevmode'\kern.025em} % quote
-\def\`{\leavevmode`\kern.025em} % backquote
-\def\#{\leavevmode{\eightrm\raise0.25ex\hbox{\char'43}}}
+\def\({\leavevmode(\kern.025em\cleartabs}
+\def\){\kern.025em)}
+\def\:#1{\hbox{\it:\/#1\/\kern.05em}} % keyword
+\def\'{\kern.025em} % quote
+\def\`{`\kern.025em} % backquote
+\def\#{{\raise0.25ex\hbox{\eightss\char'43}}}
+\def\<{{\tt <}}
+\def\>{{\tt >}}
+\def\B{\rightskip=0pt plus 100pt minus 10pt % go into Lisp mode
+  \pretolerance 10000
+  \hyphenpenalty 1000 % so strings can be broken (discretionary \ is inserted)
+  \exhyphenpenalty 10000
+  \codefont}
+\def\C#1{{\cmntfont #1}}
 \def\CH#1{\leavevmode$\backslash$\.{#1}} % character
 \def\CO#1{\leavevmode,#1\kern.025em} % comma(-at, -dot)
+\def\MN#1{\par % common code for \M, \N
+  {\xdef\secstar{#1}\let\*=\empty\xdef\secno{#1}}% remove \* from section name
+  \ifx\secno\secstar \onmaybe \else\ontrue \fi
+  \mark{{{\tensy x}\secno}{\the\gdepth}{\the\gtitle}}
+  \mainfont}
+\def\X#1:#2\X{\ifmmode\gdef\XX{\null$\null}\else\gdef\XX{}\fi %$% section name
+  \XX$\langle\,${\mainfont\let\I=\ne#2\eightrm\kern.5em
+    \ifacro{\pdfnote#1.}\else#1\fi}$\,\rangle$\XX}
+
