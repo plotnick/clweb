@@ -1560,10 +1560,10 @@ from the argument list.
                     (clean-arglist (cddr arglist)))
                    ((eq (car arglist) '&aux) '())
                    (t (cons (car arglist) (clean-arglist (cdr arglist)))))))
-   (let ((lambda-list (remove '&optional
-                              (clean-arglist (function-arglist operator)))))
-     (or (position '&body lambda-list)
-         @<Position of a |&rest| parameter named `body' in |lambda-list|@>))))
+    (let ((lambda-list (remove '&optional
+                               (clean-arglist (function-arglist operator)))))
+      (or (position '&body lambda-list)
+          @<Position of a |&rest| parameter named `body' in |lambda-list|@>))))
 
 @ Some macros don't use a |&body| parameter, but should. So we accept a
 |&rest| parameter whose name is `body' as being close enough.
