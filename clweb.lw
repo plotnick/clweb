@@ -35,7 +35,7 @@ consists essentially of two parts, either of which may be null: a commentary
 part and a code part. Every section is automatically assigned a number, and
 each section is either {\it named\/} or {\it unnamed\/}. The code parts of
 named sections may be included in those of another (named or unnamed)
-section via \.{@@<$ldots$@@>} commands, while unnamed sections are output
+section via \.{@@<$\ldots$@@>} commands, while unnamed sections are output
 or evaluated in the order in which they appear in the \WEB\ source file.
 
 @l
@@ -158,12 +158,12 @@ development.
             (append (section-code section) forms)
             forms)))
 
-@ When we look up a named section, the name used to perform the lookup,
-the name for the section in the tree, or both may be an abbreviation of
-the full section name. Any prefix of the full name is allowed, followed by
-`$\ldots$': e.g., \.{@@<foo...@@>} is an acceptable abbreviation for either
-\.{@@<foo bar@@>} or \.{@@<foo baz@@>}. It is a correctable error if a prefix
-is ambiguous.
+@ When we look up a named section, either the name used to perform the
+lookup, the name for the section in the tree, or both may be an abbreviation
+of the full section name. Any prefix of the full name is allowed, followed
+by `$\ldots$': e.g., \.{@@<foo...@@>} is an acceptable abbreviation for
+either \.{@@<foo bar@@>} or \.{@@<foo baz@@>}. It is a correctable error if
+a prefix is ambiguous.
 
 @l
 (defmethod find-or-insert (item (root named-section) &key
