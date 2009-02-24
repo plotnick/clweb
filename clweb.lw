@@ -1575,6 +1575,17 @@ from the argument list.
       (when (or (string= restarg "BODY") (string= restarg "FORMS"))
         rest))))
 
+@ This makes $\lambda$-expressions look nice.
+
+@l
+(defun print-lambda-expression (stream form)
+  (print-list-with-logical-block (stream form)
+    (assert (eql (pprint-pop) 'lambda))
+    (write-string "\\L\\ " stream)
+    (print-remaining-objects-and-newlines stream :indent "\\1")))
+
+(set-weave-dispatch '(cons (eql lambda) list) #'print-lambda-expression 1)
+
 @ Markers.
 
 @l

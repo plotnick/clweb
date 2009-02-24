@@ -785,6 +785,14 @@
               (LET ((RESTARG (SYMBOL-NAME (ELT LAMBDA-LIST (1+ REST)))))
                 (WHEN (OR (STRING= RESTARG "BODY") (STRING= RESTARG "FORMS"))
                   REST))))))))
+(DEFUN PRINT-LAMBDA-EXPRESSION (STREAM FORM)
+  (PRINT-LIST-WITH-LOGICAL-BLOCK (STREAM FORM)
+                                 (ASSERT (EQL (PPRINT-POP) 'LAMBDA))
+                                 (WRITE-STRING "\\L\\ " STREAM)
+                                 (PRINT-REMAINING-OBJECTS-AND-NEWLINES STREAM
+                                                                       :INDENT
+                                                                       "\\1")))
+(SET-WEAVE-DISPATCH '(CONS (EQL LAMBDA) LIST) #'PRINT-LAMBDA-EXPRESSION 1)
 (SET-WEAVE-DISPATCH 'NEWLINE-MARKER
                     (LAMBDA (STREAM OBJ)
                       (DECLARE (IGNORE OBJ))

@@ -29,7 +29,7 @@
 \def\codefont{\tenpoint
   \def\rm{\fam0\tenss}%
   \textfont0=\tenss \scriptfont0=\eightss % no scriptscriptfont
-  \textfont1=\tenssi \scriptfont1=\eightssi % no scriptscriptfont
+  \textfont1=\teni \scriptfont1=\seveni \scriptscriptfont1=\fivei
   \textfont2=\tensy \scriptfont2=\sevensy \scriptscriptfont2=\fivesy
   \textfont3=\tenex \scriptfont3=\tenex \scriptscriptfont3=\tenex
   \def\it{\fam\itfam\tenssi}%
@@ -47,8 +47,8 @@
 \def\'{'\kern.025em} % quote
 \def\`{`\kern.025em} % backquote
 \def\#{{\raise0.25ex\hbox{\eightss\char'43}}}
-\def\<{{\tt <}}
-\def\>{{\tt >}}
+\def\<{{$<$}}
+\def\>{{$>$}}
 \def\B{\rightskip=0pt plus 100pt minus 10pt % go into Lisp mode
   \pretolerance 10000
   \hyphenpenalty 1000 % so strings can be broken (discretionary \ is inserted)
@@ -57,6 +57,7 @@
 \def\C#1{{\cmntfont #1}}
 \def\CH#1{\leavevmode$\backslash$\.{#1}} % character
 \def\CO#1{\leavevmode,#1\kern.025em} % comma(-at, -dot)
+\def\L{\leavevmode$\lambda$}
 \def\MN#1{\par % common code for \M, \N
   {\xdef\secstar{#1}\let\*=\empty\xdef\secno{#1}}% remove \* from section name
   \ifx\secno\secstar \onmaybe \else\ontrue \fi
