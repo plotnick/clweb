@@ -331,6 +331,154 @@ given forms with |*readtable*| bound appropriately for the given mode.
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
+@ It's basically impossible to automatically indent Common Lisp code correctly.
+(This may be tendentious, but it seems to be true.) And so we don't try. What
+we do, instead, is rely on the fact that the {\it input\/} is indented correctly,
+and approximate that on output.
+
+In order to do this {\it indentation tracking\/}, we need the ability to
+reliably determine the current column number, or {\it character position},
+of a stream. One could use Gray streams to do this, but we don't actually
+need them; the built-in stream types suffice.
+
+@ We'll define a {\it charpos stream\/} as an object that tracks the output
+position of an underlying stream. Note that these aren't actual streams, and
+can't be, without relying on an extension to Common Lisp like Gray streams.
+But that doesn't matter, because what we'll actually be passing around is the
+value of the |stream| slot, which {\it will\/} be a stream---we call these
+{\it proxy streams}.
+
+The current character position is retrieved with the GF |charpos|. It relies
+the last stored charpos (stored in the |charpos| slot) and a buffer that
+stores the characters input or output since the last call to |charpos|.
+
+@l
+(defclass charpos-stream ()
+  ((charpos :initarg :charpos)
+   (stream :accessor charpos-stream :initarg :stream))
+  (:default-initargs :charpos 0))
+
+(defgeneric charpos (stream))
+(defgeneric get-charpos-stream-buffer (stream))
+
+@ We need slightly different classes for input charpos streams and output
+charpos streams. For tracking charpos on input streams, our proxy stream is
+an echo stream that takes input from the supplied stream (the original value
+of the |:stream| initarg), echoes the characters read to a fresh string
+stream, which we'll use as our buffer.
+
+@l
+(defclass charpos-input-stream (charpos-stream) ())
+
+(defmethod shared-initialize :around ((instance charpos-input-stream) slot-names
+                                      &rest initargs &key stream)
+  (apply #'call-next-method instance slot-names
+         (subst (make-echo-stream stream
+                                  (make-string-output-stream
+                                   :element-type (stream-element-type stream)))
+                stream initargs)))
+
+(defmethod get-charpos-stream-buffer ((stream charpos-input-stream))
+  (get-output-stream-string
+   (echo-stream-output-stream (charpos-stream stream))))
+
+@ For the output stream case, our proxy stream is a broadcast stream to the
+given stream and a fresh string stream, again used as a buffer.
+
+@l
+(defclass charpos-output-stream (charpos-stream) ())
+
+(defmethod shared-initialize :around ((instance charpos-output-stream) slot-names
+                                      &rest initargs &key stream)
+  (apply #'call-next-method instance slot-names
+         (subst (make-broadcast-stream (make-string-output-stream
+                                        :element-type (stream-element-type stream))
+                                       stream)
+                stream initargs)))
+
+(defmethod get-charpos-stream-buffer ((stream charpos-output-stream))
+  (get-output-stream-string
+   (first (broadcast-stream-streams (charpos-stream stream)))))
+
+@ Finding the actual character position is now straightforward, and the same
+for both input and output streams.
+
+@l
+(defmethod charpos ((stream charpos-stream))
+  (let* ((i -1)
+         (newline (position #\Newline (get-charpos-stream-buffer stream)
+                            :key (lambda (x) (incf i) x)
+                            :test #'char=
+                            :from-end t)))
+    (setf (slot-value stream 'charpos)
+          (if newline i (+ 1 i (slot-value stream 'charpos))))))
+
+@ Because we'll be passing around the proxy streams, we need to manually
+maintain a mapping between them and their associated instances of
+|charpos-stream|.
+
+@l
+(defvar *charpos-streams* (make-hash-table :test #'eq))
+
+(defmethod initialize-instance :after ((instance charpos-stream)
+                                       &rest initargs &key)
+  (declare (ignore initargs))
+  (setf (gethash (charpos-stream instance) *charpos-streams*) instance))
+
+@ The top-level interface the consists of two functions: |stream-charpos|
+retrieves the character position of the stream for which |stream| is a
+proxy, and |release-charpos-stream| deletes the reference to the stream
+maintained by the associated |charpos-stream| instance. (Note that if there
+were a standardized way of creating weak hash tables, we wouldn't need to do
+that.)
+
+@l
+(defun stream-charpos (stream)
+  (charpos (or (gethash stream *charpos-streams*)
+               (error "Not tracking charpos for ~S" stream))))
+
+(defun release-charpos-stream (stream)
+  (multiple-value-bind (charpos-stream present-p)
+      (gethash stream *charpos-streams*)
+    (cond (present-p (setf (charpos-stream charpos-stream) nil) ; release stream
+                     (remhash stream *charpos-streams*))
+          (t (warn "Not tracking charpos for ~S" stream)))))
+
+@ Here are a few convenience methods for creating charpos streams. Note that
+|input-stream| and |output-stream| are {\it stream designators\/}.
+
+@l
+(defun make-charpos-input-stream (input-stream &key (charpos 0))
+  (make-instance 'charpos-input-stream
+                 :stream (case input-stream
+                           ((t) *terminal-io*)
+                           ((nil) *standard-input*)
+                           (otherwise input-stream))
+                 :charpos charpos))
+
+(defun make-charpos-output-stream (output-stream &key (charpos 0))
+  (make-instance 'charpos-output-stream
+                 :stream (case output-stream
+                           ((t) *terminal-io*)
+                           ((nil) *standard-output*)
+                           (otherwise output-stream))
+                 :charpos charpos))
+
+@ And finally, a couple of macros that make using them easy and trouble-free.
+
+@l
+(defmacro with-charpos-input-stream ((var stream &key (charpos 0)) &body body)
+  `(let ((,var (charpos-stream
+                (make-charpos-input-stream ,stream :charpos ,charpos))))
+     (unwind-protect (progn ,@body)
+       (release-charpos-stream ,var))))
+
+(defmacro with-charpos-output-stream ((var stream &key (charpos 0)) &body body)
+  `(let ((,var (charpos-stream
+                (make-charpos-output-stream ,stream :charpos ,charpos))))
+     (unwind-protect (progn ,@body)
+       (release-charpos-stream ,var))))
+
 @ We frequently need an object to use as the |eof-value| argument to
 |read|. It need not be a symbol; it need not even be an atom.
 
