@@ -24,6 +24,8 @@ input and generates a \TeX\ source file containing the commentary parts
 of each section together with pretty-printed code parts.
 
 @ @e
+(declaim (optimize (debug 3)))
+
 (defpackage "COMMON-LISP-WEB"
   (:nicknames "CLWEB")
   (:use "COMMON-LISP")
@@ -231,10 +233,10 @@ characters with a single space.
 (defparameter *whitespace*
   (coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'simple-string))
 
+(defun whitespace-p (char) (find char *whitespace* :test #'char=))
+
 (defun squeeze (string)
-  (flet ((whitespace-p (char) (find char *whitespace* :test #'char=)))
-    (coerce @<Collect characters of |string|, squeezing whitespace@>
-            'simple-string)))
+  (coerce @<Collect characters of |string|, squeezing whitespace@> 'simple-string))
 
 @ @<Collect characters...@>=
 (loop with squeezing = nil
@@ -331,6 +333,168 @@ given forms with |*readtable*| bound appropriately for the given mode.
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
+@ It's basically impossible to automatically indent Common Lisp code correctly.
+(This may be tendentious, but it seems to be true.) And so we don't try. What
+we do, instead, is rely on the fact that the {\it input\/} is indented correctly,
+and approximate that on output.
+
+In order to do this {\it indentation tracking\/}, we need the ability to
+reliably determine the current column number, or {\it character position},
+of a stream. One could use Gray streams to do this, but we don't actually
+need them; the built-in stream types suffice.
+
+@ We'll define a {\it charpos stream\/} as an object that tracks the output
+position of an underlying stream. Note that these aren't actual streams, and
+can't be, without relying on an extension to Common Lisp like Gray streams.
+But that doesn't matter, because what we'll actually be passing around is the
+value of the |stream| slot, which {\it will\/} be a stream---we call these
+{\it proxy streams}.
+
+The current character position is retrieved with the GF |charpos|. It relies
+the last stored charpos (stored in the |charpos| slot) and a buffer that
+stores the characters input or output since the last call to |charpos|.
+
+@l
+(defclass charpos-stream ()
+  ((charpos :initarg :charpos)
+   (stream :accessor charpos-stream :initarg :stream))
+  (:default-initargs :charpos 0))
+
+(defgeneric charpos (stream))
+(defgeneric get-charpos-stream-buffer (stream))
+
+@ We need slightly different classes for input charpos streams and output
+charpos streams. For tracking charpos on input streams, our proxy stream is
+an echo stream that takes input from the supplied stream (the original value
+of the |:stream| initarg), echoes the characters read to a fresh string
+stream, which we'll use as our buffer.
+
+@l
+(defclass charpos-input-stream (charpos-stream) ())
+
+(defmethod shared-initialize :around ((instance charpos-input-stream) slot-names
+                                      &rest initargs &key stream)
+  (apply #'call-next-method instance slot-names
+         (subst (make-echo-stream stream
+                                  (make-string-output-stream
+                                   :element-type (stream-element-type stream)))
+                stream initargs)))
+
+(defmethod get-charpos-stream-buffer ((stream charpos-input-stream))
+  (get-output-stream-string
+   (echo-stream-output-stream (charpos-stream stream))))
+
+@ For the output stream case, our proxy stream is a broadcast stream to the
+given stream and a fresh string stream, again used as a buffer.
+
+@l
+(defclass charpos-output-stream (charpos-stream) ())
+
+(defmethod shared-initialize :around ((instance charpos-output-stream) slot-names
+                                      &rest initargs &key stream)
+  (apply #'call-next-method instance slot-names
+         (subst (make-broadcast-stream (make-string-output-stream
+                                        :element-type (stream-element-type stream))
+                                       stream)
+                stream initargs)))
+
+(defmethod get-charpos-stream-buffer ((stream charpos-output-stream))
+  (get-output-stream-string
+   (first (broadcast-stream-streams (charpos-stream stream)))))
+
+@ Finding the actual character position is now straightforward, and the same
+for both input and output streams.
+
+@l
+(defmethod charpos ((stream charpos-stream))
+  (let* ((i -1)
+         (newline (position #\Newline (get-charpos-stream-buffer stream)
+                            :key (lambda (x) (incf i) x)
+                            :test #'char=
+                            :from-end t)))
+    (setf (slot-value stream 'charpos)
+          (if newline i (+ 1 i (slot-value stream 'charpos))))))
+
+@ Because we'll be passing around the proxy streams, we need to manually
+maintain a mapping between them and their associated instances of
+|charpos-stream|.
+
+@l
+(defvar *charpos-streams* (make-hash-table :test #'eq))
+
+(defmethod initialize-instance :after ((instance charpos-stream)
+                                       &rest initargs &key)
+  (declare (ignore initargs))
+  (setf (gethash (charpos-stream instance) *charpos-streams*) instance))
+
+@ The top-level interface the consists of two functions: |stream-charpos|
+retrieves the character position of the stream for which |stream| is a
+proxy, and |release-charpos-stream| deletes the reference to the stream
+maintained by the associated |charpos-stream| instance. (Note that if there
+were a standardized way of creating weak hash tables, we wouldn't need to do
+that.)
+
+@l
+(defun stream-charpos (stream)
+  (charpos (or (gethash stream *charpos-streams*)
+               (error "Not tracking charpos for ~S" stream))))
+
+(defun release-charpos-stream (stream)
+  (multiple-value-bind (charpos-stream present-p)
+      (gethash stream *charpos-streams*)
+    (cond (present-p (setf (charpos-stream charpos-stream) nil) ; release stream
+                     (remhash stream *charpos-streams*))
+          (t (warn "Not tracking charpos for ~S" stream)))))
+
+@ Here are a few convenience methods for creating charpos streams. Note that
+|input-stream| and |output-stream| are {\it stream designators\/}.
+
+@l
+(defun make-charpos-input-stream (input-stream &key (charpos 0))
+  (make-instance 'charpos-input-stream
+                 :stream (case input-stream
+                           ((t) *terminal-io*)
+                           ((nil) *standard-input*)
+                           (otherwise input-stream))
+                 :charpos charpos))
+
+(defun make-charpos-output-stream (output-stream &key (charpos 0))
+  (make-instance 'charpos-output-stream
+                 :stream (case output-stream
+                           ((t) *terminal-io*)
+                           ((nil) *standard-output*)
+                           (otherwise output-stream))
+                 :charpos charpos))
+
+@ And finally, a couple of macros that make using them easy and trouble-free.
+
+@l
+(defmacro with-charpos-input-stream ((var stream &key (charpos 0)) &body body)
+  `(let ((,var (charpos-stream
+                (make-charpos-input-stream ,stream :charpos ,charpos))))
+     (unwind-protect (progn ,@body)
+       (release-charpos-stream ,var))))
+
+(defmacro with-charpos-output-stream ((var stream &key (charpos 0)) &body body)
+  `(let ((,var (charpos-stream
+                (make-charpos-output-stream ,stream :charpos ,charpos))))
+     (unwind-protect (progn ,@body)
+       (release-charpos-stream ,var))))
+
+@ Sometimes we want to look more than one character ahead in a stream.
+This macro lets us do so.
+
+@l
+(defmacro with-rewind-stream ((var stream) &body body
+                              &aux (buffer (gensym)))
+  `(let* ((,buffer (make-string-output-stream))
+          (,var (make-echo-stream ,stream ,buffer)))
+     (flet ((rewind ()
+              (make-concatenated-stream
+               (make-string-input-stream (get-output-stream-string ,buffer))
+               ,stream)))
+       ,@body)))
+
 @ We frequently need an object to use as the |eof-value| argument to
 |read|. It need not be a symbol; it need not even be an atom.
 
@@ -368,6 +532,7 @@ from its containing form: this is useful, e.g., for newlines and comments.
 @l
 (defclass marker ()
   ((value :reader marker-value :initarg :value)))
+(defun marker-p (x) (typep x 'marker))
 
 (defgeneric marker-boundp (marker))
 (defmethod marker-boundp ((marker marker))
@@ -387,21 +552,25 @@ prints the marker's value if it is bound.
   (when (marker-boundp obj)
     (write (marker-value obj) :stream stream)))
 
-@ Our first marker is for newlines, which we preserve so that we don't have
-to rely on the pretty-printer to decide where to break lines. They are
-represented in code forms by an unbound marker (so they will simply be
-dropped by the tangler). Since all newlines are equivalent to all other
-newlines, the reader macro function always returns the same instance.
+@ Our first marker is for newlines, which we preserve for the purposes of
+indentation. They are represented in code forms by an unbound marker, so
+they will simply be dropped by the tangler.
 
-We also define a predicate for newline markers, because the section reader
-below will want to take special action in the presence of newlines.
+Note that we don't set a macro character for |#\Newline| in inner-Lisp mode,
+since indentation is completely ignored there.
 
 @l
-(defclass newline-marker (marker) ())
+(defclass newline-marker (marker)
+  ((indentation :accessor indentation :initarg :indentation))
+  (:default-initargs :indentation nil))
 (defun newline-p (obj) (typep obj 'newline-marker))
 
-(defvar *newline* (make-instance 'newline-marker))
-(set-macro-character #\Newline (constantly *newline*)
+;(defvar *newline* (make-instance 'newline-marker))
+
+(set-macro-character #\Newline
+                     (lambda (stream char)
+                       (declare (ignore stream char))
+                       (make-instance 'newline-marker))
                      nil (readtable-for-mode :lisp))
 
 @ The rest of the reader macro functions for standard macro characters are
@@ -410,27 +579,117 @@ We override all of the standard macro characters except |#\)| and~|#\"|
 (the former because the standard reader macro function just signals an
 error, and the latter because we don't need markers for strings).
 
-@ {\it Left-Parenthesis.} The standard Lisp reader does not distinguish
-between |nil| and the empty list, but we want to preserve the distinction
-so that we can output what was given as input. However, we don't want to
-re-implement the (quite complex) logic needed for reading an arbitrary
-list, so in the non-empty-list case we fall back to using the reader macro
-function in the standard readtable.
+@ {\it Left-Parenthesis.} We have two kinds of markers that we use when
+reading lists. First, we record the character positions of the first and
+second elements of the list for indentation purposes. And second, we
+maintain a distinction that the standard Lisp reader does not: between the
+empty list and |nil|.
 
 Note that we bind our empty-list marker to the value |'()| so that it's
 preserved during tangling, and that like newlines, we only need one.
 
 @l
 (defclass empty-list-marker (marker) () (:default-initargs :value '()))
-
 (defvar *empty-list* (make-instance 'empty-list-marker))
-(defun list-reader (stream char)
-  (if (char= (peek-char t stream t nil t) #\) )
-      (progn (read-char stream t nil t) *empty-list*)
-      (funcall (get-macro-character #\( nil) stream char)))
 
-(dolist (mode '(:lisp :inner-lisp))
-  (set-macro-character #\( #'list-reader nil (readtable-for-mode mode)))
+(defclass list-marker (marker)
+  ((length :reader list-marker-length :initarg :length)
+   (list :reader list-marker-list :initarg :list)
+   (charpos :reader list-marker-charpos :initarg :charpos)))
+(defun list-marker-p (obj) (typep obj 'list-marker))
+
+(defclass consing-dot-marker (marker) ())
+(defvar *consing-dot* (make-instance 'consing-dot-marker))
+
+(defmethod marker-boundp ((marker list-marker)) t)
+(defmethod marker-value ((marker list-marker))
+  (do* ((list (list nil))
+        (tail list)
+        (marker-list (list-marker-list marker) (cdr marker-list))
+        (x (car marker-list) (car marker-list)))
+       ((endp marker-list) (cdr list))
+    (cond ((eq x *consing-dot*)
+           (rplacd tail
+                   (dolist (x marker-list (error "Nothing after . in list"))
+                     (cond ((and (marker-p x) (marker-boundp x))
+                            (return (marker-value x)))
+                           ((not (marker-p x))
+                            (return x)))))
+           (return (cdr list)))
+          ((marker-p x)
+           (when (marker-boundp x)
+             (let ((obj (list (marker-value x))))
+               (rplacd tail obj)
+               (setq tail obj))))
+          (t (let ((obj (list x)))
+               (rplacd tail obj)
+               (setq tail obj))))))
+
+@ @l
+(defun make-list-reader (next)
+  (lambda (stream char)
+    (if (char= (peek-char t stream t nil t) #\) )
+        (progn (read-char stream t nil t) *empty-list*)
+        (funcall next stream char))))
+
+(set-macro-character #\( (make-list-reader (get-macro-character #\( nil))
+                     nil (readtable-for-mode :inner-lisp))
+
+@ When we're looking for a consing dot while reading a list, we'll need to know
+if the character following a dot terminates the token or not. This function
+answers that question, but {\it only approximately\/}---if the user has frobbed
+the current readtable and has set non-standard characters to whitespace syntax,
+{\it this routine will not yield the correct result}. There's unfortunately
+nothing that we can do about it portably, since there's no way of determining
+the syntax of a character or of obtaining a list of all the characters with a
+given syntax.
+
+@l
+(defun token-delimiter-p (char)
+  (or (whitespace-p char)
+      (multiple-value-bind (function non-terminating-p)
+          (get-macro-character char)
+        (declare (ignore function))
+        (not non-terminating-p))))
+
+@ @l
+(defun list-reader (stream char)
+  (declare (ignore char))
+  (loop with list = '()
+        with charpos-list = '()
+        for n from 0
+        for first-char = (peek-char t stream t nil t)
+        as charpos = (stream-charpos stream)
+        until (char= first-char #\) )
+        do (cond ((char= first-char #\.)
+                  @<Read the next token...@>)
+                 (t (let ((obj (multiple-value-list (read stream t nil t))))
+                      (when obj
+                        (push (car obj) list)
+                        (push charpos charpos-list)))))
+        finally
+          (read-char stream t nil t)
+          (return (make-instance 'list-marker
+                                 :length n
+                                 :list (nreverse list)
+                                 :charpos (nreverse charpos-list)))))
+
+(set-macro-character #\( (make-list-reader #'list-reader)
+                     nil (readtable-for-mode :lisp))
+
+@ @<Read the next token, which might be a consing dot@>=
+(with-rewind-stream (r stream)
+  (let ((next-char (read-char r t)))
+    (cond ((token-delimiter-p next-char)
+           (unless (or list *read-suppress*)
+             (simple-reader-error stream "Nothing appears before . in list."))
+           (push *consing-dot* list)
+           (push charpos charpos-list))
+          (t (rewind)
+             (let ((obj (multiple-value-list (read r t nil t))))
+               (when obj
+                 (push (car obj) list)
+                 (push charpos charpos-list)))))))
 
 @ {\it Single-Quote.} Similarly, we want to preserve the distinction
 between a form quoted with |#\'| and one quoted (for whatever reason) with
@@ -506,7 +765,9 @@ unreasonable, since without it the file tangler won't work anyway.
 
 (defmethod marker-boundp ((marker backquote-marker)) t)
 (defmethod marker-value ((marker backquote-marker))
-  (with-standard-io-syntax
+  (let ((*print-pretty* nil)
+        (*print-readably* t)
+        (*readtable* (readtable-for-mode nil)))
     (read-from-string (prin1-to-string marker))))
 
 (defmethod print-object ((obj backquote-marker) stream)
@@ -524,6 +785,10 @@ after the same goal as above: reconstructing just enough of the original
 source so that the reader can do what it would have done had we not been
 here in the first place.
 
+Note that comma markers are bound, but self-evaluating: they need to be
+printed and re-read as part of a backquote form to retrieve their actual
+value.
+
 @l
 (defclass comma-marker (marker)
   ((form :reader comma-form :initarg :form)
@@ -531,22 +796,18 @@ here in the first place.
   (:default-initargs :modifier nil))
 
 (defmethod marker-boundp ((marker comma-marker)) t)
-(defmethod marker-value ((marker comma-marker))
-  (with-standard-io-syntax
-    (read-from-string (prin1-to-string marker))))
+(defmethod marker-value ((marker comma-marker)) marker)
 
 (defmethod print-object ((obj comma-marker) stream)
   (format stream ",~@[~C~]~W" (comma-modifier obj) (comma-form obj)))
 
 (defun comma-reader (stream char)
   (declare (ignore char))
-  (let ((char (read-char stream)))
-    (case char
-      ((#\@ #\.) (make-instance 'comma-marker
-                                :modifier char
-                                :form (read stream t nil t)))
-      (t (unread-char char stream)
-         (make-instance 'comma-marker :form (read stream t nil t))))))
+  (case (peek-char nil stream t nil t)
+    ((#\@ #\.) (make-instance 'comma-marker
+                              :modifier (read-char stream)
+                              :form (read stream t nil t)))
+    (t (make-instance 'comma-marker :form (read stream t nil t)))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\, #'comma-reader nil (readtable-for-mode mode)))
@@ -936,26 +1197,27 @@ tiny state machine that models the global syntax of a \WEB\ file.
 explicit closing delimiters.) It returns a list of |section| objects.
 
 @l
-(defun read-sections (stream append-p)
-  (flet ((finish-section (section commentary code)
-           @<Trim whitespace and reverse...@>
-           (setf (section-commentary section) commentary)
-           (setf (section-code section) code)
-           (when (section-name section) @<Setup named section...@>)
-           section))
-    (prog (form commentary code section sections)
-     limbo
-      (setq section (make-instance 'limbo-section))
-      @<Accumulate limbo text in |commentary|@>
-     commentary
-      (push (finish-section section commentary code) sections)
-      @<Initialize section variables@>
-      @<Accumulate \TeX-mode material in |commentary|@>
-     lisp
-      @<Accumulate Lisp-mode material in |code|@>
-     eof
-      (push (finish-section section commentary code) sections)
-      (return (nreverse sections)))))
+(defun read-sections (input-stream append-p)
+  (with-charpos-input-stream (stream input-stream)
+    (flet ((finish-section (section commentary code)
+             @<Trim whitespace and reverse...@>
+             (setf (section-commentary section) commentary)
+             (setf (section-code section) code)
+             (when (section-name section) @<Setup named section...@>)
+             section))
+      (prog (form commentary code section sections)
+       limbo
+         (setq section (make-instance 'limbo-section))
+         @<Accumulate limbo text in |commentary|@>
+       commentary
+         (push (finish-section section commentary code) sections)
+         @<Initialize section variables@>
+         @<Accumulate \TeX-mode material in |commentary|@>
+       lisp
+         @<Accumulate Lisp-mode material in |code|@>
+       eof
+         (push (finish-section section commentary code) sections)
+         (return (nreverse sections))))))
 
 @ Limbo text is \TeX\ text that proceeds the first section marker, and we
 treat it as commentary for a special section with no code. Note that
@@ -1052,17 +1314,17 @@ expansions were actually performed.
 
 Note that this is a splicing operation, not a simple replacement: if
 \X$n$:foo\X$\mathrel\E$|(x y)|, then
-\(\\{tangle-1} \'(\\{a} \X$n$:foo\X\ \\{b}\)\)$\to$|(a x y b)|,~|t|.
+\(\\{tangle-1} \'\(\\{a} \X$n$:foo\X\ \\{b}\)\)$\to$|(a x y b)|,~|t|.
 
 Tangling also replaces bound markers with their associated values, and
 removes unbound markers.
 
 @l
 (defun tangle-1 (form)
-  (cond ((atom form) (values form nil))
+  (cond ((list-marker-p form) (values (marker-value form) t))
+        ((atom form) (values form nil))
         ((typep (car form) 'named-section)
-         (values (append (section-code (car form)) (tangle-1 (cdr form)))
-                 t))
+         (values (append (section-code (car form)) (tangle-1 (cdr form))) t))
         ((typep (car form) 'marker)
          (values (if (marker-boundp (car form))
                      (cons (marker-value (car form)) (tangle-1 (cdr form)))
@@ -1113,7 +1375,8 @@ will not effect the calling environment.
 @l
 (defun load-web-from-stream (stream print &optional (append-p t))
   (let ((*readtable* *readtable*)
-        (*package* *package*))
+        (*package* *package*)
+        #+sbcl(sb-ext:*evaluator-mode* :compile))
     (dolist (form (tangle (read-code-parts stream append-p)) t)
       (if print
           (let ((results (multiple-value-list (eval form))))
@@ -1164,13 +1427,13 @@ file and then invoking the file compiler on that file.
   (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
-                   :direction :input
-                   :external-format external-format)
+                         :direction :input
+                         :external-format external-format)
     (with-open-file (lisp lisp-file
-                     :direction :output
-                     :if-exists :supersede
-                     :external-format external-format)
-      (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S.  DO NOT EDIT." input-file)
+                          :direction :output
+                          :if-exists :supersede
+                          :external-format external-format)
+      (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT." input-file)
       (dolist (form (tangle (read-code-parts input t)))
         (pprint form lisp))))
   (apply #'compile-file lisp-file args))
@@ -1242,12 +1505,13 @@ re-reads such strings and picks up any inner-Lisp material.
 
 @l
 (defun read-TeX-from-string (input-string)
-  (with-input-from-string (stream input-string)
-    (with-mode :restricted
-      (loop for text = (snarf-until-control-char stream #\|)
-            for forms = (read-preserving-whitespace stream nil *eof* nil)
-            collect text
-            until (eof-p forms) collect forms))))
+  (with-input-from-string (input-stream input-string)
+    (with-charpos-input-stream (stream input-stream)
+      (with-mode :restricted
+        (loop for text = (snarf-until-control-char stream #\|)
+              for forms = (read-preserving-whitespace stream nil *eof* nil)
+              collect text
+              until (eof-p forms) collect forms)))))
 
 @ @l
 (defun print-limbo (stream section)
@@ -1276,9 +1540,10 @@ re-reads such strings and picks up any inner-Lisp material.
               (= (section-number section) (section-number named-section))))
     (when code
       (dolist (form code)
-        (pprint-logical-block (stream form :per-line-prefix "\\+" :suffix "\\cr")
-          (write form :stream stream)))
-      (fresh-line stream))
+        (if (list-marker-p form)
+            (format stream "~@<\\+~@;~W~;\\cr~:>" form)
+            (format stream "~W" form)))
+      (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}
     (when named-section
       (print-xrefs stream #\A (remove section (see-also named-section)))
       (print-xrefs stream #\U (remove section (used-by named-section)))))
@@ -1379,8 +1644,6 @@ with `def'.
   (cond ((or (special-operator-p symbol)
              (member symbol '(cond loop)))
          (member :special-operator *highlight-special-symbols*))
-        ((operator-with-body-p symbol)
-         (member :body *highlight-special-symbols*))
         ((member symbol lambda-list-keywords)
          (member :lambda-list-keyword *highlight-special-symbols*))
         ((def-p symbol)
@@ -1396,195 +1659,151 @@ with `def'.
                         (write-string "\\\\{" stream)))))
     (write-escaped-string stream
                           (write-to-string symbol :escape nil :pretty nil)
-                          (list* '("*" . "\\/$\\ast$")
-                                 '("&" . "\\AM ")
-                                 *tex-escape-alist*))
+                          (list* '("*" . "\\/$\\ast$") *tex-escape-alist*))
     (when group-p (write-string "}" stream))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
 
-@ Rather than tracking and attempting to duplicate the exact indentation
-given in the input file, we use a set of heuristics (described below)
-to do indentation, but respect the line breaks given in the input.
+@ Next, we turn to list printing, and the tricky topic of indentation. On
+the assumption that the human writing the code in a \WEB\ is smarter than
+any sort of automatic indentation that we might be able to do, we attempt
+to approximate (but {\it not\/} duplicate) on output the indentation given
+in the input by utilizing the character position values that the list
+reader stores in the list markers.
 
-This macro aids with that task. It takes objects from the current
-pretty-printing list using |pprint-pop|, and either writes that object to
-|stream|, or, if it is a newline marker, ends the current line, optionally
-outputs some indentation, and continues on to the next object. The
-indentation is computed by the |:indent| argument, which should be a form
-that evaluates to a string. That form is re-evaluated when and only when a
-non-newline object has just been printed and the list is still non-empty.
-This allows routines like |print-form-with-body|, below, to keep track of
-the number of sub-forms that have been printed.
+We do this by breaking up lists into {\it logical blocks\/}---the same sort
+of (abstract) entities that the pretty printer uses, but made concrete
+here. A logical block defines a left edge for a list of forms, some of
+which may be nested logical blocks.
 
 @l
-(defmacro print-remaining-objects-and-newlines (stream &key indent)
-  (let ((obj (gensym)) (next (gensym)) (indentation (gensym)))
-    `(do ((,obj (pprint-pop) ,next)
-          (,next)
-          (,indentation ,indent))
-         (nil)
-       (declare (ignorable ,indentation))
-       (cond ((eq ,obj *newline*)
-              (unless *inner-lisp*
-                (format ,stream "\\cr~:@_")
-                ,@(when indent
-                    (list `(write-string ,indentation ,stream))))
-              (pprint-exit-if-list-exhausted)
-              (setq ,next (pprint-pop)))
-             (t (write ,obj :stream ,stream)
-                (pprint-exit-if-list-exhausted)
-                (setq ,next (pprint-pop)
-                      ,@(when indent `(,indentation ,indent)))
-                (unless (eq ,next *newline*)
-                  (write-char #\Space ,stream)))))))
+(defstruct (logical-block (:constructor make-logical-block (list)))
+  list)
 
-@ The macro |pprint-logical-block| evaluates its |:per-line-prefix| argument,
-expecting it to be a string. However, when we're printing a list, we want a
-per-line-prefix (an alignment tab) only when we're not in inner-Lisp mode.
-This macro is a work-around. It also takes care of printing an appropriate
-prefix, since we're not allowed to have both an ordinary and a per-line prefix.
+@ The analysis of the indentation is performed by a recursive |labels|
+routine, to which we will come in a moment. That routine operates on an
+list of |(form . charpos)| conses, taken from a list marker. Building this
+list does cost us some consing, but vastly simplifies the logic, since we
+don't have to worry about keeping multiple indices synchronized.
 
 @l
-(defmacro print-list-with-logical-block ((stream list &optional suppress-prefix)
-                                         &body body &aux
-                                         (stream-var (gensym))
-                                         (list-var (gensym)))
-  `(let ((,stream-var ,stream)
-         (,list-var ,list))
-     ,@(unless suppress-prefix `((write-string "\\(" ,stream-var)))
-     (if *inner-lisp*
-         (pprint-logical-block (,stream-var ,list-var :suffix "\\)")
-           ,@body)
-         (pprint-logical-block (,stream-var ,list-var
-                                :per-line-prefix "&"
-                                :suffix "\\)")
-           ,@body))))
+(defun analyze-indentation (list-marker)
+  (declare (type list-marker list-marker))
+  (labels ((find-next-newline (list) (member-if #'newline-p list :key #'car))
+           (next-logical-block (list) @<Build a logical block from |list|@>))
+    (assert (= (length (list-marker-list list-marker))
+               (length (list-marker-charpos list-marker))))
+    (next-logical-block (mapcar #'cons
+                                (list-marker-list list-marker)
+                                (list-marker-charpos list-marker)))))
 
-@ Now, suppose we are outputting a compound form $f$. We first examine the
-|car| of $f$: if it not |fboundp| (i.e., it's a data list), we use the
-following simple routine, which indents to the first column after the
-opening parenthesis.
+@ To build a logical block, we identify groups of sub-forms that share a
+common left margin, which we'll call the {\it block indentation}. If that
+left margin is to the right of that of the current block, we recursively
+build a new subordinate logical block. The block ends when the first form
+on the next line falls to the left of the current block, or we run out of
+forms.
 
-We set a slightly negative priority for this routine, since almost every
-other list-printing routine is more specialized, and should be used instead
-when applicable.
+For example, consider the following simple form:
+$$\vbox{\B\+(first \!&second\cr\+&third)\cr\egroup}$$
+\noindent We start off with an initial logical block with an indentation of
+the character position of |first|: this is the {\it block indentation}.
+Then we look at |second|, and see that the first form on the following
+line, |third|, has the same position, and that it exceeds the current
+indentation level. And so we recurse, appending to the new logical block
+until we encounter a form whose indentation is less than the new block
+indentation, or, as in this trivial example, the end of the list.
 
-@l
-(defun print-list (stream list)
-  (print-list-with-logical-block (stream list)
-    (print-remaining-objects-and-newlines stream)))
+More concretely, |next-logical-block| returns two values: the logical block
+constructed, and the unused portion of the list, which will always either
+be |nil| (we consumed the rest of the forms), or begin with a newline.
 
-(set-weave-dispatch 'cons #'print-list -2)
+We keep a pointer to the next newline in |newline|, and |next-indent| is
+the indentation of the immediately following form, which will become the
+current indentation when we pass |newline|.  As we do so, we store the
+difference between the current indentation and the block indentation in
+the newline marker, so that the printing routine, below, doesn't have to
+worry about character positions at all: it can just look at the newline
+markers and the logical block structure.
 
-@ If the |car| of some form $f$ is |fboundp|, but we don't have a more
-specific pretty-printing routine, then we choose between two generic
-indentation styles: {\it fun-call style\/} and {\it body style}.
+As an optimization, if we build a block that doesn't directly contain any
+newlines---a trivial logical block---we simply return a list of sub-forms
+instead of a logical block structure. This allows the printer to elide the
+alignment tabs, and makes the resulting \TeX\ much simpler.
 
-Fun-call style is the indentation style used for almost all compound forms
-in Common Lisp: the second and subsequent subforms are aligned directly
-under the start of the first subform, unless the second subform is on the
-same line as the first, in which case the third and subsequent subforms are
-aligned under the start of the second. (Read that again and you'll get it).
+@<Build a logical block...@>=
+(do* ((block '())
+      (block-indent (cdar list))
+      (indent block-indent)
+      (newline (find-next-newline list))
+      (next-indent (cdadr newline)))
+     ((or (endp list)
+          (and (eq list newline) next-indent (< next-indent block-indent)))
+      (values (if (notany #'newline-p block)
+                  (nreverse block)
+                  (make-logical-block (nreverse block)))
+              list))
+  (if (and indent next-indent
+           (> next-indent indent)
+           (= next-indent (cdar list)))
+      (multiple-value-bind (sub-block tail) (next-logical-block list)
+        (check-type (caar tail) (or newline-marker null))
+        (push sub-block block)
+        (setq list tail))
+      (let ((next (car (pop list))))
+        (push next block)
+        (when (and list (newline-p next))
+          (setf indent (cdar list)
+                (indentation next) (- indent block-indent)
+                newline (find-next-newline list)
+                next-indent (cdadr newline))))))
 
-This routine also has a slightly negative priority, but higher than that of
-|print-list|.
-
-@l
-(defun print-fun-call (stream form)
-  (cond ((or (< (length form) 3)
-             (notany #'newline-p form))
-         (format stream "~<\\(~;~@{~W~^ ~}~;\\)~:>" form))
-        (t (let ((first (first form))
-                 (second (second form)))
-             (cond ((newline-p second)
-                    (print-list-with-logical-block (stream form)
-                      (print-remaining-objects-and-newlines stream)))
-                   (t
-                    (write-string "\\(" stream)
-                    (write first :stream stream)
-                    (write-char #\Space stream)
-                    (print-list-with-logical-block (stream (cdr form) t)
-                      (print-remaining-objects-and-newlines stream))))))))
-
-(set-weave-dispatch '(cons (and symbol (satisfies fboundp)))
-                     #'print-fun-call -1)
-
-@ Body-style indentation is used, unsurprisingly, for forms with a |&body|
-parameter (or a |&rest| parameter that should have been a |&body|
-parameter). We indent all of the subforms before the |&body| by two quads
-from the opening parenthesis, and the body subforms by one quad.
-
-We also use body-style indentation for definitions (i.e., for compound forms
-whose |car| begins with `def').
-
-@l
-(defun print-form-with-body (stream form)
-  (print-list-with-logical-block (stream form)
-    (write (pprint-pop) :stream stream)
-    (pprint-exit-if-list-exhausted)
-    (write-char #\Space stream)
-    (let ((body (or (lambda-list-body (car form)) -1))
-          (i 0))
-      (print-remaining-objects-and-newlines
-       stream
-       :indent (if (<= (incf i) body) "\\2" "\\1")))))
-
-(defun operator-with-body-p (operator)
-  (and (fboundp operator) (lambda-list-body operator)))
-
-(set-weave-dispatch '(cons (and symbol (or (satisfies operator-with-body-p)
-                                           (satisfies def-p))))
-                     #'print-form-with-body 0)
-
-@ We'll need a function that can reliably extract a $\lambda$-list from a
-function designator. Under SBCL, such a routine is available in the
-|sb-introspect| package.
-
-@e
-#+sbcl
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (require 'sb-introspect)
-  (import (find-symbol "FUNCTION-ARGLIST" "SB-INTROSPECT")))
-
-@ This routine returns the position of the |&body| parameter in |operator|'s
-$\lambda$-list, or |nil| if there is no such parameter. The little |labels|
-function is used to remove |&whole|, |&enviroment|, and |&aux| arguments
-from the argument list.
+@ Printing list markers is now simple, since the complexity is all in the
+logical blocks.
 
 @l
-(defun lambda-list-body (operator)
-  (labels ((clean-arglist (arglist)
-             (cond ((null arglist) '())
-                   ((member (car arglist) '(&whole &environment))
-                    (clean-arglist (cddr arglist)))
-                   ((eq (car arglist) '&aux) '())
-                   (t (cons (car arglist) (clean-arglist (cdr arglist)))))))
-    (let ((lambda-list (remove '&optional
-                               (clean-arglist (function-arglist operator)))))
-      (or (position '&body lambda-list)
-          @<Position of a body-like |&rest| parameter in |lambda-list|@>))))
+(defun print-list (stream list-marker)
+  (let ((block (analyze-indentation list-marker)))
+    (etypecase block
+      (list (format stream "~<(~;~@{~W~^ ~}~;)~:>" block))
+      (logical-block (format stream "(~W)" block)))))
 
-@ Some macros don't use a |&body| parameter, but should. So we accept a
-|&rest| parameter whose name is `body' or `forms' as being close enough.
+(set-weave-dispatch 'list-marker #'print-list)
 
-@<Position of a body-like |&rest|...@>=
-(let ((rest (position '&rest lambda-list)))
-  (when rest
-    (let ((restarg (symbol-name (elt lambda-list (1+ rest)))))
-      (when (or (string= restarg "BODY") (string= restarg "FORMS"))
-        rest))))
+@ But even here, it's not that bad. We start with a \.{\\!}, which is
+just an alias for \.{\\cleartabs}. Then we call (unsurprisingly)
+|pprint-logical-block|, using a per-line-prefix for our alignment tabs.
 
-@ This makes $\lambda$-expressions look nice.
+In the loop, we keep a one-token look-ahead to check for newlines, so that
+we can output separating spaces when and only when there isn't a newline
+coming up.
+
+The indentation set on the newlines by the logical-block building machinery
+above is the difference in character positions of the first form following
+the newline and the block indentation. For differences of 1 or~2 columns,
+we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
 
 @l
-(defun print-lambda-expression (stream form)
-  (print-list-with-logical-block (stream form)
-    (assert (eql (pprint-pop) 'lambda))
-    (write-string "\\L\\ " stream)
-    (print-remaining-objects-and-newlines stream :indent "\\1")))
+(defun print-logical-block (stream block)
+  (write-string "\\!" stream)
+  (pprint-logical-block (stream (logical-block-list block) :per-line-prefix "&")
+    (do (indent
+         next
+         (obj (pprint-pop) next))
+        (nil)
+      (cond ((newline-p obj)
+             (format stream "\\cr~:@_")
+             (setq indent (indentation obj))
+             (pprint-exit-if-list-exhausted)
+             (setq next (pprint-pop)))
+            (t (format stream "~@[~[~;\\1~;\\1~:;\\2~]~]~W" indent obj)
+               (setq indent nil)
+               (pprint-exit-if-list-exhausted)
+               (setq next (pprint-pop))
+               (unless (newline-p next)
+                 (write-char #\Space stream)))))))
 
-(set-weave-dispatch '(cons (eql lambda) list) #'print-lambda-expression 1)
+(set-weave-dispatch 'logical-block #'print-logical-block)
 
 @ Markers.
 
@@ -1597,7 +1816,12 @@ from the argument list.
 (set-weave-dispatch 'empty-list-marker
                     (lambda (stream obj)
                       (declare (ignore obj))
-                      (write-string "\\(\\)" stream)))
+                      (write-string "()" stream)))
+
+(set-weave-dispatch 'consing-dot-marker
+                    (lambda (stream obj)
+                      (declare (ignore obj))
+                      (write-char #\. stream)))
 
 (set-weave-dispatch 'quote-marker
                     (lambda (stream obj)
