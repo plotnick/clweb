@@ -952,7 +952,11 @@ delimiter that terminates the token, so we have to be careful.
 @<Build a bit vector from the characters accumulated in |out|@>=
 (map 'bit-vector
      (lambda (c) (ecase c (#\0 0) (#\1 1)))
-     (remove-if-not (lambda (c) (find c "01")) (get-output-stream-string out)))
+     (let* ((bit-string (get-output-stream-string out))
+            (length (length bit-string)))
+       (subseq bit-string 0 (case (elt bit-string (1- length))
+                              ((#\0 #\1) length)
+                              (t (1- length))))))
 
 @ Sharpsign dot permits read-time evaluation. Ordinarily, of course, the form
 evaluated is lost, as only the result of the evaluation is returned.

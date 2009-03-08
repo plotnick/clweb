@@ -475,8 +475,12 @@
           (READ REWIND))
         (LET ((BITS
                (MAP 'BIT-VECTOR (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
-                    (REMOVE-IF-NOT (LAMBDA (C) (FIND C "01"))
-                                   (GET-OUTPUT-STREAM-STRING OUT)))))
+                    (LET* ((BIT-STRING (GET-OUTPUT-STREAM-STRING OUT))
+                           (LENGTH (LENGTH BIT-STRING)))
+                      (SUBSEQ BIT-STRING 0
+                              (CASE (ELT BIT-STRING (1- LENGTH))
+                                ((#\0 #\1) LENGTH)
+                                (T (1- LENGTH))))))))
           (IF ARG (MAKE-INSTANCE 'BIT-VECTOR-MARKER :LENGTH ARG :ELEMENTS BITS)
               (MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS BITS)))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
