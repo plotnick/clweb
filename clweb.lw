@@ -1501,8 +1501,7 @@ function for setting its entries.
 
 @ \TeX-mode material consists of a list of strings containing pure \TeX\ text
 and lists of (inner-)Lisp forms. We set |*inner-lisp*| to true when we're
-printing inner-Lisp-mode material so that we can adjust our pretty-printing
-(e.g., we don't use alignment tabs in that context).
+printing inner-Lisp-mode material so that we can adjust our pretty-printing.
 
 @l
 (defvar *inner-lisp* nil)
@@ -1513,7 +1512,7 @@ printing inner-Lisp-mode material so that we can adjust our pretty-printing
       (string (write-string x stream))
       (list (let ((*inner-lisp* t))
               (dolist (form x)
-                (write form :stream stream)))))))
+                (format stream "{\\IB/~W}" form)))))))
 
 @ Control text (like section names) and comments are initially read as
 strings containing pure \TeX\ text, but they actually contain restricted
@@ -1671,9 +1670,7 @@ with `def'.
   (let ((group-p (cond ((highlight-symbol-p symbol)
                         (write-string "\\&{" stream))
                        ((keywordp symbol)
-                        (write-string "\\:{" stream))
-                       (*inner-lisp*
-                        (write-string "\\\\{" stream)))))
+                        (write-string "\\:{" stream)))))
     (write-escaped-string stream
                           (write-to-string symbol :escape nil :pretty nil)
                           *tex-escape-alist*)
