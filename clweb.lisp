@@ -921,7 +921,7 @@
                (*INNER-LISP* (WRITE-STRING "\\\\{" STREAM)))))
     (WRITE-ESCAPED-STRING STREAM
                           (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL)
-                          (LIST* '("*" . "\\/$\\ast$") *TEX-ESCAPE-ALIST*))
+                          *TEX-ESCAPE-ALIST*)
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
 (DEFSTRUCT (LOGICAL-BLOCK (:CONSTRUCTOR MAKE-LOGICAL-BLOCK (LIST))) LIST)
@@ -1031,7 +1031,7 @@
                               (SLOT-VALUE OBJ 'ELEMENTS))))
 (SET-WEAVE-DISPATCH 'BIT-VECTOR-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM "\\#~@[~D~]$\\ast$~{~[0~;1~]~}"
+                      (FORMAT STREAM "\\#~@[~D~]*~{~[0~;1~]~}"
                               (AND (SLOT-BOUNDP OBJ 'LENGTH)
                                    (SLOT-VALUE OBJ 'LENGTH))
                               (MAP 'LIST #'IDENTITY

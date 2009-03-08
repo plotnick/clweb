@@ -1676,7 +1676,7 @@ with `def'.
                         (write-string "\\\\{" stream)))))
     (write-escaped-string stream
                           (write-to-string symbol :escape nil :pretty nil)
-                          (list* '("*" . "\\/$\\ast$") *tex-escape-alist*))
+                          *tex-escape-alist*)
     (when group-p (write-string "}" stream))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
@@ -1879,7 +1879,7 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
 ; Need a higher priority than |simple-vector-marker|.
 (set-weave-dispatch 'bit-vector-marker
                     (lambda (stream obj)
-                      (format stream "\\#~@[~D~]$\\ast$~{~[0~;1~]~}"
+                      (format stream "\\#~@[~D~]*~{~[0~;1~]~}"
                               (and (slot-boundp obj 'length)
                                    (slot-value obj 'length))
                               (map 'list #'identity
