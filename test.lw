@@ -43,7 +43,7 @@ newlines and such are ignored:
     (loop for x = (read stream nil nil nil) ; |x| is a loop-local variable
           while x collect x)))
 
-(defvar *data-alist* '((a . b) (if . else) (2 . 3))
+(defvar *some-stuff* '((a . b) #5(a b c) #8*1011 foo)
   "Some stuff.")
 
 (defun body-forms ()

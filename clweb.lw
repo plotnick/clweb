@@ -872,19 +872,21 @@ the length specification and consequent possible abbreviation.
 @l
 (defclass simple-vector-marker (marker)
   ((length :initarg :length)
-   (list  :initarg :list)
+   (elements :initarg :elements)
    (element-type :initarg :element-type))
   (:default-initargs :element-type t))
 
 (defmethod marker-boundp ((marker simple-vector-marker)) t)
 (defmethod marker-value ((marker simple-vector-marker))
-  (with-slots (list element-type) marker
+  (with-slots (elements element-type) marker
     (if (slot-boundp marker 'length)
         (with-slots (length) marker
-          (fill (replace (make-array length :element-type element-type) list)
-                (car (last list))
-                :start (length list)))
-        (coerce list `(vector ,element-type)))))
+          (let ((supplied-length (length elements)))
+            (fill (replace (make-array length :element-type element-type)
+                           elements)
+                  (elt elements (1- supplied-length))
+                  :start supplied-length)))
+        (coerce elements `(vector ,element-type)))))
 
 ;; Adapted from SBCL's |sharp-left-paren|.
 (defun simple-vector-reader (stream sub-char arg)
@@ -900,8 +902,8 @@ the length specification and consequent possible abbreviation.
           (if (> length arg)
               (simple-reader-error
                stream "vector longer than specified length: #~S~S" arg list)
-              (make-instance 'simple-vector-marker :length arg :list list))
-          (make-instance 'simple-vector-marker :list list)))))
+              (make-instance 'simple-vector-marker :length arg :elements list))
+          (make-instance 'simple-vector-marker :elements list)))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\( #'simple-vector-reader ;
@@ -921,21 +923,36 @@ use the standard reader to parse the bit vector, then build our marker from
 the echoed characters.
 
 @l
-(defclass simple-bit-vector-marker (simple-vector-marker) ()
+(defclass bit-vector-marker (simple-vector-marker) ()
   (:default-initargs :element-type 'bit))
 
 (defun simple-bit-vector-reader (stream sub-char arg)
-  (with-output-to-string (out)
+  (declare (ignore sub-char))
+  (with-open-stream (out (make-string-output-stream))
     (with-open-stream (echo (make-echo-stream stream out))
-      ;; NOTE: An SBCL bug prevents this from working at all.
-      (call-standard-sharpm-fun echo sub-char arg)
-      ;; FIXME: More stuff goes here.
-      )))
+      (with-open-stream (rewind (make-concatenated-stream
+                                 (make-string-input-stream
+                                  (format nil "#~@[~D~]*" arg))
+                                 echo))
+        (let ((*readtable* (readtable-for-mode nil)))
+          (read rewind))
+        (let ((bits @<Build a bit vector...@>))
+          (if arg
+              (make-instance 'bit-vector-marker :length arg :elements bits)
+              (make-instance 'bit-vector-marker :elements bits)))))))
 
-#-sbcl
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\* #'simple-bit-vector-reader ;
                                 (readtable-for-mode mode)))
+
+@ The string output stream |out| should now contain the `0' and~`1'
+characters that make up the bit vector. But it might also contain the
+delimiter that terminates the token, so we have to be careful.
+
+@<Build a bit vector from the characters accumulated in |out|@>=
+(map 'bit-vector
+     (lambda (c) (ecase c (#\0 0) (#\1 1)))
+     (remove-if-not (lambda (c) (find c "01")) (get-output-stream-string out)))
 
 @ Sharpsign dot permits read-time evaluation. Ordinarily, of course, the form
 evaluated is lost, as only the result of the evaluation is returned.
@@ -1857,18 +1874,16 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
                       (format stream "\\#~@[~D~]~S"
                               (and (slot-boundp obj 'length)
                                    (slot-value obj 'length))
-                              (slot-value obj 'list))))
+                              (slot-value obj 'elements))))
 
 ; Need a higher priority than |simple-vector-marker|.
-(set-weave-dispatch 'simple-bit-vector-marker
+(set-weave-dispatch 'bit-vector-marker
                     (lambda (stream obj)
-                      (format stream "\\#~@[~D~]*~A"
+                      (format stream "\\#~@[~D~]$\\ast$~{~[0~;1~]~}"
                               (and (slot-boundp obj 'length)
                                    (slot-value obj 'length))
-                              (coerce (mapcar (lambda (bit)
-                                                (ecase bit (0 #\0) (1 #\1)))
-                                              (slot-value obj 'list))
-                                      'string)))
+                              (map 'list #'identity
+                                   (slot-value obj 'elements))))
                     1)
 
 @ @l

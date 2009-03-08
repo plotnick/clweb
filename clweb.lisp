@@ -424,22 +424,24 @@
   (SET-DISPATCH-MACRO-CHARACTER #\# #\' #'SHARPSIGN-QUOTE-READER
                                 (READTABLE-FOR-MODE MODE)))
 (DEFCLASS SIMPLE-VECTOR-MARKER (MARKER)
-          ((LENGTH :INITARG :LENGTH) (LIST :INITARG :LIST)
+          ((LENGTH :INITARG :LENGTH) (ELEMENTS :INITARG :ELEMENTS)
            (ELEMENT-TYPE :INITARG :ELEMENT-TYPE))
           (:DEFAULT-INITARGS :ELEMENT-TYPE T))
 (DEFMETHOD MARKER-BOUNDP ((MARKER SIMPLE-VECTOR-MARKER)) T)
 (DEFMETHOD MARKER-VALUE ((MARKER SIMPLE-VECTOR-MARKER))
-           (WITH-SLOTS (LIST ELEMENT-TYPE) MARKER
+           (WITH-SLOTS (ELEMENTS ELEMENT-TYPE) MARKER
                        (IF (SLOT-BOUNDP MARKER 'LENGTH)
                            (WITH-SLOTS (LENGTH) MARKER
-                                       (FILL
-                                        (REPLACE
-                                         (MAKE-ARRAY LENGTH :ELEMENT-TYPE
-                                                     ELEMENT-TYPE)
-                                         LIST)
-                                        (CAR (LAST LIST)) :START
-                                        (LENGTH LIST)))
-                           (COERCE LIST `(VECTOR ,ELEMENT-TYPE)))))
+                                       (LET ((SUPPLIED-LENGTH
+                                              (LENGTH ELEMENTS)))
+                                         (FILL
+                                          (REPLACE
+                                           (MAKE-ARRAY LENGTH :ELEMENT-TYPE
+                                                       ELEMENT-TYPE)
+                                           ELEMENTS)
+                                          (ELT ELEMENTS (1- SUPPLIED-LENGTH))
+                                          :START SUPPLIED-LENGTH)))
+                           (COERCE ELEMENTS `(VECTOR ,ELEMENT-TYPE)))))
 (DEFUN SIMPLE-VECTOR-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE SUB-CHAR))
   (LET* ((LIST (READ-DELIMITED-LIST #\) STREAM T))
@@ -454,17 +456,29 @@
               (SIMPLE-READER-ERROR STREAM
                                    "vector longer than specified length: #~S~S"
                                    ARG LIST)
-              (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :LENGTH ARG :LIST LIST))
-          (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :LIST LIST)))))
+              (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :LENGTH ARG :ELEMENTS LIST))
+          (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :ELEMENTS LIST)))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\( #'SIMPLE-VECTOR-READER
                                 (READTABLE-FOR-MODE MODE)))
-(DEFCLASS SIMPLE-BIT-VECTOR-MARKER (SIMPLE-VECTOR-MARKER) NIL
+(DEFCLASS BIT-VECTOR-MARKER (SIMPLE-VECTOR-MARKER) NIL
           (:DEFAULT-INITARGS :ELEMENT-TYPE 'BIT))
 (DEFUN SIMPLE-BIT-VECTOR-READER (STREAM SUB-CHAR ARG)
-  (WITH-OUTPUT-TO-STRING (OUT)
+  (DECLARE (IGNORE SUB-CHAR))
+  (WITH-OPEN-STREAM (OUT (MAKE-STRING-OUTPUT-STREAM))
     (WITH-OPEN-STREAM (ECHO (MAKE-ECHO-STREAM STREAM OUT))
-      (CALL-STANDARD-SHARPM-FUN ECHO SUB-CHAR ARG))))
+      (WITH-OPEN-STREAM
+          (REWIND
+           (MAKE-CONCATENATED-STREAM
+            (MAKE-STRING-INPUT-STREAM (FORMAT NIL "#~@[~D~]*" ARG)) ECHO))
+        (LET ((*READTABLE* (READTABLE-FOR-MODE NIL)))
+          (READ REWIND))
+        (LET ((BITS
+               (MAP 'BIT-VECTOR (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
+                    (REMOVE-IF-NOT (LAMBDA (C) (FIND C "01"))
+                                   (GET-OUTPUT-STREAM-STRING OUT)))))
+          (IF ARG (MAKE-INSTANCE 'BIT-VECTOR-MARKER :LENGTH ARG :ELEMENTS BITS)
+              (MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS BITS)))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\* #'SIMPLE-BIT-VECTOR-READER
                                 (READTABLE-FOR-MODE MODE)))
@@ -1014,17 +1028,14 @@
                       (FORMAT STREAM "\\#~@[~D~]~S"
                               (AND (SLOT-BOUNDP OBJ 'LENGTH)
                                    (SLOT-VALUE OBJ 'LENGTH))
-                              (SLOT-VALUE OBJ 'LIST))))
-(SET-WEAVE-DISPATCH 'SIMPLE-BIT-VECTOR-MARKER
+                              (SLOT-VALUE OBJ 'ELEMENTS))))
+(SET-WEAVE-DISPATCH 'BIT-VECTOR-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM "\\#~@[~D~]*~A"
+                      (FORMAT STREAM "\\#~@[~D~]$\\ast$~{~[0~;1~]~}"
                               (AND (SLOT-BOUNDP OBJ 'LENGTH)
                                    (SLOT-VALUE OBJ 'LENGTH))
-                              (COERCE
-                               (MAPCAR
-                                (LAMBDA (BIT) (ECASE BIT (0 #\0) (1 #\1)))
-                                (SLOT-VALUE OBJ 'LIST))
-                               'STRING)))
+                              (MAP 'LIST #'IDENTITY
+                                   (SLOT-VALUE OBJ 'ELEMENTS))))
                     1)
 (SET-WEAVE-DISPATCH 'READTIME-EVAL-MARKER
                     (LAMBDA (STREAM OBJ)
