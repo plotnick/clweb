@@ -28,9 +28,8 @@ copacetic.
 
 @ And this section is just to be used by the previous one.
 @<The next...@>=
-(eval-when (:convenient :easy :desirable)
-  (some-stuff)
-  (some-more-stuff))
+(defun do-some-stuff ()
+  (list 'some 'stuff))
 
 @*Baz. The sole purpose of this section is to exercise some of the
 pretty-printing capabilities of |weave|. Note that in inner-Lisp mode,
@@ -44,15 +43,31 @@ newlines and such are ignored:
     (loop for x = (read stream nil nil nil) ; |x| is a loop-local variable
           while x collect x)))
 
-(defvar *data-list* '(a b c if 2 3)
+(defvar *data-alist* '((a . b) (if . else) (2 . 3))
   "Some stuff.")
 
 (defun body-forms ()
-  (multiple-value-bind (a b c)
-      (three-values)
-    (foo a)
-    (bar)))
+  (flet ((lessp (x y)
+           (< x
+              y))
+         (three-values ()
+           (values 1 2 3)))
+   (multiple-value-bind (a
+                         b
+                         c)
+       (three-values)
+     (foo a)
+     (lessp b c))))
 
 (defmacro backq-forms (foo bar list &aux (var (gensym)))
   `(dolist (,var ,list ,list)
-     (funcall ,(foo `(,@bar)) ,var)))
+     (funcall ,foo ,@bar ,var)))
+
+(defun list-length-example (x)
+  (do ((n 0 (+ n 2))
+       (fast x (cddr fast))
+       (slow x (cdr slow)))
+      (nil)
+    (when (endp fast) (return n))
+    (when (endp (cdr fast)) (return (+ n 1)))
+    (when (and (eq fast slow) (> n 0)) (return nil))))

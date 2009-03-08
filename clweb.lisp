@@ -1,4 +1,4 @@
-;;;; TANGLED OUTPUT FROM WEB "clweb.lw".  DO NOT EDIT.
+;;;; TANGLED OUTPUT FROM WEB "clweb.lw". DO NOT EDIT.
 (DECLAIM (OPTIMIZE (DEBUG 3)))
 (DEFPACKAGE "COMMON-LISP-WEB" (:NICKNAMES "CLWEB") (:USE "COMMON-LISP")
             (:EXPORT "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE"
@@ -98,16 +98,14 @@
         (VALUES SECTION PRESENT-P))))
 (DEFPARAMETER *WHITESPACE*
   (COERCE '(#\  #\Tab #\Newline #\Newline #\Page #\Return) 'SIMPLE-STRING))
+(DEFUN WHITESPACE-P (CHAR) (FIND CHAR *WHITESPACE* :TEST #'CHAR=))
 (DEFUN SQUEEZE (STRING)
-  (FLET ((WHITESPACE-P (CHAR)
-           (FIND CHAR *WHITESPACE* :TEST #'CHAR=)))
-    (COERCE
-     (LOOP WITH SQUEEZING = NIL FOR CHAR ACROSS
-           (STRING-TRIM *WHITESPACE* STRING) IF (NOT SQUEEZING) IF
-           (WHITESPACE-P CHAR) DO (SETQ SQUEEZING T) AND COLLECT #\  ELSE
-           COLLECT CHAR ELSE UNLESS (WHITESPACE-P CHAR) DO (SETQ SQUEEZING NIL)
-           AND COLLECT CHAR)
-     'SIMPLE-STRING)))
+  (COERCE
+   (LOOP WITH SQUEEZING = NIL FOR CHAR ACROSS (STRING-TRIM *WHITESPACE* STRING)
+         IF (NOT SQUEEZING) IF (WHITESPACE-P CHAR) DO (SETQ SQUEEZING T) AND
+         COLLECT #\  ELSE COLLECT CHAR ELSE UNLESS (WHITESPACE-P CHAR) DO
+         (SETQ SQUEEZING NIL) AND COLLECT CHAR)
+   'SIMPLE-STRING))
 (DEFUN SECTION-NAME-PREFIX-P (NAME)
   (LET ((LEN (LENGTH NAME)))
     (IF (STRING= (SUBSEQ NAME (MAX (- LEN 3) 0) LEN) "...")
@@ -241,6 +239,14 @@
           (CHARPOS-STREAM
            (MAKE-CHARPOS-OUTPUT-STREAM ,STREAM :CHARPOS ,CHARPOS))))
      (UNWIND-PROTECT (PROGN ,@BODY) (RELEASE-CHARPOS-STREAM ,VAR))))
+(DEFMACRO WITH-REWIND-STREAM ((VAR STREAM) &BODY BODY &AUX (BUFFER (GENSYM)))
+  `(LET* ((,BUFFER (MAKE-STRING-OUTPUT-STREAM))
+          (,VAR (MAKE-ECHO-STREAM ,STREAM ,BUFFER)))
+     (FLET ((REWIND ,NIL
+              (MAKE-CONCATENATED-STREAM
+               (MAKE-STRING-INPUT-STREAM (GET-OUTPUT-STREAM-STRING ,BUFFER))
+               ,STREAM)))
+       ,@BODY)))
 (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
   (DEFVAR *EOF* (MAKE-SYMBOL "EOF")))
 (DEFUN EOF-P (X) (EQ X *EOF*))
@@ -253,19 +259,48 @@
            (WHEN (MARKER-BOUNDP OBJ) (WRITE (MARKER-VALUE OBJ) :STREAM STREAM)))
 (DEFCLASS NEWLINE-MARKER (MARKER)
           ((INDENTATION :ACCESSOR INDENTATION :INITARG :INDENTATION))
-          (:DEFAULT-INITARGS :INDENTATION 0))
+          (:DEFAULT-INITARGS :INDENTATION NIL))
 (DEFUN NEWLINE-P (OBJ) (TYPEP OBJ 'NEWLINE-MARKER))
-(DEFUN NEWLINE-READER (STREAM CHAR)
-  (DECLARE (IGNORE CHAR))
-  (PEEK-CHAR T STREAM NIL T)
-  (MAKE-INSTANCE 'NEWLINE-MARKER :INDENTATION (STREAM-CHARPOS STREAM)))
-(SET-MACRO-CHARACTER #\Newline #'NEWLINE-READER NIL (READTABLE-FOR-MODE :LISP))
+(SET-MACRO-CHARACTER #\Newline
+                     (LAMBDA (STREAM CHAR)
+                       (DECLARE (IGNORE STREAM CHAR))
+                       (MAKE-INSTANCE 'NEWLINE-MARKER))
+                     NIL (READTABLE-FOR-MODE :LISP))
 (DEFCLASS EMPTY-LIST-MARKER (MARKER) NIL (:DEFAULT-INITARGS :VALUE 'NIL))
 (DEFVAR *EMPTY-LIST* (MAKE-INSTANCE 'EMPTY-LIST-MARKER))
 (DEFCLASS LIST-MARKER (MARKER)
-          ((CHARPOS-1 :READER LIST-CHARPOS-1 :INITARG :CHARPOS-1)
-           (CHARPOS-2 :READER LIST-CHARPOS-2 :INITARG :CHARPOS-2)))
+          ((LENGTH :READER LIST-MARKER-LENGTH :INITARG :LENGTH)
+           (LIST :READER LIST-MARKER-LIST :INITARG :LIST)
+           (CHARPOS :READER LIST-MARKER-CHARPOS :INITARG :CHARPOS)))
 (DEFUN LIST-MARKER-P (OBJ) (TYPEP OBJ 'LIST-MARKER))
+(DEFCLASS CONSING-DOT-MARKER (MARKER) NIL)
+(DEFVAR *CONSING-DOT* (MAKE-INSTANCE 'CONSING-DOT-MARKER))
+(DEFMETHOD MARKER-BOUNDP ((MARKER LIST-MARKER)) T)
+(DEFMETHOD MARKER-VALUE ((MARKER LIST-MARKER))
+           (DO* ((LIST (LIST NIL))
+                 (TAIL LIST)
+                 (MARKER-LIST (LIST-MARKER-LIST MARKER) (CDR MARKER-LIST))
+                 (X (CAR MARKER-LIST) (CAR MARKER-LIST)))
+                ((ENDP MARKER-LIST) (CDR LIST))
+             (COND
+              ((EQ X *CONSING-DOT*)
+               (RPLACD TAIL
+                       (DOLIST
+                           (X MARKER-LIST (ERROR "Nothing after . in list"))
+                         (COND
+                          ((AND (MARKER-P X) (MARKER-BOUNDP X))
+                           (RETURN (MARKER-VALUE X)))
+                          ((NOT (MARKER-P X)) (RETURN X)))))
+               (RETURN (CDR LIST)))
+              ((MARKER-P X)
+               (WHEN (MARKER-BOUNDP X)
+                 (LET ((OBJ (LIST (MARKER-VALUE X))))
+                   (RPLACD TAIL OBJ)
+                   (SETQ TAIL OBJ))))
+              (T
+               (LET ((OBJ (LIST X)))
+                 (RPLACD TAIL OBJ)
+                 (SETQ TAIL OBJ))))))
 (DEFUN MAKE-LIST-READER (NEXT)
   (LAMBDA (STREAM CHAR)
     (IF (CHAR= (PEEK-CHAR T STREAM T NIL T) #\))
@@ -273,20 +308,43 @@
         (FUNCALL NEXT STREAM CHAR))))
 (SET-MACRO-CHARACTER #\( (MAKE-LIST-READER (GET-MACRO-CHARACTER #\( NIL)) NIL
                      (READTABLE-FOR-MODE :INNER-LISP))
+(DEFUN TOKEN-DELIMITER-P (CHAR)
+  (OR (WHITESPACE-P CHAR)
+      (MULTIPLE-VALUE-BIND
+          #'NON-TERMINATING-P
+          (GET-MACRO-CHARACTER CHAR)
+        (DECLARE (IGNORE FUNCTION))
+        (NOT NON-TERMINATING-P))))
 (DEFUN LIST-READER (STREAM CHAR)
-  (LET* ((P1 (STREAM-CHARPOS STREAM))
-         (CAR (PROG1 (READ STREAM T NIL T) (PEEK-CHAR T STREAM T NIL T)))
-         (P2 (STREAM-CHARPOS STREAM))
-         (CDR
-          (CDR
-           (LET ((CAR "t "))
-             (WITH-CHARPOS-INPUT-STREAM
-              (S
-               (MAKE-CONCATENATED-STREAM (MAKE-STRING-INPUT-STREAM CAR) STREAM)
-               :CHARPOS (- P2 (LENGTH CAR)))
-              (FUNCALL (GET-MACRO-CHARACTER #\( NIL) S CHAR))))))
-    (MAKE-INSTANCE 'LIST-MARKER :CHARPOS-1 P1 :CHARPOS-2 P2 :VALUE
-                   (CONS CAR CDR))))
+  (DECLARE (IGNORE CHAR))
+  (LOOP WITH LIST = 'NIL WITH CHARPOS-LIST = 'NIL FOR N FROM 0 FOR FIRST-CHAR =
+        (PEEK-CHAR T STREAM T NIL T) AS CHARPOS = (STREAM-CHARPOS STREAM) UNTIL
+        (CHAR= FIRST-CHAR #\)) DO
+        (COND
+         ((CHAR= FIRST-CHAR #\.)
+          (WITH-REWIND-STREAM (R STREAM)
+                              (LET ((NEXT-CHAR (READ-CHAR R T)))
+                                (COND
+                                 ((TOKEN-DELIMITER-P NEXT-CHAR)
+                                  (UNLESS (OR LIST *READ-SUPPRESS*)
+                                    (SIMPLE-READER-ERROR STREAM
+                                                         "Nothing appears before . in list."))
+                                  (PUSH *CONSING-DOT* LIST)
+                                  (PUSH CHARPOS CHARPOS-LIST))
+                                 (T (REWIND)
+                                  (LET ((OBJ
+                                         (MULTIPLE-VALUE-LIST
+                                          (READ R T NIL T))))
+                                    (WHEN OBJ
+                                      (PUSH (CAR OBJ) LIST)
+                                      (PUSH CHARPOS CHARPOS-LIST))))))))
+         (T
+          (LET ((OBJ (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
+            (WHEN OBJ (PUSH (CAR OBJ) LIST) (PUSH CHARPOS CHARPOS-LIST)))))
+        FINALLY (READ-CHAR STREAM T NIL T)
+        (RETURN
+         (MAKE-INSTANCE 'LIST-MARKER :LENGTH N :LIST (NREVERSE LIST) :CHARPOS
+                        (NREVERSE CHARPOS-LIST)))))
 (SET-MACRO-CHARACTER #\( (MAKE-LIST-READER #'LIST-READER) NIL
                      (READTABLE-FOR-MODE :LISP))
 (DEFCLASS QUOTE-MARKER (MARKER)
@@ -317,8 +375,10 @@
 (DEFCLASS BACKQUOTE-MARKER (MARKER) ((FORM :READER BACKQ-FORM :INITARG :FORM)))
 (DEFMETHOD MARKER-BOUNDP ((MARKER BACKQUOTE-MARKER)) T)
 (DEFMETHOD MARKER-VALUE ((MARKER BACKQUOTE-MARKER))
-           (WITH-STANDARD-IO-SYNTAX
-            (READ-FROM-STRING (PRIN1-TO-STRING MARKER))))
+           (LET ((*PRINT-PRETTY* NIL)
+                 (*PRINT-READABLY* T)
+                 (*READTABLE* (READTABLE-FOR-MODE NIL)))
+             (READ-FROM-STRING (PRIN1-TO-STRING MARKER))))
 (DEFMETHOD PRINT-OBJECT ((OBJ BACKQUOTE-MARKER) STREAM)
            (FORMAT STREAM "`~W" (BACKQ-FORM OBJ)))
 (DEFUN BACKQUOTE-READER (STREAM CHAR)
@@ -331,21 +391,16 @@
            (MODIFIER :READER COMMA-MODIFIER :INITARG :MODIFIER))
           (:DEFAULT-INITARGS :MODIFIER NIL))
 (DEFMETHOD MARKER-BOUNDP ((MARKER COMMA-MARKER)) T)
-(DEFMETHOD MARKER-VALUE ((MARKER COMMA-MARKER))
-           (WITH-STANDARD-IO-SYNTAX
-            (READ-FROM-STRING (PRIN1-TO-STRING MARKER))))
+(DEFMETHOD MARKER-VALUE ((MARKER COMMA-MARKER)) MARKER)
 (DEFMETHOD PRINT-OBJECT ((OBJ COMMA-MARKER) STREAM)
            (FORMAT STREAM ",~@[~C~]~W" (COMMA-MODIFIER OBJ) (COMMA-FORM OBJ)))
 (DEFUN COMMA-READER (STREAM CHAR)
   (DECLARE (IGNORE CHAR))
-  (LET ((CHAR (READ-CHAR STREAM)))
-    (CASE CHAR
-      ((#\@ #\.)
-       (MAKE-INSTANCE 'COMMA-MARKER :MODIFIER CHAR :FORM
-                      (READ STREAM T NIL T)))
-      (T
-       (UNREAD-CHAR CHAR STREAM)
-       (MAKE-INSTANCE 'COMMA-MARKER :FORM (READ STREAM T NIL T))))))
+  (CASE (PEEK-CHAR NIL STREAM T NIL T)
+    ((#\@ #\.)
+     (MAKE-INSTANCE 'COMMA-MARKER :MODIFIER (READ-CHAR STREAM) :FORM
+                    (READ STREAM T NIL T)))
+    (T (MAKE-INSTANCE 'COMMA-MARKER :FORM (READ STREAM T NIL T)))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\, #'COMMA-READER NIL (READTABLE-FOR-MODE MODE)))
 (DEFUN CALL-STANDARD-SHARPM-FUN (STREAM SUB-CHAR ARG)
@@ -646,7 +701,8 @@
                                        SECTIONS)
                                  (RETURN (NREVERSE SECTIONS))))))
 (DEFUN TANGLE-1 (FORM)
-  (COND ((ATOM FORM) (VALUES FORM NIL))
+  (COND ((LIST-MARKER-P FORM) (VALUES (MARKER-VALUE FORM) T))
+        ((ATOM FORM) (VALUES FORM NIL))
         ((TYPEP (CAR FORM) 'NAMED-SECTION)
          (VALUES (APPEND (SECTION-CODE (CAR FORM)) (TANGLE-1 (CDR FORM))) T))
         ((TYPEP (CAR FORM) 'MARKER)
@@ -678,7 +734,9 @@
          (MAP 'LIST #'SECTION-CODE
               (REMOVE-IF #'SECTION-NAME (READ-SECTIONS STREAM APPEND-P)))))
 (DEFUN LOAD-WEB-FROM-STREAM (STREAM PRINT &OPTIONAL (APPEND-P T))
-  (LET ((*READTABLE* *READTABLE*) (*PACKAGE* *PACKAGE*))
+  (LET ((*READTABLE* *READTABLE*)
+        (*PACKAGE* *PACKAGE*)
+        (SB-EXT:*EVALUATOR-MODE* :COMPILE))
     (DOLIST (FORM (TANGLE (READ-CODE-PARTS STREAM APPEND-P)) T)
       (IF PRINT
           (LET ((RESULTS (MULTIPLE-VALUE-LIST (EVAL FORM))))
@@ -719,7 +777,7 @@
     (WITH-OPEN-FILE
         (LISP LISP-FILE :DIRECTION :OUTPUT :IF-EXISTS :SUPERSEDE
          :EXTERNAL-FORMAT EXTERNAL-FORMAT)
-      (FORMAT LISP ";;;; TANGLED OUTPUT FROM WEB ~S.  DO NOT EDIT." INPUT-FILE)
+      (FORMAT LISP ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT." INPUT-FILE)
       (DOLIST (FORM (TANGLE (READ-CODE-PARTS INPUT T))) (PPRINT FORM LISP))))
   (APPLY #'COMPILE-FILE LISP-FILE ARGS))
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
@@ -786,7 +844,7 @@
       (DOLIST (FORM CODE)
         (IF (LIST-MARKER-P FORM) (FORMAT STREAM "~@<\\+~@;~W~;\\cr~:>" FORM)
             (FORMAT STREAM "~W" FORM)))
-      (FRESH-LINE STREAM))
+      (FORMAT STREAM "~&\\egroup~%"))
     (WHEN NAMED-SECTION
       (PRINT-XREFS STREAM #\A (REMOVE SECTION (SEE-ALSO NAMED-SECTION)))
       (PRINT-XREFS STREAM #\U (REMOVE SECTION (USED-BY NAMED-SECTION)))))
@@ -849,153 +907,76 @@
                (*INNER-LISP* (WRITE-STRING "\\\\{" STREAM)))))
     (WRITE-ESCAPED-STRING STREAM
                           (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL)
-                          (LIST* '("*" . "\\/$\\ast$") '("&" . "\\AM ")
-                                 *TEX-ESCAPE-ALIST*))
+                          (LIST* '("*" . "\\/$\\ast$") *TEX-ESCAPE-ALIST*))
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
-(DEFUN CAREFUL-LIST-LENGTH (X)
-  (LABELS ((LP (X LAG LEN)
-             (IF (CONSP X)
-                 (LET ((X (CDR X)) (LEN (1+ LEN)))
-                   (IF (CONSP X)
-                       (LET ((X (CDR X)) (LAG (CDR LAG)) (LEN (1+ LEN)))
-                         (AND (NOT (EQ X LAG)) (LP X LAG LEN)))
-                       LEN))
-                 LEN)))
-    (LP X X 0)))
-(DEFUN MAKE-DOTTED-LIST (LIST)
-  (LET ((LAST2 (LAST LIST 2)))
-    (RPLACD LAST2 (CADR LAST2))
-    LIST))
+(DEFSTRUCT (LOGICAL-BLOCK (:CONSTRUCTOR MAKE-LOGICAL-BLOCK (LIST))) LIST)
 (DEFUN ANALYZE-INDENTATION (LIST-MARKER)
   (DECLARE (TYPE LIST-MARKER LIST-MARKER))
-  (WITH-SLOTS ((P1 CHARPOS-1) (P2 CHARPOS-2) (LIST VALUE)) LIST-MARKER
-              (LET ((N (CAREFUL-LIST-LENGTH LIST)))
-                (IF (< N 3) (VALUES (CAR LIST) (CDR LIST) NIL NIL)
-                    (LOOP WITH FIRST = (FIRST LIST) WITH WHICH = NIL FOR I FROM
-                          1 UPTO N AS L = (CDR LIST) THEN (CDR L) AS X =
-                          (IF (CONSP L) (CAR L) L) IF (NEWLINE-P X) DO
-                          (LET ((P (INDENTATION X)))
-                            (COND
-                             ((<= P P1)
-                              (WHEN (< P P1)
-                                (WARN "funny indentation:~%~S" LIST))
-                              (SETQ WHICH :FIRST)
-                              (SETF (INDENTATION X) :FIRST))
-                             ((AND (> P2 P1) (>= P P2))
-                              (WHEN (AND (EQ WHICH :FIRST) INDENT-SECOND)
-                                (WARN "second-after-first indentation:~%~S"
-                                      LIST))
-                              (SETQ WHICH :SECOND)
-                              (SETF (INDENTATION X) :SECOND))
-                             ((< (- P P1) 3) (SETQ WHICH :FIRST)
-                              (SETF (INDENTATION X) '(:FIRST :QUAD)))
-                             ((< P P2) (SETQ WHICH :FIRST)
-                              (SETF (INDENTATION X) '(:FIRST :QQUAD)))))
-                          IF (NULL WHICH) COLLECT X INTO SECOND ELSE IF
-                          (EQ WHICH :FIRST) COLLECT X INTO INDENT-FIRST ELSE IF
-                          (EQ WHICH :SECOND) COLLECT X INTO INDENT-SECOND
-                          FINALLY
-                          (WHEN (NOT (CONSP L))
-                            (MAKE-DOTTED-LIST
-                             (ECASE WHICH
-                               ((NIL) SECOND)
-                               (:FIRST INDENT-FIRST)
-                               (:SECOND INDENT-SECOND))))
-                          (RETURN
-                           (VALUES FIRST SECOND INDENT-FIRST
-                                   INDENT-SECOND)))))))
+  (LABELS ((FIND-NEXT-NEWLINE (LIST)
+             (MEMBER-IF #'NEWLINE-P LIST :KEY #'CAR))
+           (NEXT-LOGICAL-BLOCK (LIST)
+             (DO* ((BLOCK 'NIL)
+                   (BLOCK-INDENT (CDAR LIST))
+                   (INDENT BLOCK-INDENT)
+                   (NEWLINE (FIND-NEXT-NEWLINE LIST))
+                   (NEXT-INDENT (CDADR NEWLINE)))
+                  ((OR (ENDP LIST)
+                       (AND (EQ LIST NEWLINE) NEXT-INDENT
+                            (< NEXT-INDENT BLOCK-INDENT)))
+                   (VALUES
+                    (IF (NOTANY #'NEWLINE-P BLOCK) (NREVERSE BLOCK)
+                        (MAKE-LOGICAL-BLOCK (NREVERSE BLOCK)))
+                    LIST))
+               (IF
+                (AND INDENT NEXT-INDENT (> NEXT-INDENT INDENT)
+                     (= NEXT-INDENT (CDAR LIST)))
+                (MULTIPLE-VALUE-BIND
+                    (SUB-BLOCK TAIL)
+                    (NEXT-LOGICAL-BLOCK LIST)
+                  (CHECK-TYPE (CAAR TAIL) (OR NEWLINE-MARKER NULL))
+                  (PUSH SUB-BLOCK BLOCK)
+                  (SETQ LIST TAIL))
+                (LET ((NEXT (CAR (POP LIST))))
+                  (PUSH NEXT BLOCK)
+                  (WHEN (AND LIST (NEWLINE-P NEXT))
+                    (SETF INDENT
+                            (CDAR LIST)
+                          (INDENTATION NEXT)
+                            (- INDENT BLOCK-INDENT)
+                          NEWLINE
+                            (FIND-NEXT-NEWLINE LIST)
+                          NEXT-INDENT
+                            (CDADR NEWLINE))))))))
+    (ASSERT
+     (= (LENGTH (LIST-MARKER-LIST LIST-MARKER))
+        (LENGTH (LIST-MARKER-CHARPOS LIST-MARKER))))
+    (NEXT-LOGICAL-BLOCK
+     (MAPCAR #'CONS (LIST-MARKER-LIST LIST-MARKER)
+             (LIST-MARKER-CHARPOS LIST-MARKER)))))
 (DEFUN PRINT-LIST (STREAM LIST-MARKER)
-  (MULTIPLE-VALUE-BIND
-      (FIRST SECOND INDENT-FIRST INDENT-SECOND)
-      (ANALYZE-INDENTATION LIST-MARKER)
-    (COND
-     ((AND (NULL INDENT-FIRST) (NULL INDENT-SECOND))
-      (FORMAT STREAM "~<\\(~;~@{~W~^ ~}~;\\)~:>" (CONS FIRST SECOND)))
-     ((AND INDENT-FIRST INDENT-SECOND) (FORMAT STREAM "\\(")
-      (PPRINT-LOGICAL-BLOCK
-          (STREAM INDENT-FIRST :PER-LINE-PREFIX "&" :SUFFIX "\\)")
-        (FORMAT STREAM "~W " FIRST)
-        (PPRINT-LOGICAL-BLOCK
-            (STREAM (NCONC SECOND INDENT-SECOND) :PER-LINE-PREFIX "&" :SUFFIX
-             "\\)")
-          (DO ((OBJ (PPRINT-POP) NEXT)
-               (NEXT))
-              (NIL)
-            (TYPECASE OBJ
-              (NEWLINE-MARKER
-               (FORMAT STREAM "\\cr~:@_")
-               (WHEN (LISTP (INDENTATION OBJ))
-                 (WRITE-STRING
-                  (ECASE (CADR (INDENTATION OBJ)) (:QUAD "\\1") (:QQUAD "\\2"))
-                  STREAM))
-               (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-               (SETQ NEXT (PPRINT-POP)))
-              (T
-               (WRITE OBJ :STREAM STREAM)
-               (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-               (SETQ NEXT (PPRINT-POP))
-               (UNLESS (NEWLINE-P NEXT) (WRITE-CHAR #\  STREAM))))))
-        (DO ((OBJ (PPRINT-POP) NEXT)
-             (NEXT))
-            (NIL)
-          (TYPECASE OBJ
-            (NEWLINE-MARKER
-             (FORMAT STREAM "\\cr~:@_")
-             (WHEN (LISTP (INDENTATION OBJ))
-               (WRITE-STRING
-                (ECASE (CADR (INDENTATION OBJ)) (:QUAD "\\1") (:QQUAD "\\2"))
-                STREAM))
-             (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-             (SETQ NEXT (PPRINT-POP)))
-            (T
-             (WRITE OBJ :STREAM STREAM)
-             (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-             (SETQ NEXT (PPRINT-POP))
-             (UNLESS (NEWLINE-P NEXT) (WRITE-CHAR #\  STREAM)))))))
-     (INDENT-FIRST (FORMAT STREAM "\\(")
-      (PPRINT-LOGICAL-BLOCK
-          (STREAM (NCONC (LIST FIRST) SECOND INDENT-FIRST) :PER-LINE-PREFIX "&"
-           :SUFFIX "\\)")
-        (DO ((OBJ (PPRINT-POP) NEXT)
-             (NEXT))
-            (NIL)
-          (TYPECASE OBJ
-            (NEWLINE-MARKER
-             (FORMAT STREAM "\\cr~:@_")
-             (WHEN (LISTP (INDENTATION OBJ))
-               (WRITE-STRING
-                (ECASE (CADR (INDENTATION OBJ)) (:QUAD "\\1") (:QQUAD "\\2"))
-                STREAM))
-             (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-             (SETQ NEXT (PPRINT-POP)))
-            (T
-             (WRITE OBJ :STREAM STREAM)
-             (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-             (SETQ NEXT (PPRINT-POP))
-             (UNLESS (NEWLINE-P NEXT) (WRITE-CHAR #\  STREAM)))))))
-     (INDENT-SECOND (FORMAT STREAM "\\(~W " FIRST)
-      (PPRINT-LOGICAL-BLOCK
-          (STREAM (NCONC SECOND INDENT-SECOND) :PER-LINE-PREFIX "&" :SUFFIX
-           "\\)")
-        (DO ((OBJ (PPRINT-POP) NEXT)
-             (NEXT))
-            (NIL)
-          (TYPECASE OBJ
-            (NEWLINE-MARKER
-             (FORMAT STREAM "\\cr~:@_")
-             (WHEN (LISTP (INDENTATION OBJ))
-               (WRITE-STRING
-                (ECASE (CADR (INDENTATION OBJ)) (:QUAD "\\1") (:QQUAD "\\2"))
-                STREAM))
-             (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-             (SETQ NEXT (PPRINT-POP)))
-            (T
-             (WRITE OBJ :STREAM STREAM)
-             (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-             (SETQ NEXT (PPRINT-POP))
-             (UNLESS (NEWLINE-P NEXT) (WRITE-CHAR #\  STREAM))))))))))
+  (LET ((BLOCK (ANALYZE-INDENTATION LIST-MARKER)))
+    (ETYPECASE BLOCK
+      (LIST (FORMAT STREAM "~<(~;~@{~W~^ ~}~;)~:>" BLOCK))
+      (LOGICAL-BLOCK (FORMAT STREAM "(~W)" BLOCK)))))
 (SET-WEAVE-DISPATCH 'LIST-MARKER #'PRINT-LIST)
+(DEFUN PRINT-LOGICAL-BLOCK (STREAM BLOCK)
+  (WRITE-STRING "\\!" STREAM)
+  (PPRINT-LOGICAL-BLOCK
+      (STREAM (LOGICAL-BLOCK-LIST BLOCK) :PER-LINE-PREFIX "&")
+    (DO (INDENT
+         NEXT
+         (OBJ (PPRINT-POP) NEXT))
+        (NIL)
+      (COND
+       ((NEWLINE-P OBJ) (FORMAT STREAM "\\cr~:@_")
+        (SETQ INDENT (INDENTATION OBJ)) (PPRINT-EXIT-IF-LIST-EXHAUSTED)
+        (SETQ NEXT (PPRINT-POP)))
+       (T (FORMAT STREAM "~@[~[~;\\1~;\\1~:;\\2~]~]~W" INDENT OBJ)
+        (SETQ INDENT NIL) (PPRINT-EXIT-IF-LIST-EXHAUSTED)
+        (SETQ NEXT (PPRINT-POP))
+        (UNLESS (NEWLINE-P NEXT) (WRITE-CHAR #\  STREAM)))))))
+(SET-WEAVE-DISPATCH 'LOGICAL-BLOCK #'PRINT-LOGICAL-BLOCK)
 (SET-WEAVE-DISPATCH 'NEWLINE-MARKER
                     (LAMBDA (STREAM OBJ)
                       (DECLARE (IGNORE OBJ))
@@ -1003,7 +984,11 @@
 (SET-WEAVE-DISPATCH 'EMPTY-LIST-MARKER
                     (LAMBDA (STREAM OBJ)
                       (DECLARE (IGNORE OBJ))
-                      (WRITE-STRING "\\(\\)" STREAM)))
+                      (WRITE-STRING "()" STREAM)))
+(SET-WEAVE-DISPATCH 'CONSING-DOT-MARKER
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (WRITE-CHAR #\. STREAM)))
 (SET-WEAVE-DISPATCH 'QUOTE-MARKER
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\'~W" (QUOTED-FORM OBJ))))
