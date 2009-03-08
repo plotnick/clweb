@@ -190,13 +190,13 @@
            (GET-OUTPUT-STREAM-STRING
             (FIRST (BROADCAST-STREAM-STREAMS (CHARPOS-STREAM STREAM)))))
 (DEFMETHOD CHARPOS ((STREAM CHARPOS-STREAM))
-           (LET* ((I -1)
+           (LET* ((I 0)
                   (NEWLINE
                    (POSITION #\Newline (GET-CHARPOS-STREAM-BUFFER STREAM) :KEY
                              (LAMBDA (X) (INCF I) X) :TEST #'CHAR= :FROM-END
                              T)))
              (SETF (SLOT-VALUE STREAM 'CHARPOS)
-                     (IF NEWLINE I (+ 1 I (SLOT-VALUE STREAM 'CHARPOS))))))
+                     (IF NEWLINE I (+ I (SLOT-VALUE STREAM 'CHARPOS))))))
 (DEFVAR *CHARPOS-STREAMS* (MAKE-HASH-TABLE :TEST #'EQ))
 (DEFMETHOD INITIALIZE-INSTANCE :AFTER
            ((INSTANCE CHARPOS-STREAM) &REST INITARGS &KEY)

@@ -407,13 +407,13 @@ for both input and output streams.
 
 @l
 (defmethod charpos ((stream charpos-stream))
-  (let* ((i -1)
+  (let* ((i 0)
          (newline (position #\Newline (get-charpos-stream-buffer stream)
                             :key (lambda (x) (incf i) x)
                             :test #'char=
                             :from-end t)))
     (setf (slot-value stream 'charpos)
-          (if newline i (+ 1 i (slot-value stream 'charpos))))))
+          (if newline i (+ i (slot-value stream 'charpos))))))
 
 @ Because we'll be passing around the proxy streams, we need to manually
 maintain a mapping between them and their associated instances of
