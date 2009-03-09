@@ -231,7 +231,7 @@ characters with a single space.
 
 @l
 (defparameter *whitespace*
-  (coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'simple-string))
+  #.(coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'string))
 
 (defun whitespace-p (char) (find char *whitespace* :test #'char=))
 

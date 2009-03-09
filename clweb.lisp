@@ -97,7 +97,8 @@
         (WHEN PRESENT-P (SETF (SECTION-NAME SECTION) NAME))
         (VALUES SECTION PRESENT-P))))
 (DEFPARAMETER *WHITESPACE*
-  (COERCE '(#\  #\Tab #\Newline #\Newline #\Page #\Return) 'SIMPLE-STRING))
+  #.(COERCE (QUOTE (#\  #\Tab #\Newline #\Newline #\Page #\Return))
+            (QUOTE STRING)))
 (DEFUN WHITESPACE-P (CHAR) (FIND CHAR *WHITESPACE* :TEST #'CHAR=))
 (DEFUN SQUEEZE (STRING)
   (COERCE
