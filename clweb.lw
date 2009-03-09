@@ -481,19 +481,67 @@ that.)
      (unwind-protect (progn ,@body)
        (release-charpos-stream ,var))))
 
-@ Sometimes we want to look more than one character ahead in a stream.
-This macro lets us do so.
+@ We'll sometimes need to know if a given character terminates a token or not.
+This function answers that question, but {\it only approximately\/}---if
+the user has frobbed the current readtable and has set non-standard
+characters to whitespace syntax, {\it this routine will not yield the
+correct result}. There's unfortunately nothing that we can do about it
+portably, since there's no way of determining the syntax of a character or
+of obtaining a list of all the characters with a given syntax.
 
 @l
-(defmacro with-rewind-stream ((var stream) &body body
-                              &aux (buffer (gensym)))
-  `(let* ((,buffer (make-string-output-stream))
-          (,var (make-echo-stream ,stream ,buffer)))
-     (flet ((rewind ()
-              (make-concatenated-stream
-               (make-string-input-stream (get-output-stream-string ,buffer))
-               ,stream)))
-       ,@body)))
+(defun token-delimiter-p (char)
+  (or (whitespace-p char)
+      (multiple-value-bind (function non-terminating-p)
+          (get-macro-character char)
+        (and function (not non-terminating-p)))))
+
+@ Sometimes we want to look more than one character ahead in a stream.
+This macro lets us do so: it executes |body| in an environment where
+|var| is lexically bound to a stream whose input comes from |stream|,
+and |rewind| is a local function that `rewinds' the stream to its
+state prior to any reads executed in the body.
+
+@l
+(defmacro with-rewind-stream ((var stream) &body body &aux (out (gensym)))
+  `(with-open-stream (,out (make-string-output-stream))
+     (with-open-stream (,var (make-echo-stream ,stream ,out))
+       (flet ((rewind ()
+                (setq ,var (make-concatenated-stream
+                            (make-string-input-stream
+                             (get-output-stream-string ,out))
+                            ,stream))))
+         ,@body))))
+
+@ And sometimes, we'll want to call |read| on a stream, and keep a copy of
+the characters that read actually scans. This reads from |stream|, and
+executes the |body| forms with |values| bound to a list of the values
+returned by |read| and |echoed| bound to a variable containing the
+characters so consumed.  If |prefix| is supplied, it should be a string
+that will be concatenated onto the front of |stream| prior to reading.
+
+@l
+(defmacro read-with-echo ((stream values echoed &key prefix) &body body &aux
+                          (out (gensym)) (echo (gensym)) (rewind (gensym))
+                          (raw-output (gensym)) (length (gensym)))
+  `(with-open-stream (,out (make-string-output-stream))
+     (with-open-stream (,echo (make-echo-stream ,stream ,out))
+       (with-open-stream (,rewind (make-concatenated-stream
+                                   ,@(when prefix
+                                       `((make-string-input-stream ,prefix)))
+                                   ,echo))
+         (let* ((,values (multiple-value-list (read ,rewind)))
+                (,raw-output (get-output-stream-string ,out))
+                (,length (length ,raw-output))
+                (,echoed (subseq ,raw-output
+                                 0 (if (or (eof-p ;
+                                            (peek-char nil ,stream nil *eof*))
+                                           (token-delimiter-p ;
+                                            (elt ,raw-output (1- ,length))))
+                                       ,length
+                                       (1- ,length)))))
+           (declare (ignorable ,values ,echoed))
+           ,@body)))))
 
 @ We frequently need an object to use as the |eof-value| argument to
 |read|. It need not be a symbol; it need not even be an atom.
@@ -551,6 +599,15 @@ prints the marker's value if it is bound.
 (defmethod print-object ((obj marker) stream)
   (when (marker-boundp obj)
     (write (marker-value obj) :stream stream)))
+
+@ A few of the markers behave differently when we're tangling for the
+purposes of evaluation than when we're writing out a tangled Lisp source
+file. We need this distinction only for read-time evaluated constructs,
+such as \.{#.} and~\.{#+}/\.{#-}. This variable will be bound to true when
+and only when the value of a marker will be used as an argument to |eval|.
+
+@l
+(defvar *evaluating* nil)
 
 @ Our first marker is for newlines, which we preserve for the purposes of
 indentation. They are represented in code forms by an unbound marker, so
@@ -635,23 +692,6 @@ preserved during tangling, and that like newlines, we only need one.
 (set-macro-character #\( (make-list-reader (get-macro-character #\( nil))
                      nil (readtable-for-mode :inner-lisp))
 
-@ When we're looking for a consing dot while reading a list, we'll need to know
-if the character following a dot terminates the token or not. This function
-answers that question, but {\it only approximately\/}---if the user has frobbed
-the current readtable and has set non-standard characters to whitespace syntax,
-{\it this routine will not yield the correct result}. There's unfortunately
-nothing that we can do about it portably, since there's no way of determining
-the syntax of a character or of obtaining a list of all the characters with a
-given syntax.
-
-@l
-(defun token-delimiter-p (char)
-  (or (whitespace-p char)
-      (multiple-value-bind (function non-terminating-p)
-          (get-macro-character char)
-        (declare (ignore function))
-        (not non-terminating-p))))
-
 @ @l
 (defun list-reader (stream char)
   (declare (ignore char))
@@ -661,8 +701,7 @@ given syntax.
         for first-char = (peek-char t stream t nil t)
         as charpos = (stream-charpos stream)
         until (char= first-char #\) )
-        do (cond ((char= first-char #\.)
-                  @<Read the next token...@>)
+        do (cond ((char= first-char #\.) @<Read the next token...@>)
                  (t (let ((obj (multiple-value-list (read stream t nil t))))
                       (when obj
                         (push (car obj) list)
@@ -678,15 +717,16 @@ given syntax.
                      nil (readtable-for-mode :lisp))
 
 @ @<Read the next token, which might be a consing dot@>=
-(with-rewind-stream (r stream)
-  (let ((next-char (read-char r t)))
+(with-rewind-stream (rewind stream)
+  (read-char rewind t) ; consume dot
+  (let ((next-char (read-char rewind t)))
     (cond ((token-delimiter-p next-char)
            (unless (or list *read-suppress*)
              (simple-reader-error stream "Nothing appears before . in list."))
            (push *consing-dot* list)
            (push charpos charpos-list))
           (t (rewind)
-             (let ((obj (multiple-value-list (read r t nil t))))
+             (let ((obj (multiple-value-list (read rewind t nil t))))
                (when obj
                  (push (car obj) list)
                  (push charpos charpos-list)))))))
@@ -928,42 +968,51 @@ the echoed characters.
 
 (defun simple-bit-vector-reader (stream sub-char arg)
   (declare (ignore sub-char))
-  (with-open-stream (out (make-string-output-stream))
-    (with-open-stream (echo (make-echo-stream stream out))
-      (with-open-stream (rewind (make-concatenated-stream
-                                 (make-string-input-stream
-                                  (format nil "#~@[~D~]*" arg))
-                                 echo))
-        (let ((*readtable* (readtable-for-mode nil)))
-          (read rewind))
-        (let ((bits @<Build a bit vector...@>))
-          (if arg
-              (make-instance 'bit-vector-marker :length arg :elements bits)
-              (make-instance 'bit-vector-marker :elements bits)))))))
+  (let ((*readtable* (readtable-for-mode nil)))
+    (read-with-echo (stream values bits :prefix (format nil "#~@[~D~]*" arg))
+      (apply #'make-instance 'bit-vector-marker
+             :elements @<Build a bit vector...@>
+             (if arg (list :length arg))))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\* #'simple-bit-vector-reader ;
                                 (readtable-for-mode mode)))
 
-@ The string output stream |out| should now contain the `0' and~`1'
-characters that make up the bit vector. But it might also contain the
-delimiter that terminates the token, so we have to be careful.
 
-@<Build a bit vector from the characters accumulated in |out|@>=
+@ The string |bits| now contains the `0' and~`1' characters that make up
+the bit vector. But it might also contain the delimiter that terminates the
+token, so we have to be careful.
+
+@<Build a bit vector from the characters in |bits|@>=
 (map 'bit-vector
      (lambda (c) (ecase c (#\0 0) (#\1 1)))
-     (let* ((bit-string (get-output-stream-string out))
-            (length (length bit-string)))
-       (subseq bit-string 0 (case (elt bit-string (1- length))
-                              ((#\0 #\1) length)
-                              (t (1- length))))))
+     (subseq bits 0 (let ((n (length bits)))
+                      (case (elt bits (1- n)) ((#\0 #\1) n) (t (1- n))))))
 
-@ Sharpsign dot permits read-time evaluation. Ordinarily, of course, the form
-evaluated is lost, as only the result of the evaluation is returned.
+@ Sharpsign dot permits read-time evaluation. Ordinarily, of course, the
+form evaluated is lost, as only the result of the evaluation is returned.
+We want to preserve the form for both weaving and tangling to a file.  But
+we also want to return the evaluated form as the |marker-value| when we're
+tangling for evaluation. So if we're not evaluating, we return a special
+`pseudo-marker' with a specialized |print-object| method. This gives us an
+appropriate value in all three situations: during weaving, we have just
+another marker; when tangling for evaluation, we get the read-time-evaluated
+value; and in a tangled source file, we get a \.{#.} form.
 
 @l
-(defclass readtime-eval-marker (marker)
-  ((form :reader read-eval-form :initarg :form)))
+(defclass read-time-eval ()
+  ((form :reader read-time-eval-form :initarg :form)))
+
+(defmethod print-object ((obj read-time-eval) stream)
+  (format stream "#.~W" (read-time-eval-form obj)))
+
+(defclass read-time-eval-marker (read-time-eval marker) ())
+
+(defmethod marker-boundp ((marker read-time-eval-marker)) t)
+(defmethod marker-value ((marker read-time-eval-marker))
+  (if *evaluating*
+      (call-next-method)
+      (make-instance 'read-time-eval :form (read-time-eval-form marker))))
 
 (defun sharpsign-dot-reader (stream sub-char arg)
   (declare (ignore sub-char arg))
@@ -971,7 +1020,7 @@ evaluated is lost, as only the result of the evaluation is returned.
     (unless *read-suppress*
       (unless *read-eval*
         (simple-reader-error stream "can't read #. while *READ-EVAL* is NIL"))
-      (make-instance 'readtime-eval-marker :form form :value (eval form)))))
+      (make-instance 'read-time-eval-marker :form form :value (eval form)))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader ;
@@ -1020,6 +1069,85 @@ out to a string and let the standard reader parse it when we need the value.
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\S #'structure-reader ;
                                 (readtable-for-mode mode)))
+
+@ Sharpsign $+$ and~$-$ provide read-time conditionalization based on
+feature expressions, described in section~24.1.2 of the CL standard.
+This routine, adapted from SBCL, interprets such an expression.
+
+@l
+(defun featurep (x)
+  (etypecase x
+    (cons
+     (case (car x)
+       ((:not not)
+        (cond
+          ((cddr x)
+           (error "too many subexpressions in feature expression: ~S" x))
+          ((null (cdr x))
+           (error "too few subexpressions in feature expression: ~S" x))
+          (t (not (featurep (cadr x))))))
+       ((:and and) (every #'featurep (cdr x)))
+       ((:or or) (some #'featurep (cdr x)))
+       (t
+        (error "unknown operator in feature expression: ~S." x))))
+    (symbol (not (null (member x *features* :test #'eq))))))
+
+@ For sharpsign $+$/$-$, we use the same sort of trick we used for \.{#.}
+above: we have a marker that returns the appropriate value when tangling for
+evaluation, but returns a `pseudo-marker' when tangling to a file, so that
+we can preserve the original form.
+
+This case is slightly trickier, though, because we can't just call |read|
+on the form, since if the the test fails, |*read-suppress*| will be true,
+and we won't get anything back. So we use an echo stream to catch the raw
+characters that the reader scans, and use that to reconstruct the form.
+
+@l
+(defclass read-time-conditional ()
+  ((plusp :reader read-time-conditional-plusp :initarg :plusp)
+   (test :reader read-time-conditional-test :initarg :test)
+   (form :reader read-time-conditional-form :initarg :form)))
+
+(defmethod print-object ((obj read-time-conditional) stream)
+  (format stream "#~:[-~;+~]~S ~A"
+          (read-time-conditional-plusp obj)
+          (read-time-conditional-test obj)
+          (read-time-conditional-form obj)))
+
+(defclass read-time-conditional-marker (read-time-conditional marker) ())
+
+(defmethod marker-boundp ((marker read-time-conditional-marker))
+  (if *evaluating*
+      (call-next-method)
+      t))
+
+(defmethod marker-value ((marker read-time-conditional-marker))
+  (if *evaluating*
+      (call-next-method)
+      (make-instance 'read-time-conditional
+                     :plusp (read-time-conditional-plusp marker)
+                     :test (read-time-conditional-test marker)
+                     :form (read-time-conditional-form marker))))
+
+(defun read-time-conditional-reader (stream sub-char arg)
+  (declare (ignore arg))
+  (let* ((plusp (ecase sub-char (#\+ t) (#\- nil)))
+         (*readtable* (readtable-for-mode nil))
+         (test (let ((*package* (find-package "KEYWORD"))
+                     (*read-suppress* nil))
+                 (read stream t nil t)))
+         (*read-suppress* (if plusp (not (featurep test)) (featurep test))))
+    (read-with-echo (stream values form)
+      (apply #'make-instance 'read-time-conditional-marker
+             :plusp plusp :test test :form form
+             (and (not *read-suppress*) values (list :value (car values)))))))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\+ #'read-time-conditional-reader ;
+                                (readtable-for-mode mode))
+  (set-dispatch-macro-character #\# #\- #'read-time-conditional-reader ;
+                                (readtable-for-mode mode)))
+
 
 @ Okay, so much for the standard macro characters. Now we're ready to move
 on to \WEB-specific reading. We accumulate \TeX\ mode material such as
@@ -1395,9 +1523,10 @@ will not effect the calling environment.
 
 @l
 (defun load-web-from-stream (stream print &optional (append-p t))
-  (let ((*readtable* *readtable*)
+  (let (#+sbcl(sb-ext:*evaluator-mode* :compile)
+        (*readtable* *readtable*)
         (*package* *package*)
-        #+sbcl(sb-ext:*evaluator-mode* :compile))
+        (*evaluating* t))
     (dolist (form (tangle (read-code-parts stream append-p)) t)
       (if print
           (let ((results (multiple-value-list (eval form))))
@@ -1455,8 +1584,9 @@ file and then invoking the file compiler on that file.
                           :if-exists :supersede
                           :external-format external-format)
       (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT." input-file)
-      (dolist (form (tangle (read-code-parts input t)))
-        (pprint form lisp))))
+      (let ((*evaluating* nil))
+        (dolist (form (tangle (read-code-parts input t)))
+          (pprint form lisp)))))
   (apply #'compile-file lisp-file args))
 
 @*The weaver. Most of the hard work is done while reading the sections in,
@@ -1888,9 +2018,9 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
                     1)
 
 @ @l
-(set-weave-dispatch 'readtime-eval-marker
+(set-weave-dispatch 'read-time-eval-marker
                     (lambda (stream obj)
-                      (format stream "\\#.~W" (read-eval-form obj))))
+                      (format stream "\\#.~W" (read-time-eval-form obj))))
 
 @ @l
 (set-weave-dispatch 'radix-marker
@@ -1904,3 +2034,11 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
 (set-weave-dispatch 'structure-marker
                     (lambda (stream obj)
                       (format stream "\\#S~W" (structure-marker-form obj))))
+
+@ @l
+(set-weave-dispatch 'read-time-conditional-marker
+                    (lambda (stream obj)
+                      (format stream "\\#~:[--~;+~]~S ~A"
+                              (read-time-conditional-plusp obj)
+                              (read-time-conditional-test obj)
+                              (read-time-conditional-form obj))))

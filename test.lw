@@ -31,6 +31,15 @@ copacetic.
 (defun do-some-stuff ()
   (list 'some 'stuff))
 
+@*Markers. Here we test out some of the trickier markers.
+
+@l
+(defparameter *cons* '(a . b))
+(defparameter *vector* #5(a b c))
+(defparameter *bit-vector* #8*1011 "An octet")
+(defparameter *list* '#.(list 1 2 3))
+(defparameter *impl* #+sbcl "SBCL" #-sbcl "Not SBCL")
+
 @*Baz. The sole purpose of this section is to exercise some of the
 pretty-printing capabilities of |weave|. Note that in inner-Lisp mode,
 newlines and such are ignored:
@@ -42,9 +51,6 @@ newlines and such are ignored:
   (with-open-file (stream file :direction direction)
     (loop for x = (read stream nil nil nil) ; |x| is a loop-local variable
           while x collect x)))
-
-(defvar *some-stuff* '((a . b) #5(a b c) #8*1011 foo)
-  "Some stuff.")
 
 (defun body-forms ()
   (flet ((lessp (x y)
