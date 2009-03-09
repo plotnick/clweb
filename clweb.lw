@@ -603,8 +603,9 @@ prints the marker's value if it is bound.
 @ A few of the markers behave differently when we're tangling for the
 purposes of evaluation than when we're writing out a tangled Lisp source
 file. We need this distinction only for read-time evaluated constructs,
-such as \.{#.} and~\.{#+}/\.{#-}. This variable will be bound to true when
-and only when the value of a marker will be used as an argument to |eval|.
+such as \.{\#.} and~\.{\#+}/\.{\#-}. This variable will be bound to true
+when and only when the value of a marker will be used as an argument to
+|eval|.
 
 @l
 (defvar *evaluating* nil)
@@ -997,7 +998,7 @@ tangling for evaluation. So if we're not evaluating, we return a special
 `pseudo-marker' with a specialized |print-object| method. This gives us an
 appropriate value in all three situations: during weaving, we have just
 another marker; when tangling for evaluation, we get the read-time-evaluated
-value; and in a tangled source file, we get a \.{#.} form.
+value; and in a tangled source file, we get a \.{\#.} form.
 
 @l
 (defclass read-time-eval ()
@@ -1092,7 +1093,7 @@ This routine, adapted from SBCL, interprets such an expression.
         (error "unknown operator in feature expression: ~S." x))))
     (symbol (not (null (member x *features* :test #'eq))))))
 
-@ For sharpsign $+$/$-$, we use the same sort of trick we used for \.{#.}
+@ For sharpsign $+$/$-$, we use the same sort of trick we used for \.{\#.}
 above: we have a marker that returns the appropriate value when tangling for
 evaluation, but returns a `pseudo-marker' when tangling to a file, so that
 we can preserve the original form.
