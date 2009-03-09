@@ -1124,9 +1124,9 @@ used with the \.{\#S} reader macro, \etc.
 (defun start-code-reader (stream sub-char arg)
   (declare (ignore stream arg))
   (make-instance 'start-code-marker
-                 :evalp (ecase sub-char
-                          ((#\L #\P) nil)
-                          ((#\E) t))))
+                 :evalp (ecase (char-downcase sub-char)
+                          ((#\l #\p) nil)
+                          ((#\e) t))))
 
 (dolist (sub-char '(#\l #\p #\e))
   (set-control-code sub-char #'start-code-reader '(:TeX)))
