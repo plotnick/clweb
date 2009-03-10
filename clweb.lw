@@ -10,7 +10,7 @@
 \def\metasyn#1{\leavevmode $\langle${\it #1}$\rangle$} % metasyntactic variable
 
 @*Introduction. The two primary operations that a literate programming
-system provides are {\it tangling\/} and {\/weaving\/}. The former creates
+system provides are {\it tangling\/} and {\it weaving\/}. The former creates
 a machine-readable output file from a \WEB, while the latter prepares the
 \WEB\ for formatting using \TeX\ or some other formatting engine.
 
