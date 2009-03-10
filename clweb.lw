@@ -530,7 +530,8 @@ that will be concatenated onto the front of |stream| prior to reading.
                                    ,@(when prefix
                                        `((make-string-input-stream ,prefix)))
                                    ,echo))
-         (let* ((,values (multiple-value-list (read ,rewind)))
+         (let* ((,values (multiple-value-list ;
+                          (read-preserving-whitespace ,rewind)))
                 (,raw-output (get-output-stream-string ,out))
                 (,length (length ,raw-output))
                 (,echoed (subseq ,raw-output
@@ -1138,6 +1139,7 @@ characters that the reader scans, and use that to reconstruct the form.
                      (*read-suppress* nil))
                  (read stream t nil t)))
          (*read-suppress* (if plusp (not (featurep test)) (featurep test))))
+    (peek-char t stream t nil t)
     (read-with-echo (stream values form)
       (apply #'make-instance 'read-time-conditional-marker
              :plusp plusp :test test :form form
@@ -1148,7 +1150,6 @@ characters that the reader scans, and use that to reconstruct the form.
                                 (readtable-for-mode mode))
   (set-dispatch-macro-character #\# #\- #'read-time-conditional-reader ;
                                 (readtable-for-mode mode)))
-
 
 @ Okay, so much for the standard macro characters. Now we're ready to move
 on to \WEB-specific reading. We accumulate \TeX\ mode material such as
@@ -2039,7 +2040,12 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
 @ @l
 (set-weave-dispatch 'read-time-conditional-marker
                     (lambda (stream obj)
-                      (format stream "\\#~:[--~;+~]~S ~A"
+                      (format stream "\\#~:[--~;+~]\\RC{~S"
                               (read-time-conditional-plusp obj)
-                              (read-time-conditional-test obj)
-                              (read-time-conditional-form obj))))
+                              (read-time-conditional-test obj))
+                      (write-char #\Space stream)
+                      (write-escaped-string stream
+                                            (read-time-conditional-form obj)
+                                            *tex-escape-alist*)
+                      (write-char #\} stream)))
+

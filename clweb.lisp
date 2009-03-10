@@ -267,7 +267,8 @@
            (,REWIND
             (MAKE-CONCATENATED-STREAM
              ,@(WHEN PREFIX `((MAKE-STRING-INPUT-STREAM ,PREFIX))) ,ECHO))
-         (LET* ((,VALUES (MULTIPLE-VALUE-LIST (READ ,REWIND)))
+         (LET* ((,VALUES
+                 (MULTIPLE-VALUE-LIST (READ-PRESERVING-WHITESPACE ,REWIND)))
                 (,RAW-OUTPUT (GET-OUTPUT-STREAM-STRING ,OUT))
                 (,LENGTH (LENGTH ,RAW-OUTPUT))
                 (,ECHOED
@@ -590,6 +591,7 @@
           (LET ((*PACKAGE* (FIND-PACKAGE "KEYWORD")) (*READ-SUPPRESS* NIL))
             (READ STREAM T NIL T)))
          (*READ-SUPPRESS* (IF PLUSP (NOT (FEATUREP TEST)) (FEATUREP TEST))))
+    (PEEK-CHAR T STREAM T NIL T)
     (READ-WITH-ECHO (STREAM VALUES FORM)
                     (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP
                            PLUSP :TEST TEST :FORM FORM
@@ -830,7 +832,6 @@
               (REMOVE-IF #'SECTION-NAME (READ-SECTIONS STREAM APPEND-P)))))
 (DEFUN LOAD-WEB-FROM-STREAM (STREAM PRINT &OPTIONAL (APPEND-P T))
   (LET (#+:SBCL (sb-ext:*evaluator-mode* :compile)
-
         (*READTABLE* *READTABLE*)
         (*PACKAGE* *PACKAGE*)
         (*EVALUATING* T))
@@ -1135,7 +1136,11 @@
                       (FORMAT STREAM "\\#S~W" (STRUCTURE-MARKER-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'READ-TIME-CONDITIONAL-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM "\\#~:[--~;+~]~S ~A"
+                      (FORMAT STREAM "\\#~:[--~;+~]\\RC{~S"
                               (READ-TIME-CONDITIONAL-PLUSP OBJ)
-                              (READ-TIME-CONDITIONAL-TEST OBJ)
-                              (READ-TIME-CONDITIONAL-FORM OBJ))))
+                              (READ-TIME-CONDITIONAL-TEST OBJ))
+                      (WRITE-CHAR #\  STREAM)
+                      (WRITE-ESCAPED-STRING STREAM
+                                            (READ-TIME-CONDITIONAL-FORM OBJ)
+                                            *TEX-ESCAPE-ALIST*)
+                      (WRITE-CHAR #\} STREAM)))

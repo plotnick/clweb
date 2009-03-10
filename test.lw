@@ -38,7 +38,7 @@ copacetic.
 (defparameter *vector* #5(a b c))
 (defparameter *bit-vector* #8*1011 "An octet")
 (defparameter *list* '#.(list 1 2 3))
-(defparameter *impl* #+sbcl "SBCL" #-sbcl "Not SBCL")
+(defparameter *impl* #+sbcl "SBCL" #+(not sbcl) "Not SBCL")
 
 @*Baz. The sole purpose of this section is to exercise some of the
 pretty-printing capabilities of |weave|. Note that in inner-Lisp mode,
