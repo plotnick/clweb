@@ -6,13 +6,13 @@
 \def\v{\.{\char'174}} % vertical bar in typewriter font
 \def\WEB{{\tt WEB}}
 \def\CWEB{{\tt CWEB}}
-\def\etc.{{\it \char`&c.}} % doesn't handle spacefactor
+\def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\metasyn#1{\leavevmode $\langle${\it #1}$\rangle$} % metasyntactic variable
 
 @*Introduction. The two primary operations that a literate programming
-system makes available are {\it tangling\/} and {\/weaving\/}. The former
-creates a machine-readable output file from a \WEB, while the latter prepares
-the \WEB\ for formatting using \TeX\ or some other formatting engine.
+system provides are {\it tangling\/} and {\/weaving\/}. The former creates
+a machine-readable output file from a \WEB, while the latter prepares the
+\WEB\ for formatting using \TeX\ or some other formatting engine.
 
 There are three interface functions defined by this system: |tangle-file|,
 |load-web|, and |weave|. The first is analogous to |compile-file|: given
@@ -517,7 +517,7 @@ state prior to any reads executed in the body.
 the characters that read actually scans. This reads from |stream|, and
 executes the |body| forms with |values| bound to a list of the values
 returned by |read| and |echoed| bound to a variable containing the
-characters so consumed.  If |prefix| is supplied, it should be a string
+characters so consumed. If |prefix| is supplied, it should be a string
 that will be concatenated onto the front of |stream| prior to reading.
 
 @l
@@ -993,7 +993,7 @@ token, so we have to be careful.
 
 @ Sharpsign dot permits read-time evaluation. Ordinarily, of course, the
 form evaluated is lost, as only the result of the evaluation is returned.
-We want to preserve the form for both weaving and tangling to a file.  But
+We want to preserve the form for both weaving and tangling to a file. But
 we also want to return the evaluated form as the |marker-value| when we're
 tangling for evaluation. So if we're not evaluating, we return a special
 `pseudo-marker' with a specialized |print-object| method. This gives us an
@@ -1209,7 +1209,7 @@ reader macro functions that implement the control codes.
     (set-dispatch-macro-character #\@ sub-char function
                                   (readtable-for-mode mode))))
 
-@ The control code \.{@@@@} yields the string `\.{"@@"}' in all modes, but
+@ The control code \.{@@@@} yields the string \.{"@@"} in all modes, but
 it should really only be used in \TeX\ text.
 
 @l
@@ -1217,10 +1217,10 @@ it should really only be used in \TeX\ text.
                         (declare (ignore sub-char stream arg))
                         (string "@")))
 
-@ Sections are introduced by the two section-starting control codes, \.{@@ }
-and~\.{@@*}, which differ only in the way they are output during weaving.
-The reader macro functions that implement these control codes return an
-instance of the appropriate section class.
+@ Sections are introduced by the two section-starting control codes,
+\.{@@\ } and~\.{@@*}, which differ only in the way they are output during
+weaving. The reader macro functions that implement these control codes
+return an instance of the appropriate section class.
 
 @l
 (defun start-section-reader (stream sub-char arg)
@@ -1675,7 +1675,7 @@ re-reads such strings and picks up any inner-Lisp material.
 
 @ @l
 (defun print-section (stream section)
-  (format stream "~&\\~:[M~;N{1}~]{~D}" ; `\.{\{1\}}' should be depth
+  (format stream "~&\\~:[M~;N{1}~]{~D}" ; \.{\{1\}} should be depth
           (typep section 'starred-section)
           (section-number section))
   (let* ((commentary (section-commentary section))
@@ -1870,7 +1870,7 @@ be |nil| (we consumed the rest of the forms), or begin with a newline.
 
 We keep a pointer to the next newline in |newline|, and |next-indent| is
 the indentation of the immediately following form, which will become the
-current indentation when we pass |newline|.  As we do so, we store the
+current indentation when we pass |newline|. As we do so, we store the
 difference between the current indentation and the block indentation in
 the newline marker, so that the printing routine, below, doesn't have to
 worry about character positions at all: it can just look at the newline
