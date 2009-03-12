@@ -680,6 +680,8 @@
                 NAMED-SECTION))))))
 (SET-CONTROL-CODE #\< (MAKE-SECTION-NAME-READER T) '(:TEX))
 (SET-CONTROL-CODE #\< (MAKE-SECTION-NAME-READER NIL) '(:LISP :INNER-LISP))
+(DEFCLASS PAR-MARKER (NEWLINE-MARKER) NIL)
+(DEFVAR *PAR* (MAKE-INSTANCE 'PAR-MARKER))
 (DEFMACRO MAYBE-PUSH (OBJ PLACE &AUX (G (GENSYM)))
   `(LET ((,G ,OBJ))
      (WHEN (TYPECASE ,G (STRING (PLUSP (LENGTH ,G))) (T ,G)) (PUSH ,G ,PLACE))))
@@ -699,8 +701,8 @@
                                                                    COMMENTARY))))
                                       (SETQ CODE
                                               (NREVERSE
-                                               (IF (NEWLINE-P (CAR CODE))
-                                                   (CDR CODE) CODE)))
+                                               (MEMBER-IF-NOT #'NEWLINE-P
+                                                              CODE)))
                                       (SETF (SECTION-COMMENTARY SECTION)
                                               COMMENTARY)
                                       (SETF (SECTION-CODE SECTION) CODE)
@@ -784,11 +786,12 @@
                                                   (ERROR
                                                    "Can't start a section with a code part"))
                                                  (NEWLINE-MARKER
-                                                  (UNLESS
-                                                      (OR (NULL CODE)
-                                                          (NEWLINE-P
-                                                           (CAR CODE)))
-                                                    (PUSH FORM CODE)))
+                                                  (UNLESS (NULL CODE)
+                                                    (COND
+                                                     ((NEWLINE-P (CAR CODE))
+                                                      (POP CODE)
+                                                      (PUSH *PAR* CODE))
+                                                     (T (PUSH FORM CODE)))))
                                                  (T
                                                   (WHEN EVALP
                                                     (EVAL (TANGLE FORM)))
@@ -1080,6 +1083,11 @@
                     (LAMBDA (STREAM OBJ)
                       (DECLARE (IGNORE OBJ))
                       (TERPRI STREAM)))
+(SET-WEAVE-DISPATCH 'PAR-MARKER
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (FORMAT STREAM "~&\\Y~%"))
+                    1)
 (SET-WEAVE-DISPATCH 'EMPTY-LIST-MARKER
                     (LAMBDA (STREAM OBJ)
                       (DECLARE (IGNORE OBJ))

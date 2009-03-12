@@ -623,8 +623,6 @@ since indentation is completely ignored there.
   (:default-initargs :indentation nil))
 (defun newline-p (obj) (typep obj 'newline-marker))
 
-;(defvar *newline* (make-instance 'newline-marker))
-
 (set-macro-character #\Newline
                      (lambda (stream char)
                        (declare (ignore stream char))
@@ -644,7 +642,7 @@ maintain a distinction that the standard Lisp reader does not: between the
 empty list and |nil|.
 
 Note that we bind our empty-list marker to the value |'()| so that it's
-preserved during tangling, and that like newlines, we only need one.
+preserved during tangling.
 
 @l
 (defclass empty-list-marker (marker) () (:default-initargs :value '()))
@@ -1328,6 +1326,13 @@ only during weaving.
     :report "Assume the section is just being cited."
     (find-section name)))
 
+@ When we're accumulating forms from the code part of a section, we'll
+interpret two newlines in a row as ending a paragraph, as in \TeX.
+
+@l
+(defclass par-marker (newline-marker) ())
+(defvar *par* (make-instance 'par-marker))
+
 @ We need one last utility before coming to the main section reader.
 When we're accumulating text, we don't want to bother with empty strings.
 So we use the following macro, which is like |push|, but does nothing if
@@ -1412,10 +1417,6 @@ terminated by either {\sc EOF} or the start of a new section. If the code
 part was begun by a \.{@@e} control code, we evaluate the code forms as we
 read them.
 
-We also don't push newline markers if no code has been accumulated yet, nor
-do we accumulate more than one in a row. This simplifies the logic of the
-weaver.
-
 @<Accumulate Lisp-mode material in |code|@>=
 (check-type form start-code-marker)
 (with-mode :lisp
@@ -1426,10 +1427,19 @@ weaver.
         (eof (go eof))
         (section (go commentary))
         (start-code-marker (error "Can't start a section with a code part"))
-        (newline-marker (unless (or (null code) (newline-p (car code)))
-                          (push form code)))
+        (newline-marker @<Maybe push the newline marker@>)
         (t (when evalp (eval (tangle form)))
            (push form code))))))
+
+@ We won't push a newline marker if no code has been accumulated yet, and
+we'll push a paragraph marker instead if there are two newlines in a row.
+
+@<Maybe push...@>=
+(unless (null code)
+  (cond ((newline-p (car code))
+         (pop code)
+         (push *par* code))
+        (t (push form code))))
 
 @ We trim trailing whitespace from the last string in |commentary|, leading
 whitespace from the first, and any trailing newline marker from |code|.
@@ -1442,7 +1452,7 @@ We then reverse both lists.
 (setq commentary (nreverse commentary))
 (when (stringp (car commentary))
   (rplaca commentary (string-left-trim *whitespace* (car commentary))))
-(setq code (nreverse (if (newline-p (car code)) (cdr code) code)))
+(setq code (nreverse (member-if-not #'newline-p code)))
 
 @ @<Setup named section code, number, and cross-references@>=
 (let ((named-section (find-section (section-name section)))
@@ -1961,6 +1971,13 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
                     (lambda (stream obj)
                       (declare (ignore obj))
                       (terpri stream)))
+
+; Need a higher priority than |newline-marker|.
+(set-weave-dispatch 'par-marker
+                    (lambda (stream obj)
+                      (declare (ignore obj))
+                      (format stream "~&\\Y~%"))
+                    1)
 
 (set-weave-dispatch 'empty-list-marker
                     (lambda (stream obj)
