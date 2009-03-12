@@ -44,13 +44,11 @@
 
 {\catcode`\(=\active \catcode`\)=\active
  \gdef\activeparens{\catcode`\(=\active \catcode`\)=\active
-   \let(=\(\let)=\)}}
+   \def({\char`\(\kern.025em}\def){\char`\)\kern.025em}}}
 {\catcode`\*=\active
  \gdef\activestar{\catcode`\*=\active \def*{\leavevmode$\ast$}}}
 {\obeyspaces\global\let =\ } % let active space = control space
 
-\def\({(\kern.025em}%
-\def\){)\kern.025em}%
 \def\:#1{\hbox{\it:\/#1\/\kern.05em}} % keyword
 \def\'{'\kern.025em} % quote
 \def\`{`\kern.025em} % backquote
@@ -64,9 +62,11 @@
   \hyphenpenalty 1000 % so strings can be broken (discretionary \ is inserted)
   \exhyphenpenalty 10000
   \let\!=\cleartabs
-  \IB/}
-\def\IB/{\activeparens\activestar\codefont\obeyspaces} % (inner-)Lisp mode
-\def\C#1{{\cmntfont #1}}
+  \IB}
+\def\IB{\activeparens\activestar\codefont\obeyspaces} % (inner-)Lisp mode
+\def\({\bgroup\IB} % go into inner-Lisp mode
+\def\){\egroup} % end inner-Lisp mode
+\def\C#1{{\cmntfont #1}} % comment
 \def\CH#1{\leavevmode$\backslash$\.{#1}} % character
 \def\CO#1{\leavevmode,#1\kern.025em} % comma(-at, -dot)
 \def\L{\leavevmode$\lambda$}

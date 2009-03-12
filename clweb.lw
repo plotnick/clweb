@@ -1647,7 +1647,7 @@ printing inner-Lisp-mode material so that we can adjust our pretty-printing.
       (string (write-string x stream))
       (list (let ((*inner-lisp* t))
               (dolist (form x)
-                (format stream "{\\IB/~W}" form)))))))
+                (format stream "\\(~W\\)" form)))))))
 
 @ Control text (like section names) and comments are initially read as
 strings containing pure \TeX\ text, but they actually contain restricted
