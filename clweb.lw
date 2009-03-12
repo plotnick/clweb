@@ -1823,6 +1823,15 @@ with `def'.
 
 (set-weave-dispatch 'symbol #'print-symbol)
 
+@ Lambda gets special treatment.
+
+@l
+(set-weave-dispatch '(eql lambda)
+                    (lambda (stream obj)
+                      (declare (ignore obj))
+                      (write-string "\\L" stream))
+                    1)
+
 @ Next, we turn to list printing, and the tricky topic of indentation. On
 the assumption that the human writing the code in a \WEB\ is smarter than
 any sort of automatic indentation that we might be able to do, we attempt
