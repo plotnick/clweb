@@ -551,7 +551,6 @@ that will be concatenated onto the front of |stream| prior to reading.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defvar *eof* (make-symbol "EOF")))
 (defun eof-p (x) (eq x *eof*))
-;; This should be |`(eql ,*eof*)|, but SBCL doesn't like that.
 (deftype eof () '(satisfies eof-p))
 
 @ Next, we define a class of objects called {\it markers\/} that denote
