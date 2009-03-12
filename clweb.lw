@@ -1746,7 +1746,11 @@ character is output before any occurrences of \metasyn{character}, or a
 string, in which case it is output instead of the character being considered.
 
 @l
-(defun write-escaped-string (stream string escape-chars)
+(defparameter *tex-escape-alist*
+  '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
+
+(defun write-escaped-string (stream string &optional
+                             (escape-chars *tex-escape-alist*))
   (dotimes (i (length string))
     (let* ((char (char string i))
            (escape (cdr (assoc char escape-chars :test #'find))))
@@ -1755,9 +1759,6 @@ string, in which case it is output instead of the character being considered.
                    (write-char char stream))
         (string (write-string escape stream))
         (null (write-char char stream))))))
-
-(defparameter *tex-escape-alist*
-  '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 
 @ @l
 (defun print-string (stream string)
@@ -1787,38 +1788,21 @@ string, in which case it is output instead of the character being considered.
 
 (set-weave-dispatch 'character #'print-char)
 
-@ Some symbols are sometimes printed using a special format for
-emphasis. These symbols include (but are not limited to) the Common Lisp
-special operators, $\lambda$-list keywords, and symbols whose names begin
-with `def'.
+@ Symbols are printed by first writing them out to a string, then printing
+that string. This relieves us of the burden of worrying about case conversion,
+package prefixes, and the like---we just let the Lisp printer handle it.
+
+Lambda-list keywords and symbols in the `keyword' package have specialized
+\TeX\ macros that add a bit of emphasis.
 
 @l
-(defvar *highlight-special-symbols* nil)
-
-(defun def-p (symbol)
-  (when (fboundp symbol)
-    (let* ((name (symbol-name symbol))
-           (len (length name)))
-      (and (> len 3) (string= name "DEF" :end1 3)))))
-
-(defun highlight-symbol-p (symbol)
-  (cond ((or (special-operator-p symbol)
-             (member symbol '(cond loop)))
-         (member :special-operator *highlight-special-symbols*))
-        ((member symbol lambda-list-keywords)
-         (member :lambda-list-keyword *highlight-special-symbols*))
-        ((def-p symbol)
-         (member :def *highlight-special-symbols*))))
-
-@ @l
 (defun print-symbol (stream symbol)
-  (let ((group-p (cond ((highlight-symbol-p symbol)
-                        (write-string "\\&{" stream))
+  (let ((group-p (cond ((member symbol lambda-list-keywords)
+                        (write-string "\\K{" stream))
                        ((keywordp symbol)
                         (write-string "\\:{" stream)))))
     (write-escaped-string stream
-                          (write-to-string symbol :escape nil :pretty nil)
-                          *tex-escape-alist*)
+                          (write-to-string symbol :escape nil :pretty nil))
     (when group-p (write-string "}" stream))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
