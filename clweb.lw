@@ -1811,10 +1811,10 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
 
 @l
 (set-weave-dispatch '(eql lambda)
-                    (lambda (stream obj)
-                      (declare (ignore obj))
-                      (write-string "\\L" stream))
-                    1)
+  (lambda (stream obj)
+    (declare (ignore obj))
+    (write-string "\\L" stream))
+  1)
 
 @ Next, we turn to list printing, and the tricky topic of indentation. On
 the assumption that the human writing the code in a \WEB\ is smarter than
@@ -1958,104 +1958,110 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
 
 (set-weave-dispatch 'logical-block #'print-logical-block)
 
-@ Markers.
+@ Finally, we come to the printing of markers. The only thing to watch out
+for is that we need a higher priority for a sub-class if we want it to
+override an entry for a parent class, since pprint-dispatch tables don't
+respect sub-type relationships. Other than that, they are all quite
+straightforward.
 
-@l
+Many of these routines output \TeX\ macros defined in \.{clwebmac.tex},
+which see.
+
+@ @l
 (set-weave-dispatch 'newline-marker
-                    (lambda (stream obj)
-                      (declare (ignore obj))
-                      (terpri stream)))
+  (lambda (stream obj)
+    (declare (ignore obj))
+    (terpri stream)))
 
-; Need a higher priority than |newline-marker|.
 (set-weave-dispatch 'par-marker
-                    (lambda (stream obj)
-                      (declare (ignore obj))
-                      (format stream "~&\\Y~%"))
-                    1)
+  (lambda (stream obj)
+    (declare (ignore obj))
+    (format stream "~&\\Y~%"))
+  1)
 
+@ @l
 (set-weave-dispatch 'empty-list-marker
-                    (lambda (stream obj)
-                      (declare (ignore obj))
-                      (write-string "()" stream)))
+  (lambda (stream obj)
+    (declare (ignore obj))
+    (write-string "()" stream)))
 
 (set-weave-dispatch 'consing-dot-marker
-                    (lambda (stream obj)
-                      (declare (ignore obj))
-                      (write-char #\. stream)))
+  (lambda (stream obj)
+    (declare (ignore obj))
+    (write-char #\. stream)))
 
+@ @l
 (set-weave-dispatch 'quote-marker
-                    (lambda (stream obj)
-                      (format stream "\\'~W" (quoted-form obj))))
+  (lambda (stream obj)
+    (format stream "\\'~W" (quoted-form obj))))
 
+@ @l
 (set-weave-dispatch 'comment-marker
-                    (lambda (stream obj)
-                      (write-string "\\C{" stream)
-                      (print-TeX stream (read-TeX-from-string (comment-text obj)))
-                      (write-string "}" stream)))
+  (lambda (stream obj)
+    (write-string "\\C{" stream)
+    (print-TeX stream (read-TeX-from-string (comment-text obj)))
+    (write-string "}" stream)))
 
 @ @l
 (set-weave-dispatch 'backquote-marker
-                    (lambda (stream obj)
-                      (format stream "\\`~W" (backq-form obj))))
+  (lambda (stream obj)
+    (format stream "\\`~W" (backq-form obj))))
 
 (set-weave-dispatch 'comma-marker
-                    (lambda (stream obj)
-                      (format stream "\\CO{~@[~C~]}~W"
-                              (comma-modifier obj)
-                              (comma-form obj))))
+  (lambda (stream obj)
+    (format stream "\\CO{~@[~C~]}~W"
+            (comma-modifier obj)
+            (comma-form obj))))
 
 @ @l
-; Need a higher priority than |quote-marker|.
 (set-weave-dispatch 'function-marker
-                    (lambda (stream obj)
-                      (format stream "\\#\\'~S" (quoted-form obj)))
-                    1)
+  (lambda (stream obj)
+    (format stream "\\#\\'~S" (quoted-form obj)))
+  1)
 
 @ @l
 (set-weave-dispatch 'simple-vector-marker
-                    (lambda (stream obj)
-                      (format stream "\\#~@[~D~]~S"
-                              (and (slot-boundp obj 'length)
-                                   (slot-value obj 'length))
-                              (slot-value obj 'elements))))
+  (lambda (stream obj)
+    (format stream "\\#~@[~D~]~S"
+            (and (slot-boundp obj 'length)
+                 (slot-value obj 'length))
+            (slot-value obj 'elements))))
 
-; Need a higher priority than |simple-vector-marker|.
 (set-weave-dispatch 'bit-vector-marker
-                    (lambda (stream obj)
-                      (format stream "\\#~@[~D~]*~{~[0~;1~]~}"
-                              (and (slot-boundp obj 'length)
-                                   (slot-value obj 'length))
-                              (map 'list #'identity
-                                   (slot-value obj 'elements))))
-                    1)
+  (lambda (stream obj)
+    (format stream "\\#~@[~D~]*~{~[0~;1~]~}"
+            (and (slot-boundp obj 'length)
+                 (slot-value obj 'length))
+            (map 'list #'identity
+                 (slot-value obj 'elements))))
+  1)
 
 @ @l
 (set-weave-dispatch 'read-time-eval-marker
-                    (lambda (stream obj)
-                      (format stream "\\#.~W" (read-time-eval-form obj))))
+  (lambda (stream obj)
+    (format stream "\\#.~W" (read-time-eval-form obj))))
 
 @ @l
 (set-weave-dispatch 'radix-marker
-                    (lambda (stream obj)
-                      (let ((*print-radix* nil)
-                            (*print-base* (radix-marker-base obj)))
-                        (princ (marker-value obj) stream)
-                        (format stream "_{~D}" *print-base*))))
+  (lambda (stream obj)
+    (let ((*print-radix* nil)
+          (*print-base* (radix-marker-base obj)))
+      (princ (marker-value obj) stream)
+      (format stream "_{~D}" *print-base*))))
 
 @ @l
 (set-weave-dispatch 'structure-marker
-                    (lambda (stream obj)
-                      (format stream "\\#S~W" (structure-marker-form obj))))
+  (lambda (stream obj)
+    (format stream "\\#S~W" (structure-marker-form obj))))
 
 @ @l
 (set-weave-dispatch 'read-time-conditional-marker
-                    (lambda (stream obj)
-                      (format stream "\\#~:[--~;+~]\\RC{~S"
-                              (read-time-conditional-plusp obj)
-                              (read-time-conditional-test obj))
-                      (write-char #\Space stream)
-                      (write-escaped-string stream
-                                            (read-time-conditional-form obj)
-                                            *tex-escape-alist*)
-                      (write-char #\} stream)))
-
+  (lambda (stream obj)
+    (format stream "\\#~:[--~;+~]\\RC{~S"
+            (read-time-conditional-plusp obj)
+            (read-time-conditional-test obj))
+    (write-char #\Space stream)
+    (write-escaped-string stream
+                          (read-time-conditional-form obj)
+                          *tex-escape-alist*)
+    (write-char #\} stream)))
