@@ -1857,14 +1857,15 @@ on the next line falls to the left of the current block, or we run out of
 forms.
 
 For example, consider the following simple form:
-$$\vbox{\B\+(first \!&second\cr\+&third)\cr\egroup}$$
-\noindent We start off with an initial logical block with an indentation of
-the character position of |first|: this is the {\it block indentation}.
-Then we look at |second|, and see that the first form on the following
-line, |third|, has the same position, and that it exceeds the current
-indentation level. And so we recurse, appending to the new logical block
-until we encounter a form whose indentation is less than the new block
-indentation, or, as in this trivial example, the end of the list.
+\smallskip\hskip2\parindent
+\vbox{\B\+(first \!&second\cr\+&third)\cr\egroup}
+\smallskip\noindent We start off with an initial logical block with an
+indentation of the character position of |first|: this is the {\it block
+indentation}.  Then we look at |second|, and see that the first form on the
+following line, |third|, has the same position, and that it exceeds the
+current indentation level. And so we recurse, appending to the new logical
+block until we encounter a form whose indentation is less than the new
+block indentation, or, as in this trivial example, the end of the list.
 
 More concretely, |next-logical-block| returns two values: the logical block
 constructed, and the unused portion of the list, which will always either
