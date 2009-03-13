@@ -1,36 +1,16 @@
 \input cwebmac
 
-\font\eightss=cmssq8
-\font\eightssi=cmssqi8
 \font\tenss=cmss10
 \font\tenssi=cmssi10
 \font\tenssb=cmssdc10
 \let\cmntfont=\tenssi
-\newskip\ttglue
-\def\tenpoint{\def\rm{\fam0\tenrm}%
-  \textfont0=\tenrm \scriptfont0=\sevenrm \scriptscriptfont0=\fiverm
+\def\mainfont{\def\rm{\fam0\tenrm}%
   \def\it{\fam\itfam\tenit}%
-  \textfont\itfam=\tenit
-  \def\sl{\fam\slfam\tensl}%
-  \textfont\slfam=\tensl
-  \def\bf{\fam\bffam\tenbf}%
-  \textfont\bffam=\tenbf \scriptfont\bffam=\sevenbf
-  \scriptscriptfont\bffam=\fivebf
-  \def\tt{\fam\ttfam\tentt}%
-  \textfont\ttfam=\tentt
-  \tt \ttglue=.5em plus.25em minus.15em
-  \normalbaselineskip=12pt
-  \let\sc=\eightrm
-  \setbox\strutbox=\hbox{\vrule height8.5pt depth3.5pt width0pt}%
+  \def\bf{\fam\bffam\tenbf}
   \normalbaselines\rm}
-\let\mainfont=\tenpoint
-\def\codefont{\tenpoint
-  \def\rm{\fam0\tenss}%
-  \textfont0=\tenss \scriptfont0=\eightss \scriptscriptfont0=\scriptfont0
+\def\codefont{\def\rm{\fam0\tenss}%
   \def\it{\fam\itfam\tenssi}%
-  \textfont\itfam=\tenssi
   \def\bf{\fam\bffam\tenssb}%
-  \textfont\bffam=\tenssb
   \normalbaselines\rm}
 \mainfont
 
@@ -47,7 +27,7 @@
 \def\:#1{\hbox{\it:\/#1\/\kern.05em}} % keyword
 \def\'{'\kern.025em} % quote
 \def\`{`\kern.025em} % backquote
-\def\#{{\raise0.25ex\hbox{\eightss\char'43}}}
+\def\#{\char`\#}
 \def\&{\char`\&}
 \def\<{{$<$}}
 \def\>{{$>$}}
