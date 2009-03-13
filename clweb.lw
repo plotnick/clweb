@@ -1472,9 +1472,10 @@ named section with the code accumulated for that section. The function
 possibly-expanded form, and a boolean representing whether or not any
 expansions were actually performed.
 
-Note that this is a splicing operation, not a simple replacement: if
-\X$n$:foo\X$\mathrel\E$|(x y)|, then
-\(\\{tangle-1} \'\(\\{a} \X$n$:foo\X\ \\{b}\)\)$\to$|(a x y b)|,~|t|.
+Note that this is a splicing operation, like `\.{,@@}', not a simple
+substitution, like normal Lisp macro expansion:
+if \X$n$:foo\X$\mathrel\E$|(x y)|, then
+\((tangle-1 \'(a \X$n$:foo\X\ b))\)$\;\to\;$|(a x y b)|,~|t|.
 
 Tangling also replaces bound markers with their associated values, and
 removes unbound markers.
