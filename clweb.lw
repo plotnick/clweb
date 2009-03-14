@@ -724,12 +724,11 @@ consing dot.
                       (when obj
                         (push (car obj) list)
                         (push charpos charpos-list)))))
-        finally
-          (read-char stream t nil t)
-          (return (make-instance 'list-marker
-                                 :length n
-                                 :list (nreverse list)
-                                 :charpos (nreverse charpos-list)))))
+        finally (read-char stream t nil t)
+                (return (make-instance 'list-marker
+                                       :length n
+                                       :list (nreverse list)
+                                       :charpos (nreverse charpos-list)))))
 
 (set-macro-character #\( (make-list-reader #'list-reader)
                      nil (readtable-for-mode :lisp))
