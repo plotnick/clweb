@@ -748,10 +748,11 @@ consing dot.
                  (push (car obj) list)
                  (push charpos charpos-list)))))))
 
-@ {\it Single-Quote.} Similarly, we want to preserve the distinction
-between a form quoted with |#\'| and one quoted (for whatever reason) with
-|quote|. We'll use this marker class for \.{\#'}, too, which is why it's a
-little more general than one might think is needed.
+@ {\it Single-Quote.} We want to distinguish between a form quoted with
+a single-quote and one quoted (for whatever reason) with |quote|, another
+distinction ignored by the standard Lisp reader. We'll use this marker
+class for \.{\#'}, too, which is why it's a little more general than one
+might think is needed.
 
 @l
 (defclass quote-marker (marker)
