@@ -635,11 +635,12 @@ We override all of the standard macro characters except |#\)| and~|#\"|
 (the former because the standard reader macro function just signals an
 error, and the latter because we don't need markers for strings).
 
-@ {\it Left-Parenthesis.} We have two kinds of markers that we use when
-reading lists. First, we record the character positions of the first and
-second elements of the list for indentation purposes. And second, we
-maintain a distinction that the standard Lisp reader does not: between the
-empty list and |nil|.
+@ {\it Left-Parenthesis.} We have two different kinds of markers for lists.
+The first is one for empty lists, so that we can maintain a distinction
+that the standard Lisp reader does not: between the empty list and |nil|.
+The second, for non-empty lists, stores not just the elements of the list,
+but their character positions as well; this is what allows us to do our
+indentation tracking.
 
 Note that we bind our empty-list marker to the value |'()| so that it's
 preserved during tangling.
@@ -681,7 +682,15 @@ preserved during tangling.
                (rplacd tail obj)
                (setq tail obj))))))
 
-@ @l
+@ We don't use |list-marker|s at all in inner-Lisp mode (since we don't do
+indentation tracking there), but we do still want markers for the empty list.
+The function |make-list-reader| returns a reader macro function that peeks
+ahead, looking for a closing parenthesis, and either returns an empty-list
+marker, or invokes a full list-reading function, which is passed in as |next|.
+For inner-Lisp mode, that |next| function is the reader macro function for
+|#\(| in the standard readtable.
+
+@l
 (defun make-list-reader (next)
   (lambda (stream char)
     (if (char= (peek-char t stream t nil t) #\) )
@@ -691,7 +700,11 @@ preserved during tangling.
 (set-macro-character #\( (make-list-reader (get-macro-character #\( nil))
                      nil (readtable-for-mode :inner-lisp))
 
-@ @l
+@ In Lisp mode, we need a full list reader that records character positions
+of the list elements. This would be perfectly straightforward if not for the
+consing dot.
+
+@l
 (defun list-reader (stream char)
   (declare (ignore char))
   (loop with list = '()
