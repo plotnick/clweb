@@ -666,12 +666,7 @@ preserved during tangling.
         (x (car marker-list) (car marker-list)))
        ((endp marker-list) (cdr list))
     (cond ((eq x *consing-dot*)
-           (rplacd tail
-                   (dolist (x marker-list (error "Nothing after . in list"))
-                     (cond ((and (marker-p x) (marker-boundp x))
-                            (return (marker-value x)))
-                           ((not (marker-p x))
-                            (return x)))))
+           (rplacd tail @<Find the tail...@>)
            (return (cdr list)))
           ((marker-p x)
            (when (marker-boundp x)
@@ -681,6 +676,17 @@ preserved during tangling.
           (t (let ((obj (list x)))
                (rplacd tail obj)
                (setq tail obj))))))
+
+@ There might be more than one object in a list marker following a consing
+dot, because of unbound markers (e.g., newlines and comments). So we just
+use the first bound marker or non-marker object that we find.
+
+@<Find the tail of the list marker@>=
+(dolist (x marker-list (error "Nothing after . in list"))
+  (cond ((and (marker-p x) (marker-boundp x))
+         (return (marker-value x)))
+        ((not (marker-p x))
+         (return x))))
 
 @ We don't use |list-marker|s at all in inner-Lisp mode (since we don't do
 indentation tracking there), but we do still want markers for the empty list.
