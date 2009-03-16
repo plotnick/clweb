@@ -167,12 +167,12 @@
            ((INSTANCE CHARPOS-INPUT-STREAM) SLOT-NAMES &REST INITARGS &KEY
             STREAM)
            (APPLY #'CALL-NEXT-METHOD INSTANCE SLOT-NAMES
-                  (SUBST
-                   (MAKE-ECHO-STREAM STREAM
-                                     (MAKE-STRING-OUTPUT-STREAM :ELEMENT-TYPE
-                                                                (STREAM-ELEMENT-TYPE
-                                                                 STREAM)))
-                   STREAM INITARGS)))
+                  (LIST* :STREAM
+                         (MAKE-ECHO-STREAM STREAM
+                                           (MAKE-STRING-OUTPUT-STREAM
+                                            :ELEMENT-TYPE
+                                            (STREAM-ELEMENT-TYPE STREAM)))
+                         INITARGS)))
 (DEFMETHOD GET-CHARPOS-STREAM-BUFFER ((STREAM CHARPOS-INPUT-STREAM))
            (GET-OUTPUT-STREAM-STRING
             (ECHO-STREAM-OUTPUT-STREAM (CHARPOS-STREAM STREAM))))
@@ -181,12 +181,13 @@
            ((INSTANCE CHARPOS-OUTPUT-STREAM) SLOT-NAMES &REST INITARGS &KEY
             STREAM)
            (APPLY #'CALL-NEXT-METHOD INSTANCE SLOT-NAMES
-                  (SUBST
-                   (MAKE-BROADCAST-STREAM
-                    (MAKE-STRING-OUTPUT-STREAM :ELEMENT-TYPE
-                                               (STREAM-ELEMENT-TYPE STREAM))
-                    STREAM)
-                   STREAM INITARGS)))
+                  (LIST* :STREAM
+                         (MAKE-BROADCAST-STREAM
+                          (MAKE-STRING-OUTPUT-STREAM :ELEMENT-TYPE
+                                                     (STREAM-ELEMENT-TYPE
+                                                      STREAM))
+                          STREAM)
+                         INITARGS)))
 (DEFMETHOD GET-CHARPOS-STREAM-BUFFER ((STREAM CHARPOS-OUTPUT-STREAM))
            (GET-OUTPUT-STREAM-STRING
             (FIRST (BROADCAST-STREAM-STREAMS (CHARPOS-STREAM STREAM)))))
@@ -196,8 +197,8 @@
                    (POSITION #\Newline (GET-CHARPOS-STREAM-BUFFER STREAM) :KEY
                              (LAMBDA (X) (INCF I) X) :TEST #'CHAR= :FROM-END
                              T)))
-             (SETF (SLOT-VALUE STREAM 'CHARPOS)
-                     (IF NEWLINE I (+ I (SLOT-VALUE STREAM 'CHARPOS))))))
+             (IF NEWLINE (SETF (SLOT-VALUE STREAM 'CHARPOS) I)
+                 (INCF (SLOT-VALUE STREAM 'CHARPOS) I))))
 (DEFVAR *CHARPOS-STREAMS* (MAKE-HASH-TABLE :TEST #'EQ))
 (DEFMETHOD INITIALIZE-INSTANCE :AFTER
            ((INSTANCE CHARPOS-STREAM) &REST INITARGS &KEY)

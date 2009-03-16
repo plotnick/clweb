@@ -397,10 +397,11 @@ which we'll use as our buffer.
 (defmethod shared-initialize :around ((instance charpos-input-stream) slot-names
                                       &rest initargs &key stream)
   (apply #'call-next-method instance slot-names
-         (subst (make-echo-stream stream
-                                  (make-string-output-stream
-                                   :element-type (stream-element-type stream)))
-                stream initargs)))
+         (list* :stream (make-echo-stream
+                         stream
+                         (make-string-output-stream
+                          :element-type (stream-element-type stream)))
+                initargs)))
 
 (defmethod get-charpos-stream-buffer ((stream charpos-input-stream))
   (get-output-stream-string
@@ -415,10 +416,11 @@ given stream and a fresh string stream, again used as a buffer.
 (defmethod shared-initialize :around ((instance charpos-output-stream) slot-names
                                       &rest initargs &key stream)
   (apply #'call-next-method instance slot-names
-         (subst (make-broadcast-stream (make-string-output-stream
-                                        :element-type (stream-element-type stream))
-                                       stream)
-                stream initargs)))
+         (list* :stream (make-broadcast-stream
+                         (make-string-output-stream
+                          :element-type (stream-element-type stream))
+                         stream)
+                initargs)))
 
 (defmethod get-charpos-stream-buffer ((stream charpos-output-stream))
   (get-output-stream-string
@@ -434,8 +436,9 @@ for both input and output streams.
                             :key (lambda (x) (incf i) x)
                             :test #'char=
                             :from-end t)))
-    (setf (slot-value stream 'charpos)
-          (if newline i (+ i (slot-value stream 'charpos))))))
+    (if newline
+        (setf (slot-value stream 'charpos) i)
+        (incf (slot-value stream 'charpos) i))))
 
 @ Because we'll be passing around the proxy streams, we need to manually
 maintain a mapping between them and their associated instances of
