@@ -1097,7 +1097,9 @@ out to a string and let the standard reader parse it when we need the value.
 
 (defmethod marker-boundp ((marker structure-marker)) t)
 (defmethod marker-value ((marker structure-marker))
-  (with-standard-io-syntax
+  (let ((*print-pretty* nil)
+        (*print-readably* t)
+        (*readtable* (readtable-for-mode nil)))
     (read-from-string (prin1-to-string marker))))
 
 (defmethod print-object ((obj structure-marker) stream)
