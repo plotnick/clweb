@@ -646,8 +646,7 @@ since indentation is completely ignored there.
 
 @l
 (defclass newline-marker (marker)
-  ((indentation :accessor indentation :initarg :indentation))
-  (:default-initargs :indentation nil))
+  ((indentation :accessor indentation :initform nil)))
 (defun newline-p (obj) (typep obj 'newline-marker))
 
 (set-macro-character #\Newline
