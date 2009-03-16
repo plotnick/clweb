@@ -339,7 +339,7 @@ stores a virgin copy of the standard readtable.
 
 @l
 (defvar *readtables*
-  (loop for mode in (append *modes* '(nil))
+  (loop for mode in (cons nil *modes*)
         collect (cons mode (copy-readtable nil))))
 
 (defun readtable-for-mode (mode)
