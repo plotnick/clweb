@@ -746,11 +746,8 @@ consing dot.
         for first-char = (peek-char t stream t nil t)
         as charpos = (stream-charpos stream)
         until (char= first-char #\) )
-        do (cond ((char= first-char #\.) @<Read the next token...@>)
-                 (t (let ((obj (multiple-value-list (read stream t nil t))))
-                      (when obj
-                        (push (car obj) list)
-                        (push charpos charpos-list)))))
+        if (char= first-char #\.) do @<Read the next token from |stream|...@>
+        else do @<Read the next object from |stream|...@>
         finally (read-char stream t nil t)
                 (return (make-instance 'list-marker
                                        :length n
@@ -760,20 +757,26 @@ consing dot.
 (set-macro-character #\( (make-list-reader #'list-reader)
                      nil (readtable-for-mode :lisp))
 
-@ @<Read the next token, which might be a consing dot@>=
-(with-rewind-stream (rewind stream)
-  (read-char rewind t) ; consume dot
-  (let ((next-char (read-char rewind t)))
+@ @<Read the next token from |stream|, which might be a consing dot@>=
+(with-rewind-stream (stream stream)
+  (read-char stream t) ; consume dot
+  (let ((next-char (read-char stream t)))
     (cond ((token-delimiter-p next-char)
            (unless (or list *read-suppress*)
              (simple-reader-error stream "Nothing appears before . in list."))
            (push *consing-dot* list)
            (push charpos charpos-list))
           (t (rewind)
-             (let ((obj (multiple-value-list (read rewind t nil t))))
-               (when obj
-                 (push (car obj) list)
-                 (push charpos charpos-list)))))))
+             @<Read the next object from |stream|...@>))))
+
+@ We have to be careful here, because |read| might not return any values,
+in which case we don't want to push anything.
+
+@<Read the next object from |stream| and push it onto |list|@>=
+(let ((values (multiple-value-list (read stream t nil t))))
+  (when values
+    (push (car values) list)
+    (push charpos charpos-list)))
 
 @ {\it Single-Quote.} We want to distinguish between a form quoted with
 a single-quote and one quoted (for whatever reason) with |quote|, another

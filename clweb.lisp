@@ -345,28 +345,26 @@
   (DECLARE (IGNORE CHAR))
   (LOOP WITH LIST = 'NIL WITH CHARPOS-LIST = 'NIL FOR N FROM 0 FOR FIRST-CHAR =
         (PEEK-CHAR T STREAM T NIL T) AS CHARPOS = (STREAM-CHARPOS STREAM) UNTIL
-        (CHAR= FIRST-CHAR #\)) DO
-        (COND
-         ((CHAR= FIRST-CHAR #\.)
-          (WITH-REWIND-STREAM (REWIND STREAM) (READ-CHAR REWIND T)
-                              (LET ((NEXT-CHAR (READ-CHAR REWIND T)))
-                                (COND
-                                 ((TOKEN-DELIMITER-P NEXT-CHAR)
-                                  (UNLESS (OR LIST *READ-SUPPRESS*)
-                                    (SIMPLE-READER-ERROR STREAM
-                                                         "Nothing appears before . in list."))
-                                  (PUSH *CONSING-DOT* LIST)
-                                  (PUSH CHARPOS CHARPOS-LIST))
-                                 (T (REWIND)
-                                  (LET ((OBJ
-                                         (MULTIPLE-VALUE-LIST
-                                          (READ REWIND T NIL T))))
-                                    (WHEN OBJ
-                                      (PUSH (CAR OBJ) LIST)
-                                      (PUSH CHARPOS CHARPOS-LIST))))))))
-         (T
-          (LET ((OBJ (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
-            (WHEN OBJ (PUSH (CAR OBJ) LIST) (PUSH CHARPOS CHARPOS-LIST)))))
+        (CHAR= FIRST-CHAR #\)) IF (CHAR= FIRST-CHAR #\.) DO
+        (WITH-REWIND-STREAM (STREAM STREAM) (READ-CHAR STREAM T)
+                            (LET ((NEXT-CHAR (READ-CHAR STREAM T)))
+                              (COND
+                               ((TOKEN-DELIMITER-P NEXT-CHAR)
+                                (UNLESS (OR LIST *READ-SUPPRESS*)
+                                  (SIMPLE-READER-ERROR STREAM
+                                                       "Nothing appears before . in list."))
+                                (PUSH *CONSING-DOT* LIST)
+                                (PUSH CHARPOS CHARPOS-LIST))
+                               (T (REWIND)
+                                (LET ((VALUES
+                                       (MULTIPLE-VALUE-LIST
+                                        (READ STREAM T NIL T))))
+                                  (WHEN VALUES
+                                    (PUSH (CAR VALUES) LIST)
+                                    (PUSH CHARPOS CHARPOS-LIST)))))))
+        ELSE DO
+        (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
+          (WHEN VALUES (PUSH (CAR VALUES) LIST) (PUSH CHARPOS CHARPOS-LIST)))
         FINALLY (READ-CHAR STREAM T NIL T)
         (RETURN
          (MAKE-INSTANCE 'LIST-MARKER :LENGTH N :LIST (NREVERSE LIST) :CHARPOS
