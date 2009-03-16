@@ -354,6 +354,14 @@ given forms with |*readtable*| bound appropriately for the given mode.
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
+@ We frequently need an object to use as the |eof-value| argument to
+|read|. It need not be a symbol; it need not even be an atom.
+
+@l
+(defvar *eof* (make-symbol "EOF"))
+(defun eof-p (x) (eq x *eof*))
+(deftype eof () '(satisfies eof-p))
+
 @ It's basically impossible to automatically indent Common Lisp code
 without a complete static analysis. And so we don't try. What we do
 instead is rely on the fact that the {\it input\/} is indented correctly,
@@ -571,15 +579,6 @@ that will be concatenated onto the front of |stream| prior to reading.
                                      (1- ,length)))))
            (declare (ignorable ,values ,echoed))
            ,@body)))))
-
-@ We frequently need an object to use as the |eof-value| argument to
-|read|. It need not be a symbol; it need not even be an atom.
-
-@l
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defvar *eof* (make-symbol "EOF")))
-(defun eof-p (x) (eq x *eof*))
-(deftype eof () '(satisfies eof-p))
 
 @ Next, we define a class of objects called {\it markers\/} that denote
 abstract objects in source code. Some of these objects, such as newlines
