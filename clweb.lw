@@ -85,12 +85,12 @@ instances themselves are around in any case.
                                :adjustable t
                                :fill-pointer 0))
 
-(defun current-section ()
-  (elt *sections* (1- (fill-pointer *sections*))))
-
 (defmethod initialize-instance :after ((section section) &rest initargs &key)
   (declare (ignore initargs))
   (setf (section-number section) (vector-push-extend section *sections*)))
+
+(defun current-section ()
+  (elt *sections* (1- (fill-pointer *sections*))))
 
 @ @<Initialize global variables@>=
 (setf (fill-pointer *sections*) 0)
