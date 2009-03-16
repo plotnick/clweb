@@ -924,17 +924,11 @@
        (LET ((*INNER-LISP* T))
          (DOLIST (FORM X) (FORMAT STREAM "\\(~W\\)" FORM)))))))
 (DEFUN READ-TEX-FROM-STRING (INPUT-STRING)
-  (WITH-INPUT-FROM-STRING (INPUT-STREAM INPUT-STRING)
-    (WITH-CHARPOS-INPUT-STREAM (STREAM INPUT-STREAM)
-                               (WITH-MODE :RESTRICTED
-                                          (LOOP FOR TEXT =
-                                                (SNARF-UNTIL-CONTROL-CHAR
-                                                 STREAM #\|)
-                                                FOR FORMS =
-                                                (READ-PRESERVING-WHITESPACE
-                                                 STREAM NIL *EOF* NIL)
-                                                COLLECT TEXT UNTIL
-                                                (EOF-P FORMS) COLLECT FORMS)))))
+  (WITH-MODE :RESTRICTED
+             (WITH-INPUT-FROM-STRING (STREAM INPUT-STRING)
+               (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM #\|) FOR FORMS
+                     = (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL)
+                     COLLECT TEXT UNTIL (EOF-P FORMS) COLLECT FORMS))))
 (DEFUN PRINT-LIMBO (STREAM SECTION)
   (LET ((COMMENTARY (SECTION-COMMENTARY SECTION)))
     (WHEN COMMENTARY (PRINT-TEX STREAM COMMENTARY) (TERPRI STREAM))))

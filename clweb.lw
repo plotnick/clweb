@@ -1712,13 +1712,12 @@ re-reads such strings and picks up any inner-Lisp material.
 
 @l
 (defun read-TeX-from-string (input-string)
-  (with-input-from-string (input-stream input-string)
-    (with-charpos-input-stream (stream input-stream)
-      (with-mode :restricted
-        (loop for text = (snarf-until-control-char stream #\|)
-              for forms = (read-preserving-whitespace stream nil *eof* nil)
-              collect text
-              until (eof-p forms) collect forms)))))
+  (with-mode :restricted
+    (with-input-from-string (stream input-string)
+      (loop for text = (snarf-until-control-char stream #\|)
+            for forms = (read-preserving-whitespace stream nil *eof* nil)
+            collect text
+            until (eof-p forms) collect forms))))
 
 @ @l
 (defun print-limbo (stream section)
