@@ -2,25 +2,33 @@
 % It was inspired by CWEB by Silvio Levy and Donald E. Knuth, which was
 % based on Knuth's original WEB system.
 
-\newif\ifzapf \zapffalse
+\newif\ifzapf \zapftrue
+\newif\ifslimbach
+
 \ifzapf
 \input palatino
 \input euler
-\font\tenop=lopr8r at 10pt
-\font\tenopi=lopri8r at 10pt
-\font\tenopb=lopb8r at 10pt
-\def\codefont{\def\rm{\fam0\tenop}%
-  \def\it{\fam\itfam\tenopi}%
-  \def\bf{\fam\bffam\tenopb}%
-  \normalbaselines\rm}
+\font\tenss=lopr8r at 10pt
+\font\tenssi=lopri8r at 10pt
+\font\tenssb=lopb8r at 10pt
 \def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
 \def\){\/\egroup}
-\let\cmntfont=\tenopi
+\def\csc#1{{\sc #1}}
+\mainfont
+\else\ifslimbach
+\input minion
+\input euler
+\font\tenss=pmyr8y at 10pt
+\font\tenssi=pmyri8y at 10pt
+\font\tenssb=pmys8y at 10pt
+\def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
+\def\){\/\egroup}
+\let\cmntfont=\tenssi
 \def\csc#1{{\sc #1}}
 \mainfont
 \else
 \def\csc#1{{\sc \uppercase{#1}}}
-\fi
+\fi\fi
 
 \def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
