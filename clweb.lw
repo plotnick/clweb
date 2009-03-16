@@ -44,7 +44,7 @@ instead of ordinary Lisp source. And finally, |weave| takes a \WEB\ as
 input and generates a \TeX\ source file containing the commentary parts
 of each section together with pretty-printed code parts.
 
-@ @e
+@e
 (declaim (optimize (debug 3)))
 
 (defpackage "COMMON-LISP-WEB"
