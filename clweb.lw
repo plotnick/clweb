@@ -9,6 +9,21 @@
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\metasyn#1{\leavevmode $\langle${\it #1}$\rangle$} % metasyntactic variable
 
+\newif\ifzapf \zapffalse
+\ifzapf
+\input palatino
+\input euler
+\font\tenop=lopr8r at 10pt
+\font\tenopi=lopri8r at 10pt
+\font\tenopb=lopb8r at 10pt
+\def\codefont{\def\rm{\fam0\tenop}%
+  \def\it{\fam\itfam\tenopi}%
+  \def\bf{\fam\bffam\tenopb}%
+  \normalbaselines\rm}
+\let\cmntfont=\tenopi
+\mainfont
+\fi
+
 @*Introduction. The two primary operations that a literate programming
 system provides are {\it tangling\/} and {\it weaving\/}. The former creates
 a machine-readable output file from a \WEB, while the latter prepares the
