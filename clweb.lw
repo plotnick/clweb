@@ -1225,7 +1225,7 @@ the closing \v\ if we make it a terminating macro character, overriding its
 usual Lisp meaning as an escape character.
 
 @l
-(set-macro-character #\| (get-macro-character #\) nil)
+(set-macro-character #\| (get-macro-character #\) nil) ;
                      nil (readtable-for-mode :inner-lisp))
 
 @ We make |#\@| a non-terminating dispatching macro character in every
@@ -1244,8 +1244,8 @@ reader macro functions that implement the control codes.
   (get-dispatch-macro-character #\@ sub-char (readtable-for-mode mode)))
 
 (defun set-control-code (sub-char function &optional (modes *modes*))
-  (dolist (mode modes)
-    (set-dispatch-macro-character #\@ sub-char function
+  (dolist (mode (if (listp modes) modes (list modes)))
+    (set-dispatch-macro-character #\@ sub-char function ;
                                   (readtable-for-mode mode))))
 
 @ The control code \.{@@@@} yields the string \.{"@@"} in all modes, but
@@ -1298,7 +1298,7 @@ used with \.{\#S}, \etc.
                           ((#\e) t))))
 
 (dolist (sub-char '(#\l #\p #\e))
-  (set-control-code sub-char #'start-code-reader '(:TeX)))
+  (set-control-code sub-char #'start-code-reader :TeX))
 
 @ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
 called {\it control text}, that extends to the next \.{@@>}. When we first
@@ -1308,7 +1308,7 @@ material.
 
 @l
 (defvar *end-control-text* (make-symbol "@>"))
-(set-control-code #\> (constantly *end-control-text*) '(:restricted))
+(set-control-code #\> (constantly *end-control-text*) :restricted)
 
 (defun read-control-text (stream)
   (with-mode :restricted
@@ -1347,7 +1347,7 @@ citations, and so are not expanded.
                  (pushnew (current-section) (used-by named-section))
                  named-section))))))
 
-(set-control-code #\< (make-section-name-reader t) '(:TeX))
+(set-control-code #\< (make-section-name-reader t) :TeX)
 (set-control-code #\< (make-section-name-reader nil) '(:lisp :inner-lisp))
 
 @ @<Signal an error about section definition in Lisp mode@>=
