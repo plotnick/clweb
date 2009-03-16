@@ -786,15 +786,12 @@ might think is needed.
 
 @l
 (defclass quote-marker (marker)
-  ((form :reader quoted-form :initarg :form)
-   (quote :reader quote-marker-quote :initarg :quote)))
+  ((quote :reader quote-marker-quote :initarg :quote)
+   (form :reader quoted-form :initarg :form)))
 
 (defmethod marker-boundp ((marker quote-marker)) t)
 (defmethod marker-value ((marker quote-marker))
-  (list (slot-value marker 'quote) (slot-value marker 'form)))
-
-(defmethod print-object ((obj quote-marker) stream)
-  (format stream "(~W ~W)" (quote-marker-quote obj) (quoted-form obj)))
+  (list (quote-marker-quote marker) (quoted-form marker)))
 
 (defun single-quote-reader (stream char)
   (declare (ignore char))
