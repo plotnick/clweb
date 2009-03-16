@@ -640,7 +640,7 @@
   (MAKE-INSTANCE 'START-CODE-MARKER :EVALP
                  (ECASE (CHAR-DOWNCASE SUB-CHAR) ((#\l #\p) NIL) ((#\e) T))))
 (DOLIST (SUB-CHAR '(#\l #\p #\e))
-  (SET-CONTROL-CODE SUB-CHAR #'START-CODE-READER :TEX))
+  (SET-CONTROL-CODE SUB-CHAR #'START-CODE-READER '(:TEX :LISP)))
 (DEFVAR *END-CONTROL-TEXT* (MAKE-SYMBOL "@>"))
 (SET-CONTROL-CODE #\> (CONSTANTLY *END-CONTROL-TEXT*) :RESTRICTED)
 (DEFUN READ-CONTROL-TEXT (STREAM)
@@ -779,8 +779,23 @@
                                                  (EOF (GO EOF))
                                                  (SECTION (GO COMMENTARY))
                                                  (START-CODE-MARKER
-                                                  (ERROR
-                                                   "Can't start a section with a code part"))
+                                                  (CERROR
+                                                   "Start a new unnamed section with no commentary."
+                                                   "Can't start a section with a code part.")
+                                                  (SETQ FORM
+                                                          (MAKE-INSTANCE
+                                                           'SECTION))
+                                                  (PUSH
+                                                   (FINISH-SECTION SECTION
+                                                    COMMENTARY CODE)
+                                                   SECTIONS)
+                                                  (CHECK-TYPE FORM SECTION)
+                                                  (SETQ SECTION
+                                                          FORM
+                                                        COMMENTARY
+                                                          'NIL
+                                                        CODE
+                                                          'NIL))
                                                  (NEWLINE-MARKER
                                                   (UNLESS (NULL CODE)
                                                     (COND
