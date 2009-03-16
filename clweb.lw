@@ -2,13 +2,6 @@
 % It was inspired by CWEB by Silvio Levy and Donald E. Knuth, which was
 % based on Knuth's original WEB system.
 
-\def\pb{\.{|...|}} % program brackets
-\def\v{\.{\char'174}} % vertical bar in typewriter font
-\def\WEB{{\tt WEB}}
-\def\CWEB{{\tt CWEB}}
-\def\etc.{{\it \char`&c.\spacefactor1000}}
-\def\metasyn#1{\leavevmode $\langle${\it #1}$\rangle$} % metasyntactic variable
-
 \newif\ifzapf \zapffalse
 \ifzapf
 \input palatino
@@ -20,9 +13,22 @@
   \def\it{\fam\itfam\tenopi}%
   \def\bf{\fam\bffam\tenopb}%
   \normalbaselines\rm}
+\def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
+\def\){\/\egroup}
 \let\cmntfont=\tenopi
+\def\csc#1{{\sc #1}}
 \mainfont
+\else
+\def\csc#1{{\sc \uppercase{#1}}}
 \fi
+
+\def\pb{\.{|...|}} % program brackets
+\def\v{\.{\char'174}} % vertical bar in typewriter font
+\def\WEB{{\tt WEB}}
+\def\CWEB{{\tt CWEB}}
+\def\EOF{\csc{eof}}
+\def\etc.{{\it \char`&c.\spacefactor1000}}
+\def\metasyn#1{$\langle${\it #1\/}$\rangle$} % metasyntactic variable
 
 @*Introduction. The two primary operations that a literate programming
 system provides are {\it tangling\/} and {\it weaving\/}. The former creates
@@ -48,12 +54,12 @@ of each section together with pretty-printed code parts.
 (in-package "CLWEB")
 
 @*Sections. The fundamental unit of a \WEB\ is the {\it section}, which
-consists essentially of two parts, either of which may be null: a commentary
-part and a code part. Every section is automatically assigned a number, and
-each section is either {\it named\/} or {\it unnamed\/}. The code parts of
-named sections may be included in those of another (named or unnamed)
-section via \.{@@<$\ldots$@@>} commands, while unnamed sections are output
-or evaluated in the order in which they appear in the \WEB\ source file.
+consists of two parts, either of which may be null: a {\it commentary part\/}
+and a {\it code part}. Every section is automatically assigned a number, and
+each section is either {\it named\/} or {\it unnamed\/}. The code part of a
+named section may be included in that of another (named or unnamed) section
+via \.{@@<$\ldots$@@>} commands, while unnamed sections are output or
+evaluated in the order in which they appear in the \WEB\ source file.
 
 @l
 (defclass section ()
@@ -102,19 +108,19 @@ of, say, a hash table is so that we can support abbreviations (see below).
    (right-child :accessor right-child :initarg :right))
   (:default-initargs :left nil :right nil))
 
-@ The primary interface to the {\sc BST} is the following routine, which
+@ The primary interface to the \csc{bst} is the following routine, which
 attempts to locate the node with key |item| in the tree rooted at |root|.
 If it is not already present and the |:insert-if-not-found| argument
 is true, a new node is created with that key and added to the tree. The
-arguments |predicate| and |test| should be designators for functions
-of two arguments, both of which will be node keys. |predicate| should
+arguments |:predicate| and |:test| should be designators for functions
+of two arguments, both of which will be node keys. |:predicate| should
 return true iff its first argument precedes its second in the total
-ordering used for the tree, and |test| should return true iff the two
+ordering used for the tree, and |:test| should return true iff the two
 keys are to be considered equivalent.
 
 Two values are returned: the node with key |item| (or |nil| if no such node
 was found and |:insert-if-not-found| is false), and a boolean representing
-whether the key was already in the tree or not.
+whether or not the node was already in the tree.
 
 @l
 (defgeneric find-or-insert (item root &key predicate test insert-if-not-found))
@@ -149,7 +155,7 @@ might think of a full named section as a sort of `virtual' section, which
 consists of a name, the combined code parts of all of the physical sections
 with that name, and the number of the first such section.
 
-And that's what we store in the {\sc BST}: nodes that look like sections,
+And that's what we store in the \csc{bst}: nodes that look like sections,
 inasmuch as they have specialized |section-name|, |section-code|, and
 |section-number| methods, but are not actually instances of the class
 |section|.
@@ -178,7 +184,7 @@ development.
 @ When we look up a named section, either the name used to perform the
 lookup, the name for the section in the tree, or both may be an abbreviation
 of the full section name. Any prefix of the full name is allowed, followed
-by `$\ldots$': e.g., \.{@@<foo...@@>} is an acceptable abbreviation for
+by `$\ldots$'; e.g., \.{@@<foo...@@>} is an acceptable abbreviation for
 either \.{@@<foo bar@@>} or \.{@@<foo baz@@>}. It is a correctable error if
 a prefix is ambiguous.
 
@@ -295,8 +301,8 @@ handle abbreviations.
 
 @ We only actually update the name of a section in two cases: if the new
 name is not an abbreviation but the old one was, or if they are both
-abbreviations, but the new one is shorter. (We only need to compare against
-the shortest available prefix, since we detect ambiguous matches.)
+abbreviations but the new one is shorter. We only need to compare against
+the shortest available prefix, since we detect ambiguous matches.
 
 @l
 (defmethod (setf section-name) :around (new-name (section named-section))
@@ -348,9 +354,9 @@ given forms with |*readtable*| bound appropriately for the given mode.
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
-@ It's basically impossible to automatically indent Common Lisp code correctly.
-(This may be tendentious, but it seems to be true.) And so we don't try. What
-we do, instead, is rely on the fact that the {\it input\/} is indented correctly,
+@ It's basically impossible to automatically indent Common Lisp code
+without a complete static analysis. And so we don't try. What we do
+instead is rely on the fact that the {\it input\/} is indented correctly,
 and approximate that on output.
 
 In order to do this {\it indentation tracking\/}, we need the ability to
@@ -358,16 +364,17 @@ reliably determine the current column number, or {\it character position},
 of a stream. One could use Gray streams to do this, but we don't actually
 need them; the built-in stream types suffice.
 
-@ We'll define a {\it charpos stream\/} as an object that tracks the output
+@ We'll define a {\it charpos stream\/} as an object that tracks the character
 position of an underlying stream. Note that these aren't actual streams, and
-can't be, without relying on an extension to Common Lisp like Gray streams.
+can't be without relying on an extension to Common Lisp like Gray streams.
 But that doesn't matter, because what we'll actually be passing around is the
 value of the |stream| slot, which {\it will\/} be a stream---we call these
 {\it proxy streams}.
 
-The current character position is retrieved with the GF |charpos|. It relies
-the last stored charpos (stored in the |charpos| slot) and a buffer that
-stores the characters input or output since the last call to |charpos|.
+The current character position is retrieved with the \csc{gf} |charpos|.
+It relies the last stored charpos (stored in the |charpos| slot) and a
+buffer that stores the characters input or output since the last call to
+|charpos|, retrieved with the \csc{gf} |get-charpos-stream-buffer|.
 
 @l
 (defclass charpos-stream ()
@@ -381,8 +388,8 @@ stores the characters input or output since the last call to |charpos|.
 @ We need slightly different classes for input charpos streams and output
 charpos streams. For tracking charpos on input streams, our proxy stream is
 an echo stream that takes input from the supplied stream (the original value
-of the |:stream| initarg), echoes the characters read to a fresh string
-stream, which we'll use as our buffer.
+of the |:stream| initarg) and echoes the characters read to a string stream,
+which we'll use as our buffer.
 
 @l
 (defclass charpos-input-stream (charpos-stream) ())
@@ -442,12 +449,12 @@ maintain a mapping between them and their associated instances of
   (declare (ignore initargs))
   (setf (gethash (charpos-stream instance) *charpos-streams*) instance))
 
-@ The top-level interface the consists of two functions: |stream-charpos|
-retrieves the character position of the stream for which |stream| is a
-proxy, and |release-charpos-stream| deletes the reference to the stream
-maintained by the associated |charpos-stream| instance. (Note that if there
-were a standardized way of creating weak hash tables, we wouldn't need to do
-that.)
+@ The top-level interface to the charpos streams are the following two
+functions: |stream-charpos| retrieves the character position of the stream
+for which |stream| is a proxy, and |release-charpos-stream| deletes the
+reference to the stream maintained by the associated |charpos-stream|
+instance. (If there were a standardized way of creating weak hash tables,
+we wouldn't need the latter at all.)
 
 @l
 (defun stream-charpos (stream)
@@ -462,7 +469,7 @@ that.)
           (t (warn "Not tracking charpos for ~S" stream)))))
 
 @ Here are a few convenience methods for creating charpos streams. Note that
-|input-stream| and |output-stream| are {\it stream designators\/}.
+|input-stream| and |output-stream| are stream designators.
 
 @l
 (defun make-charpos-input-stream (input-stream &key (charpos 0))
@@ -482,27 +489,29 @@ that.)
                  :charpos charpos))
 
 @ And finally, a couple of macros that make using them easy and trouble-free.
+They execute |body| in a lexical environment in which |var| is bound to a
+proxy stream the tracks the character position for |stream|.
 
 @l
 (defmacro with-charpos-input-stream ((var stream &key (charpos 0)) &body body)
-  `(let ((,var (charpos-stream
+  `(let ((,var (charpos-stream ;
                 (make-charpos-input-stream ,stream :charpos ,charpos))))
      (unwind-protect (progn ,@body)
        (release-charpos-stream ,var))))
 
 (defmacro with-charpos-output-stream ((var stream &key (charpos 0)) &body body)
-  `(let ((,var (charpos-stream
+  `(let ((,var (charpos-stream ;
                 (make-charpos-output-stream ,stream :charpos ,charpos))))
      (unwind-protect (progn ,@body)
        (release-charpos-stream ,var))))
 
-@ We'll sometimes need to know if a given character terminates a token or not.
-This function answers that question, but {\it only approximately\/}---if
-the user has frobbed the current readtable and has set non-standard
-characters to whitespace syntax, {\it this routine will not yield the
-correct result}. There's unfortunately nothing that we can do about it
-portably, since there's no way of determining the syntax of a character or
-of obtaining a list of all the characters with a given syntax.
+@ We'll occasionally need to know if a given character terminates a token
+or not.  This function answers that question, but only approximately---if
+the user has frobbed the current readtable and set non-standard characters
+to whitespace syntax, {\it this routine will not yield the correct
+result}. There's unfortunately nothing that we can do about it portably,
+since there's no way of determining the syntax of a character or of
+obtaining a list of all the characters with a given syntax.
 
 @l
 (defun token-delimiter-p (char)
@@ -511,11 +520,11 @@ of obtaining a list of all the characters with a given syntax.
           (get-macro-character char)
         (and function (not non-terminating-p)))))
 
-@ Sometimes we want to look more than one character ahead in a stream.
-This macro lets us do so: it executes |body| in an environment where
-|var| is lexically bound to a stream whose input comes from |stream|,
-and |rewind| is a local function that `rewinds' the stream to its
-state prior to any reads executed in the body.
+@ Sometimes we'll want to look more than one character ahead in a stream.
+This macro lets us do so: it executes |body| in a lexical environment where
+|var| is bound to a stream whose input comes from |stream| and |rewind| is
+a local function that `rewinds' the stream to its state prior to any reads
+executed in the body.
 
 @l
 (defmacro with-rewind-stream ((var stream) &body body &aux (out (gensym)))
@@ -523,7 +532,7 @@ state prior to any reads executed in the body.
      (with-open-stream (,var (make-echo-stream ,stream ,out))
        (flet ((rewind ()
                 (setq ,var (make-concatenated-stream
-                            (make-string-input-stream
+                            (make-string-input-stream ;
                              (get-output-stream-string ,out))
                             ,stream))))
          ,@body))))
@@ -550,12 +559,13 @@ that will be concatenated onto the front of |stream| prior to reading.
                 (,raw-output (get-output-stream-string ,out))
                 (,length (length ,raw-output))
                 (,echoed (subseq ,raw-output
-                                 0 (if (or (eof-p ;
-                                            (peek-char nil ,stream nil *eof*))
-                                           (token-delimiter-p ;
-                                            (elt ,raw-output (1- ,length))))
-                                       ,length
-                                       (1- ,length)))))
+                                 0
+                                 (if (or (eof-p ;
+                                          (peek-char nil ,stream nil *eof*))
+                                         (token-delimiter-p ;
+                                          (elt ,raw-output (1- ,length))))
+                                     ,length
+                                     (1- ,length)))))
            (declare (ignorable ,values ,echoed))
            ,@body)))))
 
@@ -573,9 +583,9 @@ abstract objects in source code. Some of these objects, such as newlines
 and comments, are ones that would ordinarily be ignored by the reader.
 Others, such as \.{()} and~\.{'}, are indistinguishable after reading from
 other, semantically equivalent objects (here, |nil| and |quote|), but we
-want to preserve the distinction for the purposes of output. In fact, nearly
-every standard macro character in Common Lisp is `lossy', in the sense that
-the original source code form can not be reliably recovered from the object
+want to preserve the distinction in the output. In fact, nearly every
+standard macro character in Common Lisp is `lossy', in the sense that the
+original source code form can not be reliably recovered from the object
 returned by |read|.
 
 But during weaving, we want to more closely approximate the original source
@@ -616,11 +626,11 @@ prints the marker's value if it is bound.
     (write (marker-value obj) :stream stream)))
 
 @ A few of the markers behave differently when we're tangling for the
-purposes of evaluation than when we're writing out a tangled Lisp source
-file. We need this distinction only for read-time evaluated constructs,
-such as \.{\#.} and~\.{\#+}/\.{\#-}. This variable will be bound to true
-when and only when the value of a marker will be used as an argument to
-|eval|.
+purposes of evaluation (e.g., within a call to |load-web|) than when we're
+writing out a tangled Lisp source file. We need this distinction only for
+read-time evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}. This
+variable will be bound to true when and only when the value of a marker
+will be used as an argument to |eval|.
 
 @l
 (defvar *evaluating* nil)
@@ -645,10 +655,11 @@ since indentation is completely ignored there.
                      nil (readtable-for-mode :lisp))
 
 @ The rest of the reader macro functions for standard macro characters are
-defined in the order given in section~2.4 of the ANSI Common Lisp standard.
-We override all of the standard macro characters except |#\)| and~|#\"|
-(the former because the standard reader macro function just signals an
-error, and the latter because we don't need markers for strings).
+defined in the order given in section~2.4 of the \csc{ansi} Common Lisp
+standard. We override all of the standard macro characters except |#\)|
+and~|#\"| (the former because the standard reader macro function just
+signals an error, which is fine, and the latter because we don't need
+markers for strings).
 
 @ {\it Left-Parenthesis.} We have two different kinds of markers for lists.
 The first is one for empty lists, so that we can maintain a distinction
@@ -704,12 +715,12 @@ use the first bound marker or non-marker object that we find.
          (return x))))
 
 @ We don't use |list-marker|s at all in inner-Lisp mode (since we don't do
-indentation tracking there), but we do still want markers for the empty list.
-The function |make-list-reader| returns a reader macro function that peeks
-ahead, looking for a closing parenthesis, and either returns an empty-list
-marker, or invokes a full list-reading function, which is passed in as |next|.
-For inner-Lisp mode, that |next| function is the reader macro function for
-|#\(| in the standard readtable.
+indentation tracking there), but we still want markers for the empty list.
+The function |make-list-reader| returns a closure that peeks ahead in the
+given stream looking for a closing parenthesis, and either returns an
+empty-list marker or invokes a full list-reading function, which is stored
+in the variable |next|.  For inner-Lisp mode, that function is the standard
+reader macro function for |#\(|.
 
 @l
 (defun make-list-reader (next)
@@ -802,14 +813,15 @@ with the semicolon and ending just before the next newline, which we leave
 for the newline reader to pick up. But as a special exception, if the
 comment is empty (that is, consists solely of a single semicolon), the
 newline is consumed, and we return zero values. This provides for
-`soft-newlines'---that is, newlines in the source file that will not
+`soft newlines'---that is, newlines in the source file that will not
 appear in the output.
 
 @l
 (defun comment-reader (stream char)
   (if (char= (peek-char nil stream nil nil t) #\Newline)
       (progn (read-char stream t nil t) (values))
-      (make-instance 'comment-marker :text @<Read characters up to...@>)))
+      (make-instance 'comment-marker
+                     :text @<Read characters up to...@>)))
 
 (set-macro-character #\; #'comment-reader nil (readtable-for-mode :lisp))
 
@@ -821,15 +833,15 @@ appear in the output.
     (write-char (read-char stream t nil t) s)))
 
 @ {\it Backquote\/} is hairy, and so we use a kludge to avoid implementing
-the whole thing. Our reader macro functions for |#\`| and |#\,| do the absolute
-minimum amount of processing necessary to be able to reconstruct the forms
-that were read. Then, when the tangler asks for the |marker-value| of a
-backquote marker, we reconstruct the source form using the pretty-printer,
-and read it back in using the standard readtable. It's a sleazy trick, but
-it works. (It's also the reason we need pretty-printing routines for all
-these markers.)
+the whole thing. Our reader macro functions for |#\`| and |#\,| do the
+absolute minimum amount of processing necessary to be able to reconstruct
+the forms that were read. When the tangler asks for the |marker-value| of a
+backquote marker, we reconstruct the source form using the printer, and
+read it back in using the standard readtable. It's a sleazy trick, but it
+works. (It's also the reason we need |print-object| methods for all these
+markers.)
 
-Of course, we assume |read|-|print| equivalence, but that's not
+Of course, this trick assumes read-print equivalence, but that's not
 unreasonable, since without it the file tangler won't work anyway.
 
 @l
@@ -891,11 +903,6 @@ handle each sub-char individually, and unfortunately we need to override
 most of them. We'll handle them in the order given in section~2.4.8
 of the CL standard.
 
-Note that we don't actually need to define tangle-time pretty-printing
-routines for any of these, as they all have values that can be printed
-using the standard printer. Of course, later we'll define pretty-printing
-routines for all of these in the weaver.
-
 @ Some of the reader macro functions store some value related to the occurrence
 of the macro character and then just invoke the reader macro function defined
 in the standard readtable.
@@ -906,9 +913,9 @@ in the standard readtable.
    (get-dispatch-macro-character #\# sub-char (readtable-for-mode nil))
    stream sub-char arg))
 
-@ And sometimes, we have to do the reading and parsing ourselves, which means
-detecting errors. This condition class and associated signaling function allow
-|format|-style error reporting.
+@ And sometimes, we have to do the reading and parsing ourselves, which
+means detecting and reporting errors. This condition class and associated
+signaling function allow |format|-style error reporting.
 
 @l
 (define-condition simple-reader-error (reader-error simple-condition) ()
@@ -924,7 +931,7 @@ detecting errors. This condition class and associated signaling function allow
          :format-control control
          :format-arguments args))
 
-@ Sharpsign single-quote is just like single-quote, except the form is
+@ Sharpsign single-quote is just like single-quote, except that the form is
 `quoted' with |function| instead of |quote|.
 
 @l
@@ -938,9 +945,9 @@ detecting errors. This condition class and associated signaling function allow
   (set-dispatch-macro-character #\# #\' #'sharpsign-quote-reader ;
                                 (readtable-for-mode mode)))
 
-@ Sharpsign left-parenthesis and sharpsign asterisk create simple vectors and
-simple bit vectors, respectively. The feature that we care about preserving is
-the length specification and consequent possible abbreviation.
+@ Sharpsign left-parenthesis and sharpsign asterisk create |simple-vector|s
+and |simple-bit-vector|s, respectively. The feature that we care about
+preserving is the length specification and consequent possible abbreviation.
 
 @l
 (defclass simple-vector-marker (marker)
@@ -955,7 +962,7 @@ the length specification and consequent possible abbreviation.
     (if (slot-boundp marker 'length)
         (with-slots (length) marker
           (let ((supplied-length (length elements)))
-            (fill (replace (make-array length :element-type element-type)
+            (fill (replace (make-array length :element-type element-type) ;
                            elements)
                   (elt elements (1- supplied-length))
                   :start supplied-length)))
@@ -968,12 +975,12 @@ the length specification and consequent possible abbreviation.
          (length (handler-case (length list)
                    (type-error (error)
                      (declare (ignore error))
-                     (simple-reader-error
+                     (simple-reader-error ;
                       stream "improper list in #(): ~S" list)))))
     (unless *read-suppress*
       (if arg
           (if (> length arg)
-              (simple-reader-error
+              (simple-reader-error ;
                stream "vector longer than specified length: #~S~S" arg list)
               (make-instance 'simple-vector-marker :length arg :elements list))
           (make-instance 'simple-vector-marker :elements list)))))
@@ -982,12 +989,11 @@ the length specification and consequent possible abbreviation.
   (set-dispatch-macro-character #\# #\( #'simple-vector-reader ;
                                 (readtable-for-mode mode)))
 
-@ Sharpsign asterisk is similar to sharpsign left-parenthesis, but the token
-following the asterisk must be composed entirely of \.{0}s and \.{1}s, which
-are used to initialize a simple bit vector. It supports the same kind of
+@ Sharpsign asterisk is similar, but the token following the asterisk must
+be composed entirely of \.{0}s and \.{1}s. It supports the same kind of
 abbreviation that \.{\#()} does.
 
-But note the use of the word `token' above. By defining \.{\#*} in terms of the
+Note the use of the word `token' above. By defining \.{\#*} in terms of the
 {\it token\/} following the \.{*}, the authors of the standard have made it
 very, very difficult for a portable program to emulate the specified behavior,
 since only the built-in reader knows how to tokenize for the current
@@ -1059,8 +1065,9 @@ value; and in a tangled source file, we get a \.{\#.} form.
   (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader ;
                                 (readtable-for-mode mode)))
 
-@ Sharpsign B, O, X, and~R all represent rational numbers in a specified radix,
-but that radix is discarded by the standard reader.
+@ Sharpsign B, O, X, and~R all represent rational numbers in a specific radix,
+but the radix is discarded by the standard reader, which just returns the
+number.
 
 @l
 (defclass radix-marker (marker)
@@ -1079,7 +1086,7 @@ but that radix is discarded by the standard reader.
                                   (readtable-for-mode mode))))
 
 @ Sharpsign~S requires determining the standard constructor function of the
-structure type named, which we simply can't do portably. So, we use the same
+structure type named, which we simply can't do portably. So we use the same
 trick we used for backquote above: we cache the form as given, then dump it
 out to a string and let the standard reader parse it when we need the value.
 
@@ -1103,7 +1110,7 @@ out to a string and let the standard reader parse it when we need the value.
   (set-dispatch-macro-character #\# #\S #'structure-reader ;
                                 (readtable-for-mode mode)))
 
-@ Sharpsign $+$ and~$-$ provide read-time conditionalization based on
+@ Sharpsign + and~-- provide read-time conditionalization based on
 feature expressions, described in section~24.1.2 of the CL standard.
 This routine, adapted from SBCL, interprets such an expression.
 
@@ -1125,7 +1132,7 @@ This routine, adapted from SBCL, interprets such an expression.
         (error "unknown operator in feature expression: ~S." x))))
     (symbol (not (null (member x *features* :test #'eq))))))
 
-@ For sharpsign $+$/$-$, we use the same sort of trick we used for \.{\#.}
+@ For sharpsign +/--, we use the same sort of trick we used for \.{\#.}
 above: we have a marker that returns the appropriate value when tangling for
 evaluation, but returns a `pseudo-marker' when tangling to a file, so that
 we can preserve the original form.
@@ -1185,9 +1192,9 @@ characters that the reader scans, and use that to reconstruct the form.
 @ Okay, so much for the standard macro characters. Now we're ready to move
 on to \WEB-specific reading. We accumulate \TeX\ mode material such as
 commentary, section names, \etc. using the following function, which reads
-from |stream| until encountering either {\sc EOF} or a {\it control
-character\/}. The set of control characters is given by the |control-chars|
-argument, which should be a designator for a list of characters.
+from |stream| until encountering either \EOF\ or an element of the
+|control-chars| argument, which should be a designator for a list of
+ characters.
 
 @l
 (defun snarf-until-control-char (stream control-chars &aux
@@ -1200,8 +1207,7 @@ argument, which should be a designator for a list of characters.
             do (write-char (read-char stream) string))))
 
 @ In \TeX\ mode (including restricted contexts), we allow embedded Lisp
-code to be surrounded by \pb, where it is read in inner-Lisp mode, which is
-almost, but not quite, the same as Lisp mode.
+code to be surrounded by \pb, where it is read in inner-Lisp mode.
 
 @l
 (defun read-inner-lisp (stream char)
@@ -1212,9 +1218,8 @@ almost, but not quite, the same as Lisp mode.
   (set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode mode)))
 
 @ The call to |read-delimited-list| in |read-inner-lisp| will only stop at
-the closing \v\ if we set it to be a terminating macro character,
-overriding its usual Lisp meaning as an escape character. The following
-makes it an error to use \v\ in inner-Lisp mode.
+the closing \v\ if we make it a terminating macro character, overriding its
+usual Lisp meaning as an escape character.
 
 @l
 (set-macro-character #\| (get-macro-character #\) nil)
@@ -1264,17 +1269,17 @@ return an instance of the appropriate section class.
   (set-control-code sub-char #'start-section-reader '(:limbo :TeX :lisp)))
 
 @ The control codes \.{@@l} and ~\.{@@p} (where `l' is for `Lisp' and `p'
-is for `Program'---both control codes do the same thing) begin the code
+is for `program'---both control codes do the same thing) begin the code
 part of an unnamed section. They are recognized only in \TeX\ mode---every
 section must begin with a commentary, even if it is empty.
 
 The control code \.{@@e} (`e' for `evaluate') is similar to \.{@@l} in that
 it begins the code part of an unnamed section, but every form in that part
 is evaluated at read-time {\it in addition to\/} being tangled and therefore
-evaluated at run-time and possibly compile-time, too. Sections containing
+evaluated at run-time (and possibly compile-time, too). Sections containing
 evaluated code-parts should be used only for establishing state that is
 needed by the reader: package definitions, structure definitions that are
-used with the \.{\#S} reader macro, \etc.
+used with \.{\#S}, \etc.
 
 @l
 (defclass start-code-marker (marker)
@@ -1293,8 +1298,8 @@ used with the \.{\#S} reader macro, \etc.
   (set-control-code sub-char #'start-code-reader '(:TeX)))
 
 @ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
-called {\it control text}, that extends to the matching \.{@@>}. When we
-first read control text, we ignore inner-Lisp material (that is, Lisp forms
+called {\it control text}, that extends to the next \.{@@>}. When we first
+read control text, we ignore inner-Lisp material (that is, Lisp forms
 surrounded by \pb). During weaving, we'll re-scan it to pick up such
 material.
 
@@ -1313,14 +1318,13 @@ material.
 @ The control code \.{@@<} introduces a section name, which extends to the
 closing \.{@@>}. Its meaning is context-dependent.
 
-In \TeX\ mode, a name must be followed by \.{=}, in which case it indicates
-that the name should be attached to the current section and begins the
-code part of the section.
+In \TeX\ mode, a name must be followed by \.{=}, which attaches the name to
+the current section and begins the code part.
 
 In Lisp and inner-Lisp modes, a name is taken to refer to the section so
 named. During tangling, such references in Lisp mode will be replaced with
-the code defined for that section. References in inner-Lisp mode are used
-only during weaving.
+the code defined for that section. References in inner-Lisp mode are only
+citations, and so are not expanded.
 
 @l
 (defun make-section-name-reader (definition-allowed-p)
@@ -1430,9 +1434,8 @@ inner-Lisp material is not recognized in limbo text.
 
 @ The commentary part that begins a section consists of \TeX\ text and
 inner-Lisp material surrounded by \pb. It is terminated by either the start
-of a new section, the beginning of the code part, or {\sc EOF}. If a code
-part is detected, we also set the name of the current section, which may be
-|nil|.
+of a new section, the beginning of the code part, or \EOF. If a code part
+is detected, we also set the name of the current section, which may be |nil|.
 
 @<Accumulate \TeX-mode material in |commentary|@>=
 (with-mode :TeX
@@ -1447,7 +1450,7 @@ part is detected, we also set the name of the current section, which may be
       (t (push form commentary)))))
 
 @ The code part of a section consists of zero or more Lisp forms and is
-terminated by either {\sc EOF} or the start of a new section. If the code
+terminated by either \EOF\ or the start of a new section. If the code
 part was begun by a \.{@@e} control code, we evaluate the code forms as we
 read them.
 
@@ -1478,7 +1481,6 @@ we'll push a paragraph marker instead if there are two newlines in a row.
 @ We trim trailing whitespace from the last string in |commentary|, leading
 whitespace from the first, and any trailing newline marker from |code|.
 (Leading newlines are handled in |@<Accumulate Lisp-mode...@>|.)
-We then reverse both lists.
 
 @<Trim whitespace and reverse |commentary| and |code|@>=
 (when (stringp (car commentary))
@@ -1503,7 +1505,7 @@ We then reverse both lists.
 @*The tangler. Tangling involves recursively replacing each reference to a
 named section with the code accumulated for that section. The function
 |tangle-1| expands one level of such references, returning the
-possibly-expanded form, and a boolean representing whether or not any
+possibly-expanded form and a boolean representing whether or not any
 expansions were actually performed.
 
 Note that this is a splicing operation, like `\.{,@@}', not a simple
@@ -1617,7 +1619,7 @@ file and then invoking the file compiler on that file.
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
-                    (lisp-file (merge-pathnames (make-pathname :type "lisp")
+                    (lisp-file (merge-pathnames (make-pathname :type "lisp") ;
                                                 input-file)))
   (declare (ignore output-file print))
   (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
@@ -1645,7 +1647,7 @@ function for setting its entries.
 (defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
 
 (defun set-weave-dispatch (type-specifier function &optional (priority 0))
-  (set-pprint-dispatch type-specifier function priority
+  (set-pprint-dispatch type-specifier function priority ;
                        *weave-pprint-dispatch*))
 
 @ @l
@@ -1773,18 +1775,19 @@ with the conjunction macros \.{\\ET} (for two section numbers) and~\.{\\ETs}
 
 The following routine is the basis for most of the escaping. It writes the
 given string to an output stream, escaping the characters given in the
-|escape-chars| a-list. The entries in this a-list should be of the form
-`(\metasyn{characters}~.~\metasyn{replacement})', where
+association list |escape-chars|. The entries in this a-list should be of
+the form `(\metasyn{characters}~.~\metasyn{replacement})', where
 \metasyn{characters} is a string of characters to be escaped with
-\metasyn{replacement}, which may be a single character, in which case that
-character is output before any occurrences of \metasyn{character}, or a
-string, in which case it is output instead of the character being considered.
+\metasyn{replacement}. \metasyn{replacement} may be a single character, in
+which case that character is output before any occurrences of any of
+\metasyn{characters}, or a string, in which case it is output instead of
+the character being considered.
 
 @l
 (defparameter *tex-escape-alist*
   '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 
-(defun write-escaped-string (stream string &optional
+(defun write-escaped-string (stream string &optional ;
                              (escape-chars *tex-escape-alist*))
   (dotimes (i (length string))
     (let* ((char (char string i))
