@@ -1715,7 +1715,8 @@ re-reads such strings and picks up any inner-Lisp material.
 (defun print-limbo (stream section)
   (let ((commentary (section-commentary section)))
     (when commentary
-      (print-TeX stream commentary))))
+      (print-TeX stream commentary)
+      (terpri stream))))
 
 (set-weave-dispatch 'limbo-section #'print-limbo 1)
 
