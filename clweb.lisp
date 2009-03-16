@@ -971,7 +971,7 @@
 (DEFUN PRINT-STRING (STREAM STRING)
   (WRITE-STRING "\\.{\"" STREAM)
   (WRITE-ESCAPED-STRING STREAM STRING
-                        (LIST* '("{}" . #\\) '("\\" . "\\\\\\\\")
+                        (LIST* '("{*}" . #\\) '("\\" . "\\\\\\\\")
                                '("\"" . "\\\\\"") *TEX-ESCAPE-ALIST*))
   (WRITE-STRING "\"}" STREAM))
 (SET-WEAVE-DISPATCH 'STRING #'PRINT-STRING)

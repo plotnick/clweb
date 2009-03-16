@@ -1804,7 +1804,7 @@ the character being considered.
 (defun print-string (stream string)
   (write-string "\\.{\"" stream)
   (write-escaped-string stream string
-                        (list* '("{}" . #\\)
+                        (list* '("{*}" . #\\)
                                '("\\" . "\\\\\\\\")
                                '("\"" . "\\\\\"")
                                *tex-escape-alist*))
