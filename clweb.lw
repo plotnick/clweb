@@ -1401,7 +1401,7 @@ tiny state machine that models the global syntax of a \WEB\ file.
 explicit closing delimiters.) It returns a list of |section| objects.
 
 @l
-(defun read-sections (input-stream append-p)
+(defun read-sections (input-stream &optional (append-p t))
   (with-charpos-input-stream (stream input-stream)
     (flet ((finish-section (section commentary code)
              @<Trim whitespace and reverse...@>
@@ -1654,53 +1654,96 @@ file and then invoking the file compiler on that file.
           (pprint form lisp)))))
   (apply #'compile-file lisp-file args))
 
-@*The weaver. Most of the hard work is done while reading the sections in,
-so weaving consists almost entirely of pretty-printing.
+@*The weaver. The top-level weaver interface is modeled after |compile-file|.
+The function |weave| reads the \WEB\ |input-file| and produces an output
+\TeX\ file named by |output-file|. If the weaving was successful, |weave|
+returns the truename of the output file. If |output-file| is not supplied
+or is |nil|, a pathname will be generated from |input-file| by replacing
+its |:type| component with \.{"tex"}.
 
-@ We set up our own pretty-print dispatch table for weaving, and a utility
-function for setting its entries.
+If |verbose| is true, |weave| prints a message in the form of a comment to
+standard output indicating what file is being woven. If |verbose| is not
+supplied, the value of |*weave-verbose*| is used.
+
+If |print| is true, the section number of each section encountered is printed
+to standard output, with starred sections prefixed with \.{*}. If |print|
+is not supplied, the value of |*weave-print*| is used.
+
+Finally, the |external-format| argument specifies the external file format
+to be used when opening both the input file and the output file.
+{\it N.B.:} standard \TeX\ only handles 8-bit characters, and the encodings
+for non-printable-\csc{ascii} characters vary widely.
+
+@l
+(defvar *weave-verbose* t)
+(defvar *weave-print* t)
+
+(defun weave (input-file &key
+              (output-file nil)
+              (verbose *weave-verbose*)
+              (print *weave-print*)
+              (if-does-not-exist t)
+              (external-format :default))
+  (unless output-file
+    (setq output-file (merge-pathnames (make-pathname :type "tex") input-file)))
+  @<Initialize global variables@>
+  (when verbose (format t "~&; weaving WEB from ~S~%" input-file))
+  (with-open-file (stream input-file
+                   :direction :input
+                   :external-format external-format
+                   :if-does-not-exist (if if-does-not-exist :error nil))
+    (weave-sections (read-sections stream) output-file
+                    :print print
+                    :external-format external-format)))
+
+@ The following routine does the actual writing of the sections to the output
+file. The individual sections and their contents are printed using the pretty
+printer with a customized dispatch table.
 
 @l
 (defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
 
+(defun weave-sections (sections output-file &key
+                       (print *weave-print*)
+                       (external-format :default))
+  (with-open-file (output output-file
+                   :direction :output
+                   :external-format external-format
+                   :if-exists :supersede)
+    (format output "\\input clwebmac~%")
+    (flet ((write-section (section)
+             (write section
+                    :stream output
+                    :case :downcase
+                    :escape nil
+                    :pretty t
+                    :pprint-dispatch *weave-pprint-dispatch*
+                    :right-margin 1000)))
+      (if print
+          (pprint-logical-block (nil nil :per-line-prefix "; ")
+            (map nil
+                 (lambda (section)
+                   (format t "~:[~;~:@_*~]~D~:_ "
+                           (typep section 'starred-section)
+                           (section-number section))
+                   (write-section section))
+                 sections))
+          (map nil #'write-section sections)))
+    (format output "~&\\bye~%")
+    (truename output)))
+
+@ The rest of the weaver consists entirely of pretty-printing routines that
+are installed in |*weave-pprint-dispatch*|.
+
+@l
 (defun set-weave-dispatch (type-specifier function &optional (priority 0))
   (set-pprint-dispatch type-specifier function priority ;
                        *weave-pprint-dispatch*))
 
-@ @l
-(defun weave (filespec &key
-              (output-file nil)
-              (verbose *load-verbose*)
-              (print *load-print*)
-              (if-does-not-exist t)
-              (external-format :default))
-  (unless output-file
-    (setq output-file (merge-pathnames (make-pathname :type "tex") filespec)))
-  (load-web filespec
-            :verbose verbose
-            :print print
-            :if-does-not-exist if-does-not-exist
-            :external-format external-format)
-  (weave-sections *sections* output-file))
-
-@ @l
-(defun weave-sections (sections output-file)
-  (with-open-file (output output-file
-                   :direction :output
-                   :if-exists :supersede)
-    (format output "\\input clwebmac~%")
-    (loop with *print-case* = :downcase
-          with *print-escape* = nil
-          with *print-pretty* = t
-          with *print-pprint-dispatch* = *weave-pprint-dispatch*
-          with *print-right-margin* = 1000
-          for section across sections
-          do (write section :stream output)
-          finally (format output "~&\\bye~%"))))
-
-@ \TeX-mode material consists of a list of strings containing pure \TeX\ text
-and lists of (inner-)Lisp forms. We set |*inner-lisp*| to true when we're
-printing inner-Lisp-mode material so that we can adjust our pretty-printing.
+@ \TeX-mode material is represented as a list of strings containing pure
+\TeX\ text and lists of (inner-)Lisp forms. We set |*inner-lisp*| to true
+when we're printing inner-Lisp-mode material so that we can adjust our
+pretty-printing.
 
 @l
 (defvar *inner-lisp* nil)
