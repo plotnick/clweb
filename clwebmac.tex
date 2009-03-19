@@ -18,8 +18,9 @@
 \let\2=\qquad
 
 {\catcode`\(=\active \catcode`\)=\active
- \gdef\activeparens{\catcode`\(=\active \catcode`\)=\active
-   \def({\char`\(\kern.025em}\def){\char`\)\kern.025em}}}
+ \gdef({\char`\(\kern.025em}
+ \gdef){\char`\)\kern.025em}
+ \gdef\activeparens{\catcode`\(=\active \catcode`\)=\active}}
 {\catcode`\*=\active
  \gdef\activestar{\catcode`\*=\active \def*{\leavevmode$\ast$}}}
 {\obeyspaces\global\let =\ } % let active space = control space
