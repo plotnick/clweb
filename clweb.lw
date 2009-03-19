@@ -1,6 +1,4 @@
-% CLWEB is a literate programming system for Common Lisp.
-% It was inspired by CWEB by Silvio Levy and Donald E. Knuth, which was
-% based on Knuth's original WEB system.
+% -*-CLWEB-*-
 
 \newif\ifzapf \zapftrue
 \newif\ifslimbach
@@ -34,23 +32,59 @@
 \def\v{\.{\char'174}} % vertical bar in typewriter font
 \def\WEB{{\tt WEB}}
 \def\CWEB{{\tt CWEB}}
+\def\CLWEB{{\tt CLWEB}}
 \def\EOF{\csc{eof}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\metasyn#1{$\langle${\it #1\/}$\rangle$} % metasyntactic variable
 
-@*Introduction. The two primary operations that a literate programming
-system provides are {\it tangling\/} and {\it weaving\/}. The former creates
-a machine-readable output file from a \WEB, while the latter prepares the
-\WEB\ for formatting using \TeX\ or some other formatting engine.
+@*Introduction. This is \CLWEB, a literate programming system for Common
+Lisp. It is modeled after the \CWEB\ system by Silvio Levy and Donald
+E.~Knuth, which was in turn adapted from Knuth's original \WEB\ system.
+Readers familiar with either of those systems should have little difficulty
+understanding (at least) the intent and philosophy of this program, and
+should feel free to skim these introductory comments.
+
+To quote the \CWEB\ manual:
+
+{\narrower\narrower\smallskip\noindent The philosophy behind \.{CWEB} is
+ that programmers who want to provide the best possible documentation for
+ their programs need two things simultaneously: a language like \TEX/ for
+ formatting, and a language like \CEE/ for programming. Neither type of
+ language can provide the best documentation by itself. But when both are
+ appropriately combined, we obtain a system that is much more useful than
+ either language separately.
+
+ The structure of a software program may be thought of as a ``web'' that is
+ made up of many interconnected pieces. To document such a program, we want
+ to explain each individual part of the web and how it relates to its
+ neighbors. The typographic tools provided by \TEX/ give us an opportunity
+ to explain the local structure of each part by making that structure
+ visible, and the programming tools provided by \CEE/ make it possible for
+ us to specify the algorithms formally and unambiguously. By combining the
+ two, we can develop a style of programming that maximizes our ability to
+ perceive the structure of a complex piece of software, and at the same
+ time the documented programs can be mechanically translated into a working
+ software system that matches the documentation.\smallskip}
+
+\noindent These two paragraphs, {\it mutatis mutandis,} apply equally well
+to the current system.
+
+The two primary operations that a literate programming system provides are
+{\it tangling\/} and {\it weaving\/}. These two operations reflect the dual
+usage of a literate program, and the two audiences by whom it must be read:
+the computer on the one hand, and the human programmers that must maintain
+and use it on the other. Tangling prepares a web for evaluation or
+compilation by a machine, while weaving prepares it for typesetting with
+\TeX\ and subsequent reading by a human.
 
 There are three interface functions defined by this system: |tangle-file|,
 |load-web|, and |weave|. The first is analogous to |compile-file|: given
-an input file containing \WEB\ source, it produces a compiled output file
+an input file containing \CLWEB\ source, it produces a compiled output file
 that can subsequently be loaded into a Lisp image with |load|. The function
-|load-web| is analogous to |load|, but again accepts \WEB\ as input
-instead of ordinary Lisp source. And finally, |weave| takes a \WEB\ as
-input and generates a \TeX\ source file containing the commentary parts
-of each section together with pretty-printed code parts.
+|load-web| is analogous to |load|, but again accepts \CLWEB\ source as input
+instead of ordinary Lisp source. And finally, |weave| takes a web as input
+and generates a file that can be fed to \TeX\ to generate a pretty-printed
+version of that web.
 
 @e
 (declaim (optimize (debug 3)))
@@ -372,20 +406,20 @@ given forms with |*readtable*| bound appropriately for the given mode.
 
 @ It's basically impossible to automatically indent Common Lisp code
 without a complete static analysis. And so we don't try. What we do
-instead is rely on the fact that the {\it input\/} is indented correctly,
-and approximate that on output.
+instead is assume that the input is indented correctly, and try to
+approximate that on output; we call this {\it indentation tracking\/}.
 
-In order to do this {\it indentation tracking\/}, we need the ability to
-reliably determine the current column number, or {\it character position},
-of a stream. One could use Gray streams to do this, but we don't actually
-need them; the built-in stream types suffice.
+To do this, we need the ability to reliably determine the current column
+number, or {\it character position}, of a stream. One could use Gray
+streams to do this, but we don't actually need them; the stream types
+provided by Common Lisp suffice.
 
-@ We'll define a {\it charpos stream\/} as an object that tracks the character
-position of an underlying stream. Note that these aren't actual streams, and
-can't be without relying on an extension to Common Lisp like Gray streams.
-But that doesn't matter, because what we'll actually be passing around is the
-value of the |stream| slot, which {\it will\/} be a stream---we call these
-{\it proxy streams}.
+We'll define a {\it charpos stream\/} as an object that tracks the
+character position of an underlying stream. Note that these aren't actual
+streams, and can't be without relying on an extension to Common Lisp like
+Gray streams.  But that doesn't matter, because what we'll actually be
+passing around is the value of the |stream| slot, which {\it will\/} be
+a stream---we call these {\it proxy streams}.
 
 The current character position is retrieved with the \csc{gf} |charpos|.
 It relies the last stored charpos (stored in the |charpos| slot) and a
