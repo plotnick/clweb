@@ -853,6 +853,7 @@
        (FILESPEC
         &KEY (VERBOSE *LOAD-VERBOSE*) (PRINT *LOAD-PRINT*)
         (IF-DOES-NOT-EXIST T) (EXTERNAL-FORMAT :DEFAULT))
+  "Load the web given by FILESPEC into the Lisp environment."
   (SETF (FILL-POINTER *SECTIONS*) 0)
   (SETQ *NAMED-SECTIONS* NIL)
   (WHEN VERBOSE (FORMAT T "~&; loading WEB from ~S~%" FILESPEC))
@@ -865,6 +866,7 @@
         (LOAD-WEB-FROM-STREAM STREAM PRINT))))
 (DEFUN LOAD-SECTIONS-FROM-TEMP-FILE
        (FILE APPENDP &AUX (TRUENAME (PROBE-FILE FILE)))
+  "Load web sections from FILE, then delete it."
   (WHEN TRUENAME
     (UNWIND-PROTECT
         (WITH-OPEN-FILE (STREAM TRUENAME :DIRECTION :INPUT)
@@ -882,6 +884,7 @@
         (LISP-FILE
          (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "LISP" :CASE :COMMON)
                           INPUT-FILE)))
+  "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (DECLARE (IGNORE OUTPUT-FILE PRINT))
   (WHEN VERBOSE (FORMAT T "~&; tangling WEB from ~S~%" INPUT-FILE))
   (SETF (FILL-POINTER *SECTIONS*) 0)
@@ -909,6 +912,7 @@
         (OUTPUT-FILE
          (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "TEX" :CASE :COMMON)
                           (OR OUTPUT-FILE INPUT-FILE))))
+  "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (WHEN VERBOSE (FORMAT T "~&; weaving WEB from ~S~%" INPUT-FILE))
   (SETF (FILL-POINTER *SECTIONS*) 0)
   (SETQ *NAMED-SECTIONS* NIL)

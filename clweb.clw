@@ -1710,6 +1710,7 @@ will not effect the calling environment.
                  (print *load-print*)
                  (if-does-not-exist t)
                  (external-format :default))
+  "Load the web given by FILESPEC into the Lisp environment."
   @<Initialize global variables@>
   (when verbose (format t "~&; loading WEB from ~S~%" filespec))
   (if (streamp filespec)
@@ -1730,6 +1731,7 @@ this allows for incremental redefinition.
 @l
 (defun load-sections-from-temp-file (file appendp &aux
                                      (truename (probe-file file)))
+  "Load web sections from FILE, then delete it."
   (when truename
     (unwind-protect
          (with-open-file (stream truename :direction :input)
@@ -1751,6 +1753,7 @@ file and then invoking the file compiler on that file.
                     (lisp-file (merge-pathnames (make-pathname :type "LISP" ;
                                                                :case :common)
                                                 input-file)))
+  "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (declare (ignore output-file print))
   (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
   @<Initialize global variables@>
@@ -1803,6 +1806,7 @@ for non-printable-\csc{ascii} characters vary widely.
               (output-file (merge-pathnames (make-pathname :type "TEX" ;
                                                            :case :common)
                                             (or output-file input-file))))
+  "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (when verbose (format t "~&; weaving WEB from ~S~%" input-file))
   @<Initialize global variables@>
   (with-open-file (stream input-file
