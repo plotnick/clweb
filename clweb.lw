@@ -409,11 +409,9 @@ handle abbreviations.
             (string-equal name1 name2))))))
 
 (defun section-name-lessp (name1 name2)
-  (multiple-value-bind (prefix-1-p len1) (section-name-prefix-p name1)
-    (declare (ignore prefix-1-p))
-    (multiple-value-bind (prefix-2-p len2) (section-name-prefix-p name2)
-      (declare (ignore prefix-2-p))
-      (string-lessp name1 name2 :end1 len1 :end2 len2))))
+  (let ((len1 (nth-value 1 (section-name-prefix-p name1)))
+        (len2 (nth-value 2 (section-name-prefix-p name2))))
+    (string-lessp name1 name2 :end1 len1 :end2 len2)))
 
 @ We only actually update the name of a section in two cases: if the new
 name is not an abbreviation but the old one was, or if they are both
