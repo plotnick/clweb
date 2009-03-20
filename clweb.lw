@@ -653,10 +653,11 @@ a local function that `rewinds' the stream to its state prior to any reads
 executed in the body.
 
 @l
-(defmacro with-rewind-stream ((var stream) &body body &aux (out (gensym)))
+(defmacro with-rewind-stream ((var stream &optional (rewind 'rewind))
+                              &body body &aux (out (gensym)))
   `(with-open-stream (,out (make-string-output-stream))
      (with-open-stream (,var (make-echo-stream ,stream ,out))
-       (flet ((rewind ()
+       (flet ((,rewind ()
                 (setq ,var (make-concatenated-stream
                             (make-string-input-stream ;
                              (get-output-stream-string ,out))
