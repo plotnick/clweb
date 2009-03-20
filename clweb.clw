@@ -1862,7 +1862,7 @@ are installed in |*weave-pprint-dispatch*|.
                        *weave-pprint-dispatch*))
 
 @ \TeX-mode material is represented as a list of strings containing pure
-\TeX\ text and lists of (inner-)Lisp forms. We set |*inner-lisp*| to true
+\TeX\ text and lists of (inner-)Lisp forms. We bind |*inner-lisp*| to true
 when we're printing inner-Lisp-mode material so that we can adjust our
 pretty-printing.
 
