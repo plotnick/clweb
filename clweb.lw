@@ -11,10 +11,6 @@
 \font\tenssb=lopb8r at 10pt
 \def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
 \def\){\/\egroup}
-{\catcode`\(=\active \catcode`\)=\active
- % borrow Palatino's parenthesis for Lisp code
- \gdef({{\tenrm\char`\(}\kern.025em}
- \gdef){{\tenrm\char`\)}\kern.025em}}
 \def\csc#1{{\sc #1}}
 \mainfont
 \else\ifslimbach
