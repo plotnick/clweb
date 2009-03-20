@@ -89,7 +89,7 @@ to generate a pretty-printed version of that web.
 The fourth exported symbol, |load-sections-from-temp-file|, is a
 special-purpose routine designed to be used in conjunction with an editor
 such as Emacs to provide incremental re-definition of \CLWEB\ sections;
-it is generally not invoked directly by a user of the system.
+the user will generally never need to call it directly.
 
 @e
 (declaim (optimize (debug 3)))
@@ -103,20 +103,20 @@ it is generally not invoked directly by a user of the system.
 @ The overall format of a \CLWEB\ source file, or {\it web}, as we have
 been calling it in the abstract, is quite similar to that of a \CWEB\ or
 \WEB\ file. It consists of a mixture of \TeX, Lisp, and {\it\WEB\ control
-codes}, but which is primary is mostly a matter of point-of-view. The
+codes}, but which one is primary is mostly a matter of point-of-view. The
 \CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
-something like writing \TeX\ documents, but with an additional ``C mode''
+something like writing \TeX\ documents, but with an additional `C mode'
 that is added to \TeX's horizontal mode, vertical mode, and math mode.''
-But we might just as easily think of a web as some code with documentation
+But one might just as easily think of a web as some code with documentation
 blocks and control codes sprinkled throughout, or as a completely seperate
-language that contains blocks that happen to have the syntax (more or less)
+language containing blocks that happen to have the syntax (more or less)
 of \TeX\ and Lisp (or \CEE/, or Pascal, \etc.). Indeed, for the purposes of
 understanding the implementation, this last view is perhaps the most
 useful.
 
-The syntax of \CLWEB\ control codes is quite similar to that of dispatching
-reader macro characters in Lisp: they all begin with `\.{@@}$x$', where $x$
-is a single character that selects the specific control code.
+The syntax of \CLWEB\ control codes is similar to that of dispatching
+reader macro characters in Lisp: they all begin with `\.{@@}$x$', where
+$x$ is a single character that selects the control code.
 
 % FIXME: Need more here. Maybe discuss modes a little.
 
@@ -132,7 +132,7 @@ might also contain fragments of Lisp code, but only for expository purposes:
 no code in a commentary part is ever evaluated or seen by the compiler.
 
 The second part of a section contains some Lisp code, whose motivation,
-purpose, or operation might be described by the commentary.  Code parts are
+purpose, or operation might be described by the commentary. Code parts are
 generally short, typically only a few forms, so that their operation and
 structure can be easily comprehended as a unit.
 
@@ -144,11 +144,14 @@ generated automatically by the system.
 Sections may be either {\it named\/} or {\it unnamed\/}. Named sections are
 conceptually very much like parameterless macros, except that they can be
 defined piecemeal and have splicing semantics instead of simple replacement.
-During tangling, the code parts of all the sections that share a name are
-gathered together and spliced into place in place of any reference to that
-section name that appears in another code part. During weaving, section
-references are pretty-printed using the name of the section and the number
-of the first section with that name enclosed in angle brackets.
+The tangler gathers together the code parts of all the sections that share
+a name and recursively replaces references to those names with the
+corresponding code. (This is where the name `tangling' comes from: code
+may be broken up and presented in whatever order suits the expository
+purposes of the author, but is then spliced back together into the order
+that the programming language expects.) The weaver, on the other hand,
+simply pretty-prints such references by enclosing the name and the number
+of the first section with that name within angle brackets.
 
 @l
 (defclass section ()
@@ -158,26 +161,26 @@ of the first section with that name enclosed in angle brackets.
    (code :accessor section-code :initarg :code))
   (:default-initargs :commentary nil :name nil :code nil))
 
-@ There are two control codes that begin sections: \.{@@\ } and~\.{@@*}.
-They differ only in the way the woven output is generated. Sections that
-are introduced using \.{@@*} (`starred' sections) are considered the
-beginning of a new major group of sections, and get some special formatting
-during weaving. The control code \.{@@*} should be immediately followed by a
-title for this group, terminated by a period. That title will appear in a
-boldfaced font at the beginning of the section, and will also appear in the
-table of contents and as a running head on all subsequent pages until the
-next starred section.
+@ Two control codes begin a section: \.{@@\ } and~\.{@@*}. Sections
+introduced with \.{@@*} (`starred' sections) begin a new major group of
+sections, and get some special formatting during weaving. The control code
+\.{@@*} should be immediately followed by a title for this group,
+terminated by a period. That title will appear as a run-in heading at the
+beginning of the section, and will also appear in the table of contents and
+as a running head on all subsequent pages until the next starred section.
+
+The tangler does not care about the distinction between sections with stars
+and ones with none upon thars.
 
 @l
 (defclass starred-section (section) ())
 
 @ There can also be \TeX\ text preceeding the start of the first section
 (i.e., before the first \.{@@\ } or \.{@@*}), called {\it limbo text}.
-It is generally used to set up document-specific macros, include other
-macro packages, set up fonts and formatting, \etc. It is passed through
-virtually verbatim to the output file during weaving (replacing only
-occurrences of `\.{@@@@}' with `\.{@@}'), and is ignored completely
-during tangling.
+Limbo text is generally used to define document-specific formatting
+macros, set up fonts, \etc. The weaver passes it through virtually verbatim
+to the output file (replacing only occurrences of `\.{@@@@}' with `\.{@@}'),
+and the tangler ignores it completely.
 
 We store the limbo text as the commentary of a section object of a
 special class; it will never have a code part.
@@ -185,7 +188,7 @@ special class; it will never have a code part.
 @l
 (defclass limbo-section (section) ())
 
-@ Whenever a section is created, we store it in the global |*sections*|
+@ Whenever we create a section, we store it in the global |*sections*|
 vector and set its number to its index therein. This means that section
 objects won't be collected by the \csc{gc} even after the tangling or
 weaving has completed, but there's a good reason: keeping them around
@@ -208,10 +211,10 @@ development.
 @ @<Initialize global variables@>=
 (setf (fill-pointer *sections*) 0)
 
-@ Named sections are stored in a binary search tree whose keys are the
-section names and whose values are the code to be substituted in place of
-a reference to the section so named. The reason for using a tree instead
-of, say, a hash table is so that we can support abbreviations (see below).
+@ We keep named sections in a binary search tree whose keys are section
+names and whose values are code forms; the tangler will replace references
+to those names with the associated code. We use a tree instead of, say,
+a hash table so that we can support abbreviations (see below).
 
 @l
 (defclass binary-search-tree ()
@@ -226,7 +229,7 @@ attempts to locate the node with key |item| in the tree rooted at |root|.
 If it is not already present and the |:insert-if-not-found| argument
 is true, a new node is created with that key and added to the tree. The
 arguments |:predicate| and |:test| should be designators for functions
-of two arguments, both of which will be node keys. |:predicate| should
+of two arguments, both of which will be node keys; |:predicate| should
 return true iff its first argument precedes its second in the total
 ordering used for the tree, and |:test| should return true iff the two
 keys are to be considered equivalent.
@@ -262,11 +265,11 @@ whether or not the node was already in the tree.
         (setf (right-child parent) node)))
   (values node nil))
 
-@ It's important to keep in mind that named sections can be defined
-piecemeal, with the code spread out over several physical sections. We
-might think of a full named section as a sort of `virtual' section, which
-consists of a name, the combined code parts of all of the physical sections
-with that name, and the number of the first such section.
+@ As we mentioned above, named sections can be defined piecemeal, with the
+code spread out over several sections in the \CLWEB\ source. We might think
+of a full named section as a sort of `virtual' section, which consists of a
+name, the combined code parts of all of the physical sections with that
+name, and the number of the first such section.
 
 And that's what we store in the \csc{bst}: nodes that look like sections,
 inasmuch as they have specialized |section-name|, |section-code|, and
@@ -281,11 +284,10 @@ inasmuch as they have specialized |section-name|, |section-code|, and
    (used-by :accessor used-by :initform '())
    (see-also :accessor see-also :initform '())))
 
-@ Setting the code for a named section usually involves appending the given
-forms to whatever forms were already defined for that section, which allows
-piecemeal definition. However, sometimes we want to override that behavior
-and have the new forms replace the old, such as during interactive
-development.
+@ When we encounter a named section that already has some code associated
+with it, we normally append the new forms to the old: this allows piecemeal
+definition. However, sometimes we want to override that behavior and have
+the new forms replace the old, such as during interactive development.
 
 @l
 (defun set-named-section-code (section forms &optional (appendp t))
@@ -346,7 +348,7 @@ to allow for incremental redefinition.
 @ @<Initialize global variables@>=
 (setq *named-sections* nil)
 
-@ The next routine is the primary interface to named sections: it looks up
+@ The next routine is our primary interface to named sections: it looks up
 a section by name, and creates a new one if no such section exists.
 
 @l
@@ -396,10 +398,16 @@ segment of the name.
         (values t (- len 3))
         (values nil len))))
 
-@ Next we need some special comparison routines for section names that
-handle abbreviations.
+@ Next, we need some special comparison routines for section names that
+handle abbreviations. We'll use these as the |:test| and |:predicate|
+functions in our binary tree.
 
 @l
+(defun section-name-lessp (name1 name2)
+  (let ((len1 (nth-value 1 (section-name-prefix-p name1)))
+        (len2 (nth-value 2 (section-name-prefix-p name2))))
+    (string-lessp name1 name2 :end1 len1 :end2 len2)))
+
 (defun section-name-equal (name1 name2)
   (multiple-value-bind (prefix-1-p len1) (section-name-prefix-p name1)
     (multiple-value-bind (prefix-2-p len2) (section-name-prefix-p name2)
@@ -407,11 +415,6 @@ handle abbreviations.
         (if (or prefix-1-p prefix-2-p)
             (string-equal name1 name2 :end1 end :end2 end)
             (string-equal name1 name2))))))
-
-(defun section-name-lessp (name1 name2)
-  (let ((len1 (nth-value 1 (section-name-prefix-p name1)))
-        (len2 (nth-value 2 (section-name-prefix-p name2))))
-    (string-lessp name1 name2 :end1 len1 :end2 len2)))
 
 @ We only actually update the name of a section in two cases: if the new
 name is not an abbreviation but the old one was, or if they are both
@@ -489,7 +492,7 @@ provided by Common Lisp suffice.
 We'll define a {\it charpos stream\/} as an object that tracks the
 character position of an underlying stream. Note that these aren't actual
 streams, and can't be without relying on an extension to Common Lisp like
-Gray streams.  But that doesn't matter, because what we'll actually be
+Gray streams. But that doesn't matter, because what we'll actually be
 passing around is the value of the |stream| slot, which {\it will\/} be
 a stream---we call these {\it proxy streams}.
 
@@ -630,7 +633,7 @@ proxy stream the tracks the character position for |stream|.
        (release-charpos-stream ,var))))
 
 @ We'll occasionally need to know if a given character terminates a token
-or not.  This function answers that question, but only approximately---if
+or not. This function answers that question, but only approximately---if
 the user has frobbed the current readtable and set non-standard characters
 to whitespace syntax, {\it this routine will not yield the correct
 result}. There's unfortunately nothing that we can do about it portably,
@@ -834,7 +837,7 @@ indentation tracking there), but we still want markers for the empty list.
 The function |make-list-reader| returns a closure that peeks ahead in the
 given stream looking for a closing parenthesis, and either returns an
 empty-list marker or invokes a full list-reading function, which is stored
-in the variable |next|.  For inner-Lisp mode, that function is the standard
+in the variable |next|. For inner-Lisp mode, that function is the standard
 reader macro function for |#\(|.
 
 @l
@@ -2059,7 +2062,7 @@ For example, consider the following simple form:
 \vbox{\B\+(first \!&second\cr\+&third)\cr\egroup}
 \smallskip\noindent We start off with an initial logical block with an
 indentation of the character position of |first|: this is the {\it block
-indentation}.  Then we look at |second|, and see that the first form on the
+indentation}. Then we look at |second|, and see that the first form on the
 following line, |third|, has the same position, and that it exceeds the
 current indentation level. And so we recurse, appending to the new logical
 block until we encounter a form whose indentation is less than the new
