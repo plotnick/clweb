@@ -372,16 +372,17 @@ characters with a single space.
 (defun whitespace-p (char) (find char *whitespace* :test #'char=))
 
 (defun squeeze (string)
-  (coerce @<Collect characters of |string|, squeezing whitespace@> 'simple-string))
-
-@ @<Collect characters...@>=
-(loop with squeezing = nil
-      for char across (string-trim *whitespace* string)
-      if (not squeezing)
-        if (whitespace-p char) do (setq squeezing t) and collect #\Space
-        else collect char
-      else
-        unless (whitespace-p char) do (setq squeezing nil) and collect char)
+  (loop with squeezing = nil
+        for char across (string-trim *whitespace* string)
+        if (not squeezing)
+          if (whitespace-p char)
+            do (setq squeezing t) and collect #\Space into chars
+          else
+            collect char into chars
+        else
+          unless (whitespace-p char)
+            do (setq squeezing nil) and collect char into chars
+        finally (return (coerce chars 'string))))
 
 @ Here's a little utility routine that makes working with section names
 easier. Given a name, it returns two values: true or false depending on
