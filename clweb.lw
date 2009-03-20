@@ -1641,22 +1641,23 @@ removes unbound markers.
 
 @l
 (defun tangle-1 (form)
-  (cond ((list-marker-p form) (values (marker-value form) t))
-        ((atom form) (values form nil))
-        ((typep (car form) 'named-section)
-         (values (append (section-code (car form)) (tangle-1 (cdr form))) t))
-        ((typep (car form) 'marker)
-         (values (if (marker-boundp (car form))
-                     (cons (marker-value (car form)) (tangle-1 (cdr form)))
-                     (tangle-1 (cdr form)))
-                 t))
-        (t (multiple-value-bind (a car-expanded-p) (tangle-1 (car form))
-             (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
-               (values (if (and (eql a (car form))
-                                (eql d (cdr form)))
-                           form
-                           (cons a d))
-                       (or car-expanded-p cdr-expanded-p)))))))
+  (typecase form
+    (list-marker (values (marker-value form) t))
+    (atom (values form nil))
+    ((cons named-section *)
+     (values (append (section-code (car form)) (tangle-1 (cdr form))) t))
+    ((cons marker *)
+     (values (if (marker-boundp (car form))
+                 (cons (marker-value (car form)) (tangle-1 (cdr form)))
+                 (tangle-1 (cdr form)))
+             t))
+    (t (multiple-value-bind (a car-expanded-p) (tangle-1 (car form))
+         (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
+           (values (if (and (eql a (car form))
+                            (eql d (cdr form)))
+                       form
+                       (cons a d))
+                   (or car-expanded-p cdr-expanded-p)))))))
 
 @ |tangle| repeatedly calls |tangle-1| on |form| until it can no longer be
 expanded. Like |tangle-1|, it returns the possibly-expanded form and an

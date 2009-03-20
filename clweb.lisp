@@ -806,26 +806,27 @@
                                        SECTIONS)
                                  (RETURN (NREVERSE SECTIONS))))))
 (DEFUN TANGLE-1 (FORM)
-  (COND ((LIST-MARKER-P FORM) (VALUES (MARKER-VALUE FORM) T))
-        ((ATOM FORM) (VALUES FORM NIL))
-        ((TYPEP (CAR FORM) 'NAMED-SECTION)
-         (VALUES (APPEND (SECTION-CODE (CAR FORM)) (TANGLE-1 (CDR FORM))) T))
-        ((TYPEP (CAR FORM) 'MARKER)
+  (TYPECASE FORM
+    (LIST-MARKER (VALUES (MARKER-VALUE FORM) T))
+    (ATOM (VALUES FORM NIL))
+    ((CONS NAMED-SECTION *)
+     (VALUES (APPEND (SECTION-CODE (CAR FORM)) (TANGLE-1 (CDR FORM))) T))
+    ((CONS MARKER *)
+     (VALUES
+      (IF (MARKER-BOUNDP (CAR FORM))
+          (CONS (MARKER-VALUE (CAR FORM)) (TANGLE-1 (CDR FORM)))
+          (TANGLE-1 (CDR FORM)))
+      T))
+    (T
+     (MULTIPLE-VALUE-BIND
+         (A CAR-EXPANDED-P)
+         (TANGLE-1 (CAR FORM))
+       (MULTIPLE-VALUE-BIND
+           (D CDR-EXPANDED-P)
+           (TANGLE-1 (CDR FORM))
          (VALUES
-          (IF (MARKER-BOUNDP (CAR FORM))
-              (CONS (MARKER-VALUE (CAR FORM)) (TANGLE-1 (CDR FORM)))
-              (TANGLE-1 (CDR FORM)))
-          T))
-        (T
-         (MULTIPLE-VALUE-BIND
-             (A CAR-EXPANDED-P)
-             (TANGLE-1 (CAR FORM))
-           (MULTIPLE-VALUE-BIND
-               (D CDR-EXPANDED-P)
-               (TANGLE-1 (CDR FORM))
-             (VALUES
-              (IF (AND (EQL A (CAR FORM)) (EQL D (CDR FORM))) FORM (CONS A D))
-              (OR CAR-EXPANDED-P CDR-EXPANDED-P)))))))
+          (IF (AND (EQL A (CAR FORM)) (EQL D (CDR FORM))) FORM (CONS A D))
+          (OR CAR-EXPANDED-P CDR-EXPANDED-P)))))))
 (DEFUN TANGLE (FORM)
   (LABELS ((EXPAND (FORM EXPANDED)
              (MULTIPLE-VALUE-BIND
