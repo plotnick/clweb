@@ -1393,8 +1393,9 @@ section must begin with a commentary, even if it is empty.
 
 The control code \.{@@e} (`e' for `evaluate') is similar to \.{@@l} in that
 it begins the code part of an unnamed section, but every form in that part
-is evaluated at read-time {\it in addition to\/} being tangled and therefore
-evaluated at run-time (and possibly compile-time, too). Sections containing
+is evaluated by both the tangler and the weaver as soon as they read it,
+{\it in addition to\/} being tangled into the output file (and therefore
+evaluated at run-time, and possibly compile-time, too). Sections containing
 evaluated code-parts should be used only for establishing state that is
 needed by the reader: package definitions, structure definitions that are
 used with \.{\#S}, \etc.
