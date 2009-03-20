@@ -748,12 +748,10 @@ prints the marker's value if it is bound.
   (when (marker-boundp obj)
     (write (marker-value obj) :stream stream)))
 
-@ A few of the markers behave differently when we're tangling for the
-purposes of evaluation (e.g., within a call to |load-web|) than when we're
-writing out a tangled Lisp source file. We need this distinction only for
-read-time evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}. This
-variable will be bound to true when and only when the value of a marker
-will be used as an argument to |eval|.
+@ A few of the markers behave differently when tangling for the purposes
+of evaluation (e.g., within a call to |load-web|) than when writing out a
+tangled Lisp source file. We need this distinction only for read-time
+evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}.
 
 @l
 (defvar *evaluating* nil)
