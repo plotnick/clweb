@@ -54,9 +54,9 @@
            (NUMBER :ACCESSOR SECTION-NUMBER)
            (USED-BY :ACCESSOR USED-BY :INITFORM 'NIL)
            (SEE-ALSO :ACCESSOR SEE-ALSO :INITFORM 'NIL)))
-(DEFUN SET-NAMED-SECTION-CODE (SECTION FORMS &OPTIONAL (APPEND-P T))
+(DEFUN SET-NAMED-SECTION-CODE (SECTION FORMS &OPTIONAL (APPENDP T))
   (SETF (SECTION-CODE SECTION)
-          (IF (AND APPEND-P (SLOT-BOUNDP SECTION 'VALUE))
+          (IF (AND APPENDP (SLOT-BOUNDP SECTION 'VALUE))
               (APPEND (SECTION-CODE SECTION) FORMS) FORMS)))
 (DEFMETHOD FIND-OR-INSERT
            (ITEM (ROOT NAMED-SECTION) &KEY (PREDICATE #'SECTION-NAME-LESSP)
@@ -97,12 +97,12 @@
         (VALUES SECTION PRESENT-P))))
 (DEFPARAMETER *WHITESPACE*
   #.(COERCE '(#\  #\Tab #\Newline #\Newline #\Page #\Return) 'STRING))
-(DEFUN WHITESPACE-P (CHAR) (FIND CHAR *WHITESPACE* :TEST #'CHAR=))
+(DEFUN WHITESPACEP (CHAR) (FIND CHAR *WHITESPACE* :TEST #'CHAR=))
 (DEFUN SQUEEZE (STRING)
   (LOOP WITH SQUEEZING = NIL FOR CHAR ACROSS (STRING-TRIM *WHITESPACE* STRING)
-        IF (NOT SQUEEZING) IF (WHITESPACE-P CHAR) DO (SETQ SQUEEZING T) AND
+        IF (NOT SQUEEZING) IF (WHITESPACEP CHAR) DO (SETQ SQUEEZING T) AND
         COLLECT #\  INTO CHARS ELSE COLLECT CHAR INTO CHARS ELSE UNLESS
-        (WHITESPACE-P CHAR) DO (SETQ SQUEEZING NIL) AND COLLECT CHAR INTO CHARS
+        (WHITESPACEP CHAR) DO (SETQ SQUEEZING NIL) AND COLLECT CHAR INTO CHARS
         FINALLY (RETURN (COERCE CHARS 'STRING))))
 (DEFUN SECTION-NAME-PREFIX-P (NAME)
   (LET ((LEN (LENGTH NAME)))
@@ -242,7 +242,7 @@
            (MAKE-CHARPOS-OUTPUT-STREAM ,STREAM :CHARPOS ,CHARPOS))))
      (UNWIND-PROTECT (PROGN ,@BODY) (RELEASE-CHARPOS-STREAM ,VAR))))
 (DEFUN TOKEN-DELIMITER-P (CHAR)
-  (OR (WHITESPACE-P CHAR)
+  (OR (WHITESPACEP CHAR)
       (MULTIPLE-VALUE-BIND
           #'NON-TERMINATING-P
           (GET-MACRO-CHARACTER CHAR)
@@ -285,7 +285,7 @@
            (DECLARE (IGNORABLE ,VALUES ,ECHOED))
            ,@BODY)))))
 (DEFCLASS MARKER NIL ((VALUE :READER MARKER-VALUE :INITARG :VALUE)))
-(DEFUN MARKER-P (X) (TYPEP X 'MARKER))
+(DEFUN MARKERP (X) (TYPEP X 'MARKER))
 (DEFGENERIC MARKER-BOUNDP (MARKER))
 (DEFMETHOD MARKER-BOUNDP ((MARKER MARKER)) (SLOT-BOUNDP MARKER 'VALUE))
 (DEFMETHOD PRINT-OBJECT ((OBJ MARKER) STREAM)
@@ -293,7 +293,7 @@
 (DEFVAR *EVALUATING* NIL)
 (DEFCLASS NEWLINE-MARKER (MARKER)
           ((INDENTATION :ACCESSOR INDENTATION :INITFORM NIL)))
-(DEFUN NEWLINE-P (OBJ) (TYPEP OBJ 'NEWLINE-MARKER))
+(DEFUN NEWLINEP (OBJ) (TYPEP OBJ 'NEWLINE-MARKER))
 (SET-MACRO-CHARACTER #\Newline
                      (LAMBDA (STREAM CHAR)
                        (DECLARE (IGNORE STREAM CHAR))
@@ -321,11 +321,11 @@
                        (DOLIST
                            (X MARKER-LIST (ERROR "Nothing after . in list"))
                          (COND
-                          ((AND (MARKER-P X) (MARKER-BOUNDP X))
+                          ((AND (MARKERP X) (MARKER-BOUNDP X))
                            (RETURN (MARKER-VALUE X)))
-                          ((NOT (MARKER-P X)) (RETURN X)))))
+                          ((NOT (MARKERP X)) (RETURN X)))))
                (RETURN (CDR LIST)))
-              ((MARKER-P X)
+              ((MARKERP X)
                (WHEN (MARKER-BOUNDP X)
                  (LET ((OBJ (LIST (MARKER-VALUE X))))
                    (RPLACD TAIL OBJ)
@@ -654,8 +654,8 @@
   (LAMBDA (STREAM SUB-CHAR ARG)
     (DECLARE (IGNORE SUB-CHAR ARG))
     (LET* ((NAME (READ-CONTROL-TEXT STREAM))
-           (DEFINITION-P (EQL (PEEK-CHAR NIL STREAM NIL NIL T) #\=)))
-      (IF DEFINITION-P
+           (DEFINITIONP (EQL (PEEK-CHAR NIL STREAM NIL NIL T) #\=)))
+      (IF DEFINITIONP
           (IF DEFINITION-ALLOWED-P
               (PROGN
                (READ-CHAR STREAM)
@@ -682,7 +682,7 @@
 (DEFMACRO MAYBE-PUSH (OBJ PLACE &AUX (G (GENSYM)))
   `(LET ((,G ,OBJ))
      (WHEN (TYPECASE ,G (STRING (PLUSP (LENGTH ,G))) (T ,G)) (PUSH ,G ,PLACE))))
-(DEFUN READ-SECTIONS (INPUT-STREAM &OPTIONAL (APPEND-P T))
+(DEFUN READ-SECTIONS (INPUT-STREAM &OPTIONAL (APPENDP T))
   (WITH-CHARPOS-INPUT-STREAM (STREAM INPUT-STREAM)
                              (FLET ((FINISH-SECTION (SECTION COMMENTARY CODE)
                                       (WHEN (STRINGP (CAR COMMENTARY))
@@ -698,7 +698,7 @@
                                                                    COMMENTARY))))
                                       (SETQ CODE
                                               (NREVERSE
-                                               (MEMBER-IF-NOT #'NEWLINE-P
+                                               (MEMBER-IF-NOT #'NEWLINEP
                                                               CODE)))
                                       (SETF (SECTION-COMMENTARY SECTION)
                                               COMMENTARY)
@@ -710,18 +710,17 @@
                                               (NUMBER (SECTION-NUMBER SECTION))
                                               (CODE (SECTION-CODE SECTION)))
                                           (SET-NAMED-SECTION-CODE NAMED-SECTION
-                                                                  CODE
-                                                                  APPEND-P)
+                                                                  CODE APPENDP)
                                           (WHEN
                                               (OR
                                                (NOT
                                                 (SLOT-BOUNDP NAMED-SECTION
                                                              'NUMBER))
-                                               (NOT APPEND-P))
+                                               (NOT APPENDP))
                                             (SETF (SECTION-NUMBER
                                                    NAMED-SECTION)
                                                     NUMBER))
-                                          (IF APPEND-P
+                                          (IF APPENDP
                                               (PUSHNEW SECTION
                                                        (SEE-ALSO
                                                         NAMED-SECTION))
@@ -800,7 +799,7 @@
                                                  (NEWLINE-MARKER
                                                   (UNLESS (NULL CODE)
                                                     (COND
-                                                     ((NEWLINE-P (CAR CODE))
+                                                     ((NEWLINEP (CAR CODE))
                                                       (POP CODE)
                                                       (PUSH *PAR* CODE))
                                                      (T (PUSH FORM CODE)))))
@@ -841,16 +840,16 @@
                (IF NEWLY-EXPANDED-P (EXPAND NEW-FORM T)
                    (VALUES NEW-FORM EXPANDED)))))
     (EXPAND FORM NIL)))
-(DEFUN READ-CODE-PARTS (STREAM APPEND-P)
+(DEFUN READ-CODE-PARTS (STREAM APPENDP)
   (APPLY #'APPEND
          (MAP 'LIST #'SECTION-CODE
-              (REMOVE-IF #'SECTION-NAME (READ-SECTIONS STREAM APPEND-P)))))
-(DEFUN LOAD-WEB-FROM-STREAM (STREAM PRINT &OPTIONAL (APPEND-P T))
+              (REMOVE-IF #'SECTION-NAME (READ-SECTIONS STREAM APPENDP)))))
+(DEFUN LOAD-WEB-FROM-STREAM (STREAM PRINT &OPTIONAL (APPENDP T))
   (LET (#+:SBCL (sb-ext:*evaluator-mode* :compile)
         (*READTABLE* *READTABLE*)
         (*PACKAGE* *PACKAGE*)
         (*EVALUATING* T))
-    (DOLIST (FORM (TANGLE (READ-CODE-PARTS STREAM APPEND-P)) T)
+    (DOLIST (FORM (TANGLE (READ-CODE-PARTS STREAM APPENDP)) T)
       (IF PRINT
           (LET ((RESULTS (MULTIPLE-VALUE-LIST (EVAL FORM))))
             (FORMAT T "~&; ~{~S~^, ~}~%" RESULTS))
@@ -868,11 +867,11 @@
            :IF-DOES-NOT-EXIST (IF IF-DOES-NOT-EXIST :ERROR NIL))
         (LOAD-WEB-FROM-STREAM STREAM PRINT))))
 (DEFUN LOAD-SECTIONS-FROM-TEMP-FILE
-       (FILE APPEND-P &AUX (TRUENAME (PROBE-FILE FILE)))
+       (FILE APPENDP &AUX (TRUENAME (PROBE-FILE FILE)))
   (WHEN TRUENAME
     (UNWIND-PROTECT
         (WITH-OPEN-FILE (STREAM TRUENAME :DIRECTION :INPUT)
-          (LOAD-WEB-FROM-STREAM STREAM T APPEND-P))
+          (LOAD-WEB-FROM-STREAM STREAM T APPENDP))
       (DELETE-FILE TRUENAME))))
 (DEFUN TANGLE-FILE
        (INPUT-FILE
@@ -1039,7 +1038,7 @@
 (DEFUN ANALYZE-INDENTATION (LIST-MARKER)
   (DECLARE (TYPE LIST-MARKER LIST-MARKER))
   (LABELS ((FIND-NEXT-NEWLINE (LIST)
-             (MEMBER-IF #'NEWLINE-P LIST :KEY #'CAR))
+             (MEMBER-IF #'NEWLINEP LIST :KEY #'CAR))
            (NEXT-LOGICAL-BLOCK (LIST)
              (DO* ((BLOCK 'NIL)
                    (BLOCK-INDENT (CDAR LIST))
@@ -1050,7 +1049,7 @@
                        (AND (EQ LIST NEWLINE) NEXT-INDENT
                             (< NEXT-INDENT BLOCK-INDENT)))
                    (VALUES
-                    (IF (NOTANY #'NEWLINE-P BLOCK) (NREVERSE BLOCK)
+                    (IF (NOTANY #'NEWLINEP BLOCK) (NREVERSE BLOCK)
                         (MAKE-LOGICAL-BLOCK (NREVERSE BLOCK)))
                     LIST))
                (IF
@@ -1064,7 +1063,7 @@
                   (SETQ LIST TAIL))
                 (LET ((NEXT (CAR (POP LIST))))
                   (PUSH NEXT BLOCK)
-                  (WHEN (AND LIST (NEWLINE-P NEXT))
+                  (WHEN (AND LIST (NEWLINEP NEXT))
                     (SETF INDENT
                             (CDAR LIST)
                           (INDENTATION NEXT)
@@ -1094,13 +1093,13 @@
          (OBJ (PPRINT-POP) NEXT))
         (NIL)
       (COND
-       ((NEWLINE-P OBJ) (FORMAT STREAM "\\cr~:@_")
+       ((NEWLINEP OBJ) (FORMAT STREAM "\\cr~:@_")
         (SETQ INDENT (INDENTATION OBJ)) (PPRINT-EXIT-IF-LIST-EXHAUSTED)
         (SETQ NEXT (PPRINT-POP)))
        (T (FORMAT STREAM "~@[~[~;\\1~;\\1~:;\\2~]~]~W" INDENT OBJ)
         (SETQ INDENT NIL) (PPRINT-EXIT-IF-LIST-EXHAUSTED)
         (SETQ NEXT (PPRINT-POP))
-        (UNLESS (NEWLINE-P NEXT) (WRITE-CHAR #\  STREAM)))))))
+        (UNLESS (NEWLINEP NEXT) (WRITE-CHAR #\  STREAM)))))))
 (SET-WEAVE-DISPATCH 'LOGICAL-BLOCK #'PRINT-LOGICAL-BLOCK)
 (SET-WEAVE-DISPATCH 'NEWLINE-MARKER
                     (LAMBDA (STREAM OBJ)

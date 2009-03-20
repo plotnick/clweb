@@ -288,9 +288,9 @@ and have the new forms replace the old, such as during interactive
 development.
 
 @l
-(defun set-named-section-code (section forms &optional (append-p t))
+(defun set-named-section-code (section forms &optional (appendp t))
   (setf (section-code section)
-        (if (and append-p (slot-boundp section 'value))
+        (if (and appendp (slot-boundp section 'value))
             (append (section-code section) forms)
             forms)))
 
@@ -369,18 +369,18 @@ characters with a single space.
 (defparameter *whitespace*
   #.(coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'string))
 
-(defun whitespace-p (char) (find char *whitespace* :test #'char=))
+(defun whitespacep (char) (find char *whitespace* :test #'char=))
 
 (defun squeeze (string)
   (loop with squeezing = nil
         for char across (string-trim *whitespace* string)
         if (not squeezing)
-          if (whitespace-p char)
+          if (whitespacep char)
             do (setq squeezing t) and collect #\Space into chars
           else
             collect char into chars
         else
-          unless (whitespace-p char)
+          unless (whitespacep char)
             do (setq squeezing nil) and collect char into chars
         finally (return (coerce chars 'string))))
 
@@ -641,7 +641,7 @@ obtaining a list of all the characters with a given syntax.
 
 @l
 (defun token-delimiter-p (char)
-  (or (whitespace-p char)
+  (or (whitespacep char)
       (multiple-value-bind (function non-terminating-p)
           (get-macro-character char)
         (and function (not non-terminating-p)))))
@@ -723,7 +723,7 @@ from its containing form: this is useful, e.g., for newlines and comments.
 @l
 (defclass marker ()
   ((value :reader marker-value :initarg :value)))
-(defun marker-p (x) (typep x 'marker))
+(defun markerp (x) (typep x 'marker))
 
 (defgeneric marker-boundp (marker))
 (defmethod marker-boundp ((marker marker))
@@ -763,7 +763,7 @@ since indentation is completely ignored there.
 @l
 (defclass newline-marker (marker)
   ((indentation :accessor indentation :initform nil)))
-(defun newline-p (obj) (typep obj 'newline-marker))
+(defun newlinep (obj) (typep obj 'newline-marker))
 
 (set-macro-character #\Newline
                      (lambda (stream char)
@@ -811,7 +811,7 @@ preserved during tangling.
     (cond ((eq x *consing-dot*)
            (rplacd tail @<Find the tail...@>)
            (return (cdr list)))
-          ((marker-p x)
+          ((markerp x)
            (when (marker-boundp x)
              (let ((obj (list (marker-value x))))
                (rplacd tail obj)
@@ -826,9 +826,9 @@ use the first bound marker or non-marker object that we find.
 
 @<Find the tail of the list marker@>=
 (dolist (x marker-list (error "Nothing after . in list"))
-  (cond ((and (marker-p x) (marker-boundp x))
+  (cond ((and (markerp x) (marker-boundp x))
          (return (marker-value x)))
-        ((not (marker-p x))
+        ((not (markerp x))
          (return x))))
 
 @ We don't use |list-marker|s at all in inner-Lisp mode (since we don't do
@@ -1450,8 +1450,8 @@ citations, and so are not expanded.
   (lambda (stream sub-char arg)
     (declare (ignore sub-char arg))
     (let* ((name (read-control-text stream))
-           (definition-p (eql (peek-char nil stream nil nil t) #\=)))
-      (if definition-p
+           (definitionp (eql (peek-char nil stream nil nil t) #\=)))
+      (if definitionp
           (if definition-allowed-p
               (progn
                 (read-char stream)
@@ -1509,7 +1509,7 @@ tiny state machine that models the global syntax of a \WEB\ file.
 explicit closing delimiters.) It returns a list of |section| objects.
 
 @l
-(defun read-sections (input-stream &optional (append-p t))
+(defun read-sections (input-stream &optional (appendp t))
   (with-charpos-input-stream (stream input-stream)
     (flet ((finish-section (section commentary code)
              @<Trim whitespace and reverse...@>
@@ -1598,7 +1598,7 @@ we'll push a paragraph marker instead if there are two newlines in a row.
 
 @<Maybe push...@>=
 (unless (null code)
-  (cond ((newline-p (car code))
+  (cond ((newlinep (car code))
          (pop code)
          (push *par* code))
         (t (push form code))))
@@ -1613,17 +1613,17 @@ whitespace from the first, and any trailing newline marker from |code|.
 (setq commentary (nreverse commentary))
 (when (stringp (car commentary))
   (rplaca commentary (string-left-trim *whitespace* (car commentary))))
-(setq code (nreverse (member-if-not #'newline-p code)))
+(setq code (nreverse (member-if-not #'newlinep code)))
 
 @ @<Setup named section code, number, and cross-references@>=
 (let ((named-section (find-section (section-name section)))
       (number (section-number section))
       (code (section-code section)))
-  (set-named-section-code named-section code append-p)
+  (set-named-section-code named-section code appendp)
   (when (or (not (slot-boundp named-section 'number))
-            (not append-p))
+            (not appendp))
     (setf (section-number named-section) number))
-  (if append-p
+  (if appendp
       (pushnew section (see-also named-section))
       (setf (see-also named-section) (list section))))
 
@@ -1678,11 +1678,11 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 list of all of the forms in all of the unnamed sections' code parts.
 
 @l
-(defun read-code-parts (stream append-p)
+(defun read-code-parts (stream appendp)
   (apply #'append
          (map 'list
               #'section-code
-              (remove-if #'section-name (read-sections stream append-p)))))
+              (remove-if #'section-name (read-sections stream appendp)))))
 
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so
@@ -1695,12 +1695,12 @@ current values, so that assignments to those variables in the \WEB\ code
 will not effect the calling environment.
 
 @l
-(defun load-web-from-stream (stream print &optional (append-p t))
+(defun load-web-from-stream (stream print &optional (appendp t))
   (let (#+sbcl(sb-ext:*evaluator-mode* :compile)
         (*readtable* *readtable*)
         (*package* *package*)
         (*evaluating* t))
-    (dolist (form (tangle (read-code-parts stream append-p)) t)
+    (dolist (form (tangle (read-code-parts stream appendp)) t)
       (if print
           (let ((results (multiple-value-list (eval form))))
             (format t "~&; ~{~S~^, ~}~%" results))
@@ -1727,12 +1727,12 @@ does {\it not\/} initialize the global variables like |*named-sections*|;
 this allows for incremental redefinition.
 
 @l
-(defun load-sections-from-temp-file (file append-p &aux
+(defun load-sections-from-temp-file (file appendp &aux
                                      (truename (probe-file file)))
   (when truename
     (unwind-protect
          (with-open-file (stream truename :direction :input)
-           (load-web-from-stream stream t append-p))
+           (load-web-from-stream stream t appendp))
       (delete-file truename))))
 
 @ The file tangler operates by writing out the tangled code to a Lisp source
@@ -2047,7 +2047,7 @@ don't have to worry about keeping multiple indices synchronized.
 @l
 (defun analyze-indentation (list-marker)
   (declare (type list-marker list-marker))
-  (labels ((find-next-newline (list) (member-if #'newline-p list :key #'car))
+  (labels ((find-next-newline (list) (member-if #'newlinep list :key #'car))
            (next-logical-block (list) @<Build a logical block from |list|@>))
     (assert (= (length (list-marker-list list-marker))
                (length (list-marker-charpos list-marker))))
@@ -2098,7 +2098,7 @@ alignment tabs, and makes the resulting \TeX\ much simpler.
       (next-indent (cdadr newline)))
      ((or (endp list)
           (and (eq list newline) next-indent (< next-indent block-indent)))
-      (values (if (notany #'newline-p block)
+      (values (if (notany #'newlinep block)
                   (nreverse block)
                   (make-logical-block (nreverse block)))
               list))
@@ -2111,7 +2111,7 @@ alignment tabs, and makes the resulting \TeX\ much simpler.
         (setq list tail))
       (let ((next (car (pop list))))
         (push next block)
-        (when (and list (newline-p next))
+        (when (and list (newlinep next))
           (setf indent (cdar list)
                 (indentation next) (- indent block-indent)
                 newline (find-next-newline list)
@@ -2150,7 +2150,7 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
          next
          (obj (pprint-pop) next))
         (nil)
-      (cond ((newline-p obj)
+      (cond ((newlinep obj)
              (format stream "\\cr~:@_")
              (setq indent (indentation obj))
              (pprint-exit-if-list-exhausted)
@@ -2159,7 +2159,7 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
                (setq indent nil)
                (pprint-exit-if-list-exhausted)
                (setq next (pprint-pop))
-               (unless (newline-p next)
+               (unless (newlinep next)
                  (write-char #\Space stream)))))))
 
 (set-weave-dispatch 'logical-block #'print-logical-block)
