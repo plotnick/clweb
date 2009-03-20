@@ -49,7 +49,7 @@ To quote the \CWEB\ manual:
 {\narrower\narrower\smallskip\noindent The philosophy behind \.{CWEB} is
  that programmers who want to provide the best possible documentation for
  their programs need two things simultaneously: a language like \TEX/ for
- formatting, and a language like \CEE/ for programming. Neither type of
+ formatting, and a language like C for programming. Neither type of
  language can provide the best documentation by itself. But when both are
  appropriately combined, we obtain a system that is much more useful than
  either language separately.
@@ -59,7 +59,7 @@ To quote the \CWEB\ manual:
  to explain each individual part of the web and how it relates to its
  neighbors. The typographic tools provided by \TEX/ give us an opportunity
  to explain the local structure of each part by making that structure
- visible, and the programming tools provided by \CEE/ make it possible for
+ visible, and the programming tools provided by C make it possible for
  us to specify the algorithms formally and unambiguously. By combining the
  two, we can develop a style of programming that maximizes our ability to
  perceive the structure of a complex piece of software, and at the same
@@ -110,7 +110,7 @@ that is added to \TeX's horizontal mode, vertical mode, and math mode.''
 But one might just as easily think of a web as some code with documentation
 blocks and control codes sprinkled throughout, or as a completely seperate
 language containing blocks that happen to have the syntax (more or less)
-of \TeX\ and Lisp (or \CEE/, or Pascal, \etc.). Indeed, for the purposes of
+of \TeX\ and Lisp (or~C, or Pascal, \etc.). Indeed, for the purposes of
 understanding the implementation, this last view is perhaps the most
 useful.
 
