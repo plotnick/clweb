@@ -1955,35 +1955,42 @@ with the conjunction macros \.{\\ET} (for two section numbers) and~\.{\\ETs}
 \TeX\ treats as special. Unfortunately, because \TeX's syntax is so malleable
 (not unlike Lisp's), it's nontrivial to decide what to escape, how, and when.
 
-The following routine is the basis for most of the escaping. It writes the
-given string to an output stream, escaping the characters given in the
-association list |escape-chars|. The entries in this a-list should be of
-the form `(\metasyn{characters}~.~\metasyn{replacement})', where
-\metasyn{characters} is a string of characters to be escaped with
-\metasyn{replacement}. \metasyn{replacement} may be a single character, in
-which case that character is output before any occurrences of any of
-\metasyn{characters}, or a string, in which case it is output instead of
-the character being considered.
+The following routine is the basis for most of the escaping. It writes
+|string| to the output stream designated by |stream|, escaping the
+characters given in the a-list |escape-chars|. The entries in this a-list
+should be of the form `(\metasyn{characters}~.~\metasyn{replacement})',
+where \metasyn{replacement} describes how to escape each of the characters
+in \metasyn{characters}. Suppose $c$ is a character in |string| that
+appears in one of the \metasyn{characters} strings. If the corresponding
+\metasyn{replacement} is a single character, then |write-string-escaped|
+will output it prior to every occurrence of $c$. If \metasyn{replacement}
+is a string, it will be output {\it instead of\/} every occurrence of $c$
+in the input. Otherwise, $c$ will be output without escaping.
 
 @l
 (defparameter *tex-escape-alist*
   '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 
-(defun write-escaped-string (stream string &optional ;
-                             (escape-chars *tex-escape-alist*))
-  (dotimes (i (length string))
-    (let* ((char (char string i))
-           (escape (cdr (assoc char escape-chars :test #'find))))
-      (etypecase escape
-        (character (write-char escape stream)
-                   (write-char char stream))
-        (string (write-string escape stream))
-        (null (write-char char stream))))))
+(defun write-string-escaped (string &optional stream ;
+                             (escape-chars *tex-escape-alist*) &aux
+                             (stream (case stream
+                                       ((t) *terminal-io*)
+                                       ((nil) *standard-output*)
+                                       (otherwise stream))))
+  (loop for char across string
+        as escape = (cdr (assoc char escape-chars :test #'find))
+        if escape
+          do (etypecase escape
+               (character (write-char escape stream)
+                          (write-char char stream))
+               (string (write-string escape stream)))
+        else
+          do (write-char char stream)))
 
 @ @l
 (defun print-string (stream string)
   (write-string "\\.{\"" stream)
-  (write-escaped-string stream string
+  (write-string-escaped string stream
                         (list* '("{*}" . #\\)
                                '("\\" . "\\\\\\\\")
                                '("\"" . "\\\\\"")
@@ -1998,10 +2005,10 @@ the character being considered.
                        (standard-char-p char)))
         (name (char-name char)))
     (write-string "\\#\\CH{" stream)
-    (write-escaped-string stream
-                          (if (and name (not graphicp))
+    (write-string-escaped (if (and name (not graphicp))
                               name
                               (make-string 1 :initial-element char))
+                          stream
                           (list* '("{}" . #\\) *tex-escape-alist*))
     (write-string "}" stream)
     char))
@@ -2021,8 +2028,8 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
                         (write-string "\\K{" stream))
                        ((keywordp symbol)
                         (write-string "\\:{" stream)))))
-    (write-escaped-string stream
-                          (write-to-string symbol :escape nil :pretty nil))
+    (write-string-escaped (write-to-string symbol :escape nil :pretty nil) ;
+                          stream)
     (when group-p (write-string "}" stream))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
@@ -2281,7 +2288,5 @@ which see.
             (read-time-conditional-plusp obj)
             (read-time-conditional-test obj))
     (write-char #\Space stream)
-    (write-escaped-string stream
-                          (read-time-conditional-form obj)
-                          *tex-escape-alist*)
+    (write-string-escaped (read-time-conditional-form obj) stream)
     (write-char #\} stream)))
