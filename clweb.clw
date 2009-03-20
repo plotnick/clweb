@@ -798,9 +798,9 @@ preserved during tangling.
 (defvar *empty-list* (make-instance 'empty-list-marker))
 
 (defclass list-marker (marker)
-  ((length :reader list-marker-length :initarg :length)
-   (list :reader list-marker-list :initarg :list)
-   (charpos :reader list-marker-charpos :initarg :charpos)))
+  ((length :accessor list-marker-length :initarg :length)
+   (list :accessor list-marker-list :initarg :list)
+   (charpos :accessor list-marker-charpos :initarg :charpos)))
 (defun list-marker-p (obj) (typep obj 'list-marker))
 
 (defclass consing-dot-marker (marker) ())
@@ -2071,8 +2071,11 @@ don't have to worry about keeping multiple indices synchronized.
   (declare (type list-marker list-marker))
   (labels ((find-next-newline (list) (member-if #'newlinep list :key #'car))
            (next-logical-block (list) @<Build a logical block from |list|@>))
+    ;; Sanity check.
     (assert (= (length (list-marker-list list-marker))
-               (length (list-marker-charpos list-marker))))
+               (length (list-marker-charpos list-marker)))
+            ((list-marker-list list-marker) (list-marker-charpos list-marker))
+            "List marker's list and charpos-list aren't the same length.")
     (next-logical-block (mapcar #'cons
                                 (list-marker-list list-marker)
                                 (list-marker-charpos list-marker)))))
