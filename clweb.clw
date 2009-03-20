@@ -1714,7 +1714,9 @@ will not effect the calling environment.
   (when verbose (format t "~&; loading WEB from ~S~%" filespec))
   (if (streamp filespec)
       (load-web-from-stream filespec print)
-      (with-open-file (stream filespec
+      (with-open-file (stream (merge-pathnames (make-pathname :type "CLW" ;
+                                                              :case :common)
+                                               filespec)
                        :direction :input
                        :external-format external-format
                        :if-does-not-exist (if if-does-not-exist :error nil))
@@ -1743,7 +1745,11 @@ file and then invoking the file compiler on that file.
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
-                    (lisp-file (merge-pathnames (make-pathname :type "lisp") ;
+                    (input-file (merge-pathnames (make-pathname :type "CLW" ;
+                                                                :case :common)
+                                                 input-file))
+                    (lisp-file (merge-pathnames (make-pathname :type "LISP" ;
+                                                               :case :common)
                                                 input-file)))
   (declare (ignore output-file print))
   (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
@@ -1790,11 +1796,15 @@ for non-printable-\csc{ascii} characters vary widely.
               (verbose *weave-verbose*)
               (print *weave-print*)
               (if-does-not-exist t)
-              (external-format :default))
-  (unless output-file
-    (setq output-file (merge-pathnames (make-pathname :type "tex") input-file)))
-  @<Initialize global variables@>
+              (external-format :default) &aux
+              (input-file (merge-pathnames (make-pathname :type "CLW" ;
+                                                          :case :common)
+                                           input-file))
+              (output-file (merge-pathnames (make-pathname :type "TEX" ;
+                                                           :case :common)
+                                            (or output-file input-file))))
   (when verbose (format t "~&; weaving WEB from ~S~%" input-file))
+  @<Initialize global variables@>
   (with-open-file (stream input-file
                    :direction :input
                    :external-format external-format
