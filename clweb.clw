@@ -1888,8 +1888,8 @@ re-reads such strings and picks up any inner-Lisp material.
     (with-input-from-string (stream input-string)
       (loop for text = (snarf-until-control-char stream #\|)
             for forms = (read-preserving-whitespace stream nil *eof* nil)
-            collect text
-            until (eof-p forms) collect forms))))
+            if (plusp (length text)) collect text
+            if (eof-p forms) do (loop-finish) else collect forms))))
 
 @ @l
 (defun print-limbo (stream section)
