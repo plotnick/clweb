@@ -2078,8 +2078,8 @@ forms.
 For example, consider the following simple form:
 \smallskip\hskip2\parindent
 \vbox{\B\+(first \!&second\cr\+&third)\cr\egroup}
-\smallskip\noindent We start off with an initial logical block with an
-indentation of the character position of |first|: this is the {\it block
+\smallskip\noindent We start off with an initial logical block whose
+indentation is the character position of |first|: this is the {\it block
 indentation}. Then we look at |second|, and see that the first form on the
 following line, |third|, has the same position, and that it exceeds the
 current indentation level. And so we recurse, appending to the new logical
@@ -2131,7 +2131,7 @@ alignment tabs, and makes the resulting \TeX\ much simpler.
                 next-indent (cdadr newline))))))
 
 @ Printing list markers is now simple, since the complexity is all in the
-logical blocks.
+logical blocks$\ldots$
 
 @l
 (defun print-list (stream list-marker)
@@ -2142,16 +2142,16 @@ logical blocks.
 
 (set-weave-dispatch 'list-marker #'print-list)
 
-@ But even here, it's not that bad. We start with a \.{\\!}, which is
-just an alias for \.{\\cleartabs}. Then we call (unsurprisingly)
+@ $\ldots$but even here, it's not that bad. We start with a \.{\\!}, which
+is just an alias for \.{\\cleartabs}. Then we call (unsurprisingly)
 |pprint-logical-block|, using a per-line-prefix for our alignment tabs.
 
 In the loop, we keep a one-token look-ahead to check for newlines, so that
 we can output separating spaces when and only when there isn't a newline
 coming up.
 
-The indentation set on the newlines by the logical-block building machinery
-above is the difference in character positions of the first form following
+The logical-block building machinary above set the indentation on newlines
+to the difference in character positions of the first form following
 the newline and the block indentation. For differences of 1 or~2 columns,
 we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
 
@@ -2177,11 +2177,11 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
 
 (set-weave-dispatch 'logical-block #'print-logical-block)
 
-@ Finally, we come to the printing of markers. The only thing to watch out
-for is that we need a higher priority for a sub-class if we want it to
-override an entry for a parent class, since pprint-dispatch tables don't
-respect sub-type relationships. Other than that, they are all quite
-straightforward.
+@ Finally, we come to the printing of markers. These are all quite
+straightforward; the only thing to watch out for is the priorities.
+Because |pprint-dispatch| doesn't respect sub-type relationships,
+we need to set a higher priority for a sub-class than for its parent
+if we want a specialized pretty-printing routine.
 
 Many of these routines output \TeX\ macros defined in \.{clwebmac.tex},
 which see.
