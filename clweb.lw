@@ -392,7 +392,7 @@ segment of the name.
 @l
 (defun section-name-prefix-p (name)
   (let ((len (length name)))
-    (if (string= (subseq name (max (- len 3) 0) len) "...")
+    (if (string= name "..." :start1 (max (- len 3) 0) :end1 len)
         (values t (- len 3))
         (values nil len))))
 
