@@ -1498,9 +1498,7 @@ the new object is an empty string or |nil|.
 @l
 (defmacro maybe-push (obj place &aux (g (gensym)))
   `(let ((,g ,obj))
-     (when (typecase ,g
-             (string (plusp (length ,g)))
-             (t ,g))
+     (when (if (stringp ,g) (plusp (length ,g)) ,g)
        (push ,g ,place))))
 
 @ We come now to the heart of the \WEB\ parser. This function is a
