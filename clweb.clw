@@ -1901,7 +1901,8 @@ re-reads such strings and picks up any inner-Lisp material.
 
 (set-weave-dispatch 'limbo-section #'print-limbo 1)
 
-@ @l
+@ % FIXME: This needs to be broken up and documented.
+@l
 (defun print-section (stream section)
   (format stream "~&\\~:[M~;N{1}~]{~D}" ; \.{\{1\}} should be depth
           (typep section 'starred-section)
