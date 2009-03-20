@@ -1432,7 +1432,8 @@ material.
            (loop for text = (snarf-until-control-char stream #\@)
                  as x = (read-preserving-whitespace stream t nil t)
                  collect text
-                 until (eq x *end-control-text*) collect x))))
+                 if (eq x *end-control-text*) do (loop-finish)
+                 else collect x))))
 
 @ The control code \.{@@<} introduces a section name, which extends to the
 closing \.{@@>}. Its meaning is context-dependent.
