@@ -77,14 +77,19 @@ and use it on the other. Tangling prepares a web for evaluation or
 compilation by a machine, while weaving prepares it for typesetting with
 \TeX\ and subsequent reading by a human.
 
-There are three interface functions defined by this system: |tangle-file|,
-|load-web|, and |weave|. The first is analogous to |compile-file|: given
-an input file containing \CLWEB\ source, it produces a compiled output file
-that can subsequently be loaded into a Lisp image with |load|. The function
-|load-web| is analogous to |load|, but again accepts \CLWEB\ source as input
-instead of ordinary Lisp source. And finally, |weave| takes a web as input
-and generates a file that can be fed to \TeX\ to generate a pretty-printed
-version of that web.
+@ There are three main interface functions defined by this system:
+|tangle-file|, |load-web|, and |weave|. The first is analogous to
+|compile-file|: given a file containing \CLWEB\ source, it produces an
+output file that can subsequently be loaded into a Lisp image with
+|load|. The function |load-web| is analogous to |load|, but again accepts
+\CLWEB\ source as input instead of ordinary Lisp source. And finally,
+|weave| takes a web as input and generates a file that can be fed to \TeX\
+to generate a pretty-printed version of that web.
+
+The fourth exported symbol, |load-sections-from-temp-file|, is a
+special-purpose routine designed to be used in conjunction with an editor
+such as Emacs to provide incremental re-definition of \CLWEB\ sections;
+it is generally not invoked directly by a user of the system.
 
 @e
 (declaim (optimize (debug 3)))
@@ -92,34 +97,100 @@ version of that web.
 (defpackage "COMMON-LISP-WEB"
   (:nicknames "CLWEB")
   (:use "COMMON-LISP")
-  (:export "TANGLE-FILE" "LOAD-WEB" "LOAD-SECTIONS-FROM-TEMP-FILE" "WEAVE"))
+  (:export "TANGLE-FILE" "LOAD-WEB" "WEAVE" "LOAD-SECTIONS-FROM-TEMP-FILE"))
 (in-package "CLWEB")
 
-@*Sections. The fundamental unit of a \WEB\ is the {\it section}, which
-consists of two parts, either of which may be null: a {\it commentary part\/}
-and a {\it code part}. Every section is automatically assigned a number, and
-each section is either {\it named\/} or {\it unnamed\/}. The code part of a
-named section may be included in that of another (named or unnamed) section
-via \.{@@<$\ldots$@@>} commands, while unnamed sections are output or
-evaluated in the order in which they appear in the \WEB\ source file.
+@ The overall format of a \CLWEB\ source file, or {\it web}, as we have
+been calling it in the abstract, is quite similar to that of a \CWEB\ or
+\WEB\ file. It consists of a mixture of \TeX, Lisp, and {\it\WEB\ control
+codes}, but which is primary is mostly a matter of point-of-view. The
+\CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
+something like writing \TeX\ documents, but with an additional ``C mode''
+that is added to \TeX's horizontal mode, vertical mode, and math mode.''
+But we might just as easily think of a web as some code with documentation
+blocks and control codes sprinkled throughout, or as a completely seperate
+language that contains blocks that happen to have the syntax (more or less)
+of \TeX\ and Lisp (or \CEE/, or Pascal, \etc.). Indeed, for the purposes of
+understanding the implementation, this last view is perhaps the most
+useful.
+
+The syntax of \CLWEB\ control codes is quite similar to that of dispatching
+reader macro characters in Lisp: they all begin with `\.{@@}$x$', where $x$
+is a single character that selects the specific control code.
+
+% FIXME: Need more here. Maybe discuss modes a little.
+
+@*Sections. The fundamental unit of a web is the {\it section}, which
+consists of two parts: a {\it commentary part\/} and a {\it code part}.
+Either part may be empty for a given section, but they must appear in
+that order in the \CLWEB\ source.
+
+The commentary consists of \TeX\ material that describes the section; it is
+copied (nearly) verbatim into the output file during weaving, and completely
+ignored during tangling. Besides ordinary \TeX\ material, the commentary part
+might also contain fragments of Lisp code, but only for expository purposes:
+no code in a commentary part is ever evaluated or seen by the compiler.
+
+The second part of a section contains some Lisp code, whose motivation,
+purpose, or operation might be described by the commentary.  Code parts are
+generally short, typically only a few forms, so that their operation and
+structure can be easily comprehended as a unit.
+
+Every section has a number, which appears at the beginning of the
+commentary in the woven output and is used for cross-referencing
+purposes. The \CWEB\ source file never mentions these numbers; they are
+generated automatically by the system.
+
+Sections may be either {\it named\/} or {\it unnamed\/}. Named sections are
+conceptually very much like parameterless macros, except that they can be
+defined piecemeal and have splicing semantics instead of simple replacement.
+During tangling, the code parts of all the sections that share a name are
+gathered together and spliced into place in place of any reference to that
+section name that appears in another code part. During weaving, section
+references are pretty-printed using the name of the section and the number
+of the first section with that name enclosed in angle brackets.
 
 @l
 (defclass section ()
   ((number :accessor section-number)
    (commentary :accessor section-commentary :initarg :commentary)
    (name :accessor section-name :initarg :name)
-   (code :accessor section-code :initarg :code)
-   (used-by :accessor used-by :initarg :used-by))
-  (:default-initargs :commentary nil :name nil :code nil :used-by nil))
+   (code :accessor section-code :initarg :code))
+  (:default-initargs :commentary nil :name nil :code nil))
 
-(defclass limbo-section (section) ())
+@ There are two control codes that begin sections: \.{@@\ } and~\.{@@*}.
+They differ only in the way the woven output is generated. Sections that
+are introduced using \.{@@*} (`starred' sections) are considered the
+beginning of a new major group of sections, and get some special formatting
+during weaving. The control code \.{@@*} should be immediately followed by a
+title for this group, terminated by a period. That title will appear in a
+boldfaced font at the beginning of the section, and will also appear in the
+table of contents and as a running head on all subsequent pages until the
+next starred section.
 
+@l
 (defclass starred-section (section) ())
 
+@ There can also be \TeX\ text preceeding the start of the first section
+(i.e., before the first \.{@@\ } or \.{@@*}), called {\it limbo text}.
+It is generally used to set up document-specific macros, include other
+macro packages, set up fonts and formatting, \etc. It is passed through
+virtually verbatim to the output file during weaving (replacing only
+occurrences of `\.{@@@@}' with `\.{@@}'), and is ignored completely
+during tangling.
+
+We store the limbo text as the commentary of a section object of a
+special class; it will never have a code part.
+
+@l
+(defclass limbo-section (section) ())
+
 @ Whenever a section is created, we store it in the global |*sections*|
-vector and set its number to its index therein. This is only used during
-weaving, but it doesn't cost much even during tangling, since the section
-instances themselves are around in any case.
+vector and set its number to its index therein. This means that section
+objects won't be collected by the \csc{gc} even after the tangling or
+weaving has completed, but there's a good reason: keeping them around
+allows incremental redfinition of a web, which is important for interactive
+development.
 
 @l
 (defvar *sections* (make-array 128
@@ -264,8 +335,10 @@ a prefix is ambiguous.
             :report "Use the alternate match."
             (return (values alt t))))))))
 
-@ The named section tree is stored in the global variable |*named-sections*|,
-which is reset before each tangling or weaving.
+@ The named section tree is stored in the global variable
+|*named-sections*|, which is reset before each tangling or weaving.
+The reason this is global is the same as the reason |*sections*| was:
+to allow for incremental redefinition.
 
 @l
 (defvar *named-sections* nil)
@@ -311,7 +384,7 @@ characters with a single space.
         unless (whitespace-p char) do (setq squeezing nil) and collect char)
 
 @ Here's a little utility routine that makes working with section names
-easier. Given a name, it returns two values: |t| or~|nil| depending on
+easier. Given a name, it returns two values: true or false depending on
 whether the name is a prefix or not, and the length of the non-`\.{...}'
 segment of the name.
 
@@ -506,8 +579,7 @@ maintain a mapping between them and their associated instances of
 functions: |stream-charpos| retrieves the character position of the stream
 for which |stream| is a proxy, and |release-charpos-stream| deletes the
 reference to the stream maintained by the associated |charpos-stream|
-instance. (If there were a standardized way of creating weak hash tables,
-we wouldn't need the latter at all.)
+instance.
 
 @l
 (defun stream-charpos (stream)
