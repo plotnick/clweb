@@ -915,9 +915,9 @@ might think is needed.
   (set-macro-character #\' #'single-quote-reader nil (readtable-for-mode mode)))
 
 @ {\it Semicolon.} Comments in Lisp code also need to be preserved for
-output during weaving. We use a special slot for storing the text of the
-comment, so that they can remain unbound and thus be stripped during
-tangling.
+output during weaving. We use a slot distinct from the value slot for
+storing the text of the comment so that they can remain unbound and thus
+be stripped during tangling.
 
 @l
 (defclass comment-marker (marker)
@@ -1018,19 +1018,9 @@ handle each sub-char individually, and unfortunately we need to override
 most of them. We'll handle them in the order given in section~2.4.8
 of the CL standard.
 
-@ Some of the reader macro functions store some value related to the occurrence
-of the macro character and then just invoke the reader macro function defined
-in the standard readtable.
-
-@l
-(defun call-standard-sharpm-fun (stream sub-char arg)
-  (funcall
-   (get-dispatch-macro-character #\# sub-char (readtable-for-mode nil))
-   stream sub-char arg))
-
-@ And sometimes, we have to do the reading and parsing ourselves, which
-means detecting and reporting errors. This condition class and associated
-signaling function allow |format|-style error reporting.
+@ Sometimes we'll have to detect and report errors during reading. This
+condition class and associated signaling function allow |format|-style
+error reporting.
 
 @l
 (define-condition simple-reader-error (reader-error simple-condition) ()
@@ -1180,9 +1170,10 @@ value; and in a tangled source file, we get a \.{\#.} form.
   (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader ;
                                 (readtable-for-mode mode)))
 
-@ Sharpsign B, O, X, and~R all represent rational numbers in a specific radix,
-but the radix is discarded by the standard reader, which just returns the
-number.
+@ Sharpsign B, O, X, and~R all represent rational numbers in a specific
+radix, but the radix is discarded by the standard reader, which just
+returns the number. We use the standard reader macro function for getting
+the actual value, and store the radix in our marker.
 
 @l
 (defclass radix-marker (marker)
@@ -1193,7 +1184,10 @@ number.
 (defun radix-reader (stream sub-char arg)
   (make-instance 'radix-marker
                  :base (or (cdr (assoc sub-char *radix-prefix-alist*)) arg) 
-                 :value (call-standard-sharpm-fun stream sub-char arg)))
+                 :value (funcall
+                         (get-dispatch-macro-character #\# sub-char
+                                                       (readtable-for-mode nil))
+                         stream sub-char arg)))
 
 (dolist (mode '(:lisp :inner-lisp))
   (dolist (sub-char '(#\B #\O #\X #\R))
