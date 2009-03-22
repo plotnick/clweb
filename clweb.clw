@@ -376,7 +376,7 @@ functions in our binary tree.
 @l
 (defun section-name-lessp (name1 name2)
   (let ((len1 (nth-value 1 (section-name-prefix-p name1)))
-        (len2 (nth-value 2 (section-name-prefix-p name2))))
+        (len2 (nth-value 1 (section-name-prefix-p name2))))
     (string-lessp name1 name2 :end1 len1 :end2 len2)))
 
 (defun section-name-equal (name1 name2)
