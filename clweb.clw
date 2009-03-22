@@ -4,6 +4,9 @@
 \ifzapf
 \input palatino
 \input euler
+\font\tenrmr=pplr8r at 10pt % for non-ASCII characters
+\def\ldq{{\tenrmr \char'253}} % left guillemet
+\def\rdq{{\tenrmr \char'273}} % right guillemet
 \font\tenss=lopr8r at 10pt
 \font\tenssi=lopri8r at 10pt
 \font\tenssb=lopb8r at 10pt
@@ -38,56 +41,36 @@
 @*Introduction. This is \CLWEB, a literate programming system for Common
 Lisp. It is modeled after the \CWEB\ system by Silvio Levy and Donald
 E.~Knuth, which was in turn adapted from Knuth's original \WEB\ system.
-Readers familiar with either of those systems should have little difficulty
-understanding (at least) the intent and philosophy of this program, and
-should feel free to skim these introductory comments.
+It shares with those earlier systems not only their underlying philosophy,
+but also most of their syntax and commands. Readers unfamiliar with either
+of them---or with literate programming in general---should consult the
+\CWEB\ manual or Knuth's {\it \ldq Literate Programming\rdq}
+(\csc{csli}:~1992).
 
-To quote the \CWEB\ manual:
+@ A literate programming system provides two primary operations:
+{\it tangling\/} and {\it weaving\/}. The tangler prepares a literate 
+program, or {\it web}, for evaluation by a machine, while the weaver
+prepares it for typesetting with \TeX\ and subsequent reading by a
+human. These operations reflect the two uses of a literate program, and the
+two audiences by whom it must be read: the computer on the one hand, and
+the human programmers that must understand and maintain it on the other.
 
-{\narrower\narrower\smallskip\noindent The philosophy behind \.{CWEB} is
- that programmers who want to provide the best possible documentation for
- their programs need two things simultaneously: a language like \TEX/ for
- formatting, and a language like C for programming. Neither type of
- language can provide the best documentation by itself. But when both are
- appropriately combined, we obtain a system that is much more useful than
- either language separately.
+Our tangler has two interface functions: |tangle-file| and |load-web|.
+The first is analogous to |compile-file|: given a file containing \CLWEB\
+source, it produces an output file that can subsequently be loaded into a
+Lisp image with |load|. The function |load-web| is analogous to |load|,
+but also accepts \CLWEB\ source as input instead of ordinary Lisp source;
+it loads a web into the Lisp environment.
 
- The structure of a software program may be thought of as a ``web'' that is
- made up of many interconnected pieces. To document such a program, we want
- to explain each individual part of the web and how it relates to its
- neighbors. The typographic tools provided by \TEX/ give us an opportunity
- to explain the local structure of each part by making that structure
- visible, and the programming tools provided by C make it possible for
- us to specify the algorithms formally and unambiguously. By combining the
- two, we can develop a style of programming that maximizes our ability to
- perceive the structure of a complex piece of software, and at the same
- time the documented programs can be mechanically translated into a working
- software system that matches the documentation.\smallskip}
+The weaver has a single entry point: |weave| takes a web as input and
+generates a file that can be fed to \TeX\ to generate a pretty-printed
+version of that web.
 
-\noindent These two paragraphs, {\it mutatis mutandis,} apply equally well
-to the current system.
-
-The two primary operations that a literate programming system provides are
-{\it tangling\/} and {\it weaving\/}. These two operations reflect the dual
-usage of a literate program, and the two audiences by whom it must be read:
-the computer on the one hand, and the human programmers that must maintain
-and use it on the other. Tangling prepares a web for evaluation or
-compilation by a machine, while weaving prepares it for typesetting with
-\TeX\ and subsequent reading by a human.
-
-@ There are three main interface functions defined by this system:
-|tangle-file|, |load-web|, and |weave|. The first is analogous to
-|compile-file|: given a file containing \CLWEB\ source, it produces an
-output file that can subsequently be loaded into a Lisp image with
-|load|. The function |load-web| is analogous to |load|, but again accepts
-\CLWEB\ source as input instead of ordinary Lisp source. And finally,
-|weave| takes a web as input and generates a file that can be fed to \TeX\
-to generate a pretty-printed version of that web.
-
-The fourth exported symbol, |load-sections-from-temp-file|, is a
-special-purpose routine designed to be used in conjunction with an editor
-such as Emacs to provide incremental re-definition of \CLWEB\ sections;
-the user will generally never need to call it directly.
+The fourth exported symbol, |load-sections-from-temp-file|, is conceptually
+part of the tangler, but is a special-purpose routine designed to be used
+in conjunction with an editor such as Emacs to provide incremental
+re-definition of sections; the user will generally never need to call
+it directly.
 
 @e
 (defpackage "COMMON-LISP-WEB"
@@ -96,64 +79,56 @@ the user will generally never need to call it directly.
   (:export "TANGLE-FILE" "LOAD-WEB" "WEAVE" "LOAD-SECTIONS-FROM-TEMP-FILE"))
 (in-package "CLWEB")
 
-@ The overall format of a \CLWEB\ source file, or {\it web}, as we have
-been calling it in the abstract, is quite similar to that of a \CWEB\ or
-\WEB\ file. It consists of a mixture of \TeX, Lisp, and {\it\WEB\ control
-codes}, but which one is primary is mostly a matter of point-of-view. The
-\CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
+@ A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
+control codes, but which one is primary depends on your point of view.
+The \CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
 something like writing \TeX\ documents, but with an additional `C mode'
 that is added to \TeX's horizontal mode, vertical mode, and math mode.''
-But one might just as easily think of a web as some code with documentation
-blocks and control codes sprinkled throughout, or as a completely seperate
-language containing blocks that happen to have the syntax (more or less)
-of \TeX\ and Lisp (or~C, or Pascal, \etc.). Indeed, for the purposes of
-understanding the implementation, this last view is perhaps the most
-useful.
+The same applies, {\it mutatis mutandis,} to the current system, but one
+might just as easily think of a web as some code with documentation blocks
+and special control codes sprinkled throughout, or as a completely seperate
+language containing blocks that happen to have the syntax (more or less) of
+\TeX\ and Lisp. For the purposes of understanding the implementation, this
+last view is perhaps the most useful, since the control codes determine
+which syntax to use in reading the material that follows.
 
-The syntax of \CLWEB\ control codes is similar to that of dispatching
-reader macro characters in Lisp: they all begin with `\.{@@}$x$', where
-$x$ is a single character that selects the control code.
+The syntax of the \CLWEB\ control codes themselves is similar to that of
+dispatching reader macro characters in Lisp: they all begin with
+`\.{@@}$x$', where~$x$ is a single character that selects the control code.
+Most of the \CLWEB\ control codes are quite similar to the ones used in
+\CWEB; see the \CWEB\ manual for detailed descriptions of the individual
+codes.
 
-% FIXME: Need more here. Maybe discuss modes a little.
+@*Sections. The fundamental unit of a web is the {\it section}, which may
+be either {\it named\/} or~{\it unnamed\/}. Named sections are conceptually
+very much like parameterless macros, except that they can be defined
+piecemeal. The tangler replaces references to a named section with all of
+the code defined in all of the sections with that name. (This is where the
+name `tangling' comes from: code may be broken up and presented in whatever
+order suits the expository purposes of the author, but is then spliced back
+together into the order that the programming language expects.) Unnamed
+sections, on the other hand, are evaluated or written out to a file for
+compilation in the order in which they appear in the source file.
 
-@*Sections. The fundamental unit of a web is the {\it section}, which
-consists of two parts: a {\it commentary part\/} and a {\it code part}.
-Either part may be empty for a given section, but they must appear in
-that order in the \CLWEB\ source.
+Every section is assigned a number, which the weaver uses for generating
+cross-references. The numbers themselves never appear in the source file:
+they are generated automatically by the system.
 
-The commentary consists of \TeX\ material that describes the section; it is
-copied (nearly) verbatim into the output file during weaving, and completely
-ignored during tangling. Besides ordinary \TeX\ material, the commentary part
-might also contain fragments of Lisp code, but only for expository purposes:
-no code in a commentary part is ever evaluated or seen by the compiler.
-
-The second part of a section contains some Lisp code, whose motivation,
-purpose, or operation might be described by the commentary. Code parts are
-generally short, typically only a few forms, so that their operation and
-structure can be easily comprehended as a unit.
-
-Every section has a number, which appears at the beginning of the
-commentary in the woven output and is used for cross-referencing
-purposes. The \CWEB\ source file never mentions these numbers; they are
-generated automatically by the system.
-
-Sections may be either {\it named\/} or {\it unnamed\/}. Named sections are
-conceptually very much like parameterless macros, except that they can be
-defined piecemeal and have splicing semantics instead of simple replacement.
-The tangler gathers together the code parts of all the sections that share
-a name and recursively replaces references to those names with the
-corresponding code. (This is where the name `tangling' comes from: code
-may be broken up and presented in whatever order suits the expository
-purposes of the author, but is then spliced back together into the order
-that the programming language expects.) The weaver, on the other hand,
-simply pretty-prints such references by enclosing the name and the number
-of the first section with that name within angle brackets.
+Aside from a name, a section may have a {\it commentary part\/}, optionally
+followed by a {\it code part}. (We don't support the `middle' part of a
+section that \WEB\ and \CWEB's sections have, since the kinds of definitions
+that can appear there are essentially irrelevant in Lisp.)  The commentary
+part consists of \TeX\ material that describes the section; the weaver
+copies it (nearly) verbatim into the \TeX\ output file, and the tangler
+ignores it. The code part contains Lisp forms and named section references;
+the tangler will eventually evaluate or compile those forms, while the
+weaver pretty-prints them to the \TeX\ output file.
 
 @l
 (defclass section ()
-  ((number :accessor section-number)
+  ((name :accessor section-name :initarg :name)
+   (number :accessor section-number)
    (commentary :accessor section-commentary :initarg :commentary)
-   (name :accessor section-name :initarg :name)
    (code :accessor section-code :initarg :code))
   (:default-initargs :commentary nil :name nil :code nil))
 
@@ -162,8 +137,8 @@ introduced with \.{@@*} (`starred' sections) begin a new major group of
 sections, and get some special formatting during weaving. The control code
 \.{@@*} should be immediately followed by a title for this group,
 terminated by a period. That title will appear as a run-in heading at the
-beginning of the section, and will also appear in the table of contents and
-as a running head on all subsequent pages until the next starred section.
+beginning of the section, as a running head on all subsequent pages until
+the next starred section, and in the table of contents.
 
 The tangler does not care about the distinction between sections with stars
 and ones with none upon thars.
@@ -175,11 +150,11 @@ and ones with none upon thars.
 (i.e., before the first \.{@@\ } or \.{@@*}), called {\it limbo text}.
 Limbo text is generally used to define document-specific formatting
 macros, set up fonts, \etc. The weaver passes it through virtually verbatim
-to the output file (replacing only occurrences of `\.{@@@@}' with `\.{@@}'),
+to the output file (only replacing occurrences of `\.{@@@@}' with~`\.{@@}'),
 and the tangler ignores it completely.
 
-We store the limbo text as the commentary of a section object of a
-special class; it will never have a code part.
+A single instance of the class |limbo-section| contains the limbo text in
+its |commentary| slot; it will never have a code part.
 
 @l
 (defclass limbo-section (section) ())
