@@ -406,17 +406,13 @@ the shortest available prefix, since we detect ambiguous matches.)
               (and old-prefix-p new-prefix-p (< new-len old-len)))
       (setf (section-name section) name))))
 
-@*Reading. We recognize five distinct modes, or contexts, for reading.
-Limbo mode is for \TeX\ text that proceeds the first section in a file.
-\TeX\ mode is used for reading the commentary that begins a section.
-Lisp mode is used for reading the code part of a section, and inner-Lisp
-mode is for reading Lisp forms that are embedded within \TeX\ material.
-Finally, restricted mode is used for reading material in section names
-and a few other places.
-
-Note that we do not support the `middle' part of a section that the
-original \WEB\ and \CWEB\ used for macro definitions and the like;
-those features are simply unnecessary with Lisp.
+@*Reading. We recognize five distinct modes for reading. Limbo mode is
+used for \TeX\ text that proceeds the first section in a file. \TeX\ mode
+is used for reading the commentary that begins a section. Lisp mode is
+used for reading the code part of a section; inner-Lisp mode is for
+reading Lisp forms that are embedded within \TeX\ material. And finally,
+restricted mode is used for reading material in section names and a few
+other places.
 
 @l
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -452,22 +448,42 @@ given forms with |*readtable*| bound appropriately for the given mode.
 (defun eof-p (x) (eq x *eof*))
 (deftype eof () '(satisfies eof-p))
 
-@ It's basically impossible to automatically indent Common Lisp code
-without a complete static analysis. And so we don't try. What we do
-instead is assume that the input is indented correctly, and try to
-approximate that on output; we call this {\it indentation tracking\/}.
+@ We'll occasionally need to know if a given character terminates a token
+or not. This function answers that question, but only approximately---if
+the user has frobbed the current readtable and set non-standard characters
+to whitespace syntax, {\it this routine will not yield the correct
+result}. There's unfortunately nothing that we can do about it portably,
+since there's no way of determining the syntax of a character or of
+obtaining a list of all the characters with a given syntax.
 
-To do this, we need the ability to reliably determine the current column
-number, or {\it character position}, of a stream. One could use Gray
-streams to do this, but we don't actually need them; the stream types
-provided by Common Lisp suffice.
+@l
+(defun token-delimiter-p (char)
+  (or (whitespacep char)
+      (multiple-value-bind (function non-terminating-p)
+          (get-macro-character char)
+        (and function (not non-terminating-p)))))
+
+@ We want the weaver to output properly indented code, but it's basically
+impossible to automatically indent Common Lisp code without a complete
+static analysis. And so we don't try. What we do instead is assume that the
+input is indented correctly, and try to approximate that on output; we call
+this process {\it indentation tracking\/}.
+
+The way we do this is to record the the column number, or {\it character
+position}, of every Lisp form in the input, and use those positions to
+reconstruct the original indentation. One could use Gray streams to do
+this, but we don't actually need them; the stream types provided by Common
+Lisp suffice.
 
 We'll define a {\it charpos stream\/} as an object that tracks the
 character position of an underlying stream. Note that these aren't actual
 streams, and can't be without relying on an extension to Common Lisp like
-Gray streams. But that doesn't matter, because what we'll actually be
-passing around is the value of the |stream| slot, which {\it will\/} be
-a stream---we call these {\it proxy streams}.
+Gray streams. But we'll implement them by using an echo stream that takes
+its input from---or a broadcast stream that sends its output to---the
+original stream: we'll call these composite streams {\it proxy streams},
+since they'll be passed around in place of the original, underlying stream
+objects. But because they're sub-types of |stream|, they can be used with
+all of the standard stream functions.
 
 The current character position is retrieved with the \csc{gf} |charpos|.
 It relies the last stored charpos (stored in the |charpos| slot) and a
@@ -486,8 +502,8 @@ buffer that stores the characters input or output since the last call to
 @ We need slightly different classes for input charpos streams and output
 charpos streams. For tracking charpos on input streams, our proxy stream is
 an echo stream that takes input from the supplied stream (the original value
-of the |:stream| initarg) and echoes the characters read to a string stream,
-which we'll use as our buffer.
+of the |:stream| initarg) and sends its output to a string stream, which
+we'll use as our buffer.
 
 @l
 (defclass charpos-input-stream (charpos-stream) ())
@@ -545,7 +561,7 @@ maintain a mapping between them and their associated instances of
 @l
 (defvar *charpos-streams* (make-hash-table :test #'eq))
 
-(defmethod initialize-instance :after ((instance charpos-stream)
+(defmethod initialize-instance :after ((instance charpos-stream) ;
                                        &rest initargs &key)
   (declare (ignore initargs))
   (setf (gethash (charpos-stream instance) *charpos-streams*) instance))
@@ -604,21 +620,6 @@ proxy stream the tracks the character position for |stream|.
                 (make-charpos-output-stream ,stream :charpos ,charpos))))
      (unwind-protect (progn ,@body)
        (release-charpos-stream ,var))))
-
-@ We'll occasionally need to know if a given character terminates a token
-or not. This function answers that question, but only approximately---if
-the user has frobbed the current readtable and set non-standard characters
-to whitespace syntax, {\it this routine will not yield the correct
-result}. There's unfortunately nothing that we can do about it portably,
-since there's no way of determining the syntax of a character or of
-obtaining a list of all the characters with a given syntax.
-
-@l
-(defun token-delimiter-p (char)
-  (or (whitespacep char)
-      (multiple-value-bind (function non-terminating-p)
-          (get-macro-character char)
-        (and function (not non-terminating-p)))))
 
 @ Sometimes we'll want to look more than one character ahead in a stream.
 This macro lets us do so: it executes |body| in a lexical environment where
