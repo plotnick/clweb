@@ -622,10 +622,10 @@ proxy stream the tracks the character position for |stream|.
        (release-charpos-stream ,var))))
 
 @ Sometimes we'll want to look more than one character ahead in a stream.
-This macro lets us do so: it executes |body| in a lexical environment where
-|var| is bound to a stream whose input comes from |stream| and |rewind| is
-a local function that `rewinds' the stream to its state prior to any reads
-executed in the body.
+This macro lets us do so, after a fashion: it executes |body| in a lexical
+environment where |var| is bound to a stream whose input comes from
+|stream| and |rewind| is a local function that `rewinds' the stream to its
+state prior to any reads executed in the body.
 
 @l
 (defmacro with-rewind-stream ((var stream &optional (rewind 'rewind))
@@ -640,11 +640,11 @@ executed in the body.
          ,@body))))
 
 @ And sometimes, we'll want to call |read| on a stream, and keep a copy of
-the characters that read actually scans. This reads from |stream|, and
-executes the |body| forms with |values| bound to a list of the values
-returned by |read| and |echoed| bound to a variable containing the
-characters so consumed. If |prefix| is supplied, it should be a string
-that will be concatenated onto the front of |stream| prior to reading.
+the characters that |read| actually scans. This macro reads from |stream|,
+then executes the |body| forms with |values| bound to a list of the values
+returned by |read|, and |echoed| bound to a variable containing the
+characters so consumed. If |prefix| is supplied, it should be a string that
+will be concatenated onto the front of |stream| prior to reading.
 
 @l
 (defmacro read-with-echo ((stream values echoed &key prefix) &body body &aux
@@ -687,13 +687,11 @@ solution to this problem: we define reader macro functions for all of the
 standard macro characters that return markers that let us reconstruct, to
 varying degrees of accuracy, what was originally given in the source.
 
-Aside from defining whatever slots are necessary for a given marker class,
-markers may also be {\it bound\/} to a value, which will be used in place
-of an occurrence of that marker when the containing form is tangled. If a
-marker is bound---i.e., if |marker-boundp| returns non-nil when called
-with it as an argument---then the tangler will call |marker-value| to
-obtain the associated value. Otherwise, the marker will be silently dropped
-from its containing form: this is useful, e.g., for newlines and comments.
+If a marker is {\it bound}---i.e., if |marker-boundp| returns non-nil when
+called with it as an argument---then the tangler will call |marker-value|
+to obtain the associated value. (The value need not be stored in the
+|value| slot, but often is.) Otherwise, the marker will be silently dropped
+from its containing form; this is used, e.g., for newlines and comments.
 
 @l
 (defclass marker ()
