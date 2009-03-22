@@ -236,9 +236,9 @@ whether or not the node was already in the tree.
         (setf (right-child parent) node)))
   (values node nil))
 
-@ As we mentioned above, named sections can be defined piecemeal, with the
+@ As mentioned above, named sections can be defined piecemeal, with the
 code spread out over several sections in the \CLWEB\ source. We might think
-of a full named section as a sort of `virtual' section, which consists of a
+of a named section as a sort of `virtual' section, which consists of a
 name, the combined code parts of all of the physical sections with that
 name, and the number of the first such section.
 
@@ -246,6 +246,11 @@ And that's what we store in the \csc{bst}: nodes that look like sections,
 inasmuch as they have specialized |section-name|, |section-code|, and
 |section-number| methods, but are not actually instances of the class
 |section|.
+
+The two additional slots, |used-by| and |see-also|, are used by the weaver
+to generate cross-references. The former contains a list of all the
+sections that reference this named section, and the latter contains a list
+of the other sections that share this name.
 
 @l
 (defclass named-section (binary-search-tree)
@@ -267,12 +272,43 @@ the new forms replace the old, such as during interactive development.
             (append (section-code section) forms)
             forms)))
 
+@ Section names in the input file can be abbreviated by giving a prefix of
+the full name followed by `$\ldots$': e.g., \.{@@<Frob...@@>} might refer
+to the section named `Frob foo and tweak bar'.
+
+Here's a little utility routine that makes working with such section names
+easier. Given a name, it returns two values: true or false depending on
+whether the name is a prefix or not, and the length of the non-`\.{...}'
+segment of the name.
+
+@l
+(defun section-name-prefix-p (name)
+  (let ((len (length name)))
+    (if (string= name "..." :start1 (max (- len 3) 0) :end1 len)
+        (values t (- len 3))
+        (values nil len))))
+
+@ Next, we need some special comparison routines for section names that
+handle abbreviations. We'll use these as the |:test| and |:predicate|
+functions for our \csc{bst}.
+
+@l
+(defun section-name-lessp (name1 name2)
+  (let ((len1 (nth-value 1 (section-name-prefix-p name1)))
+        (len2 (nth-value 1 (section-name-prefix-p name2))))
+    (string-lessp name1 name2 :end1 len1 :end2 len2)))
+
+(defun section-name-equal (name1 name2)
+  (multiple-value-bind (prefix-1-p len1) (section-name-prefix-p name1)
+    (multiple-value-bind (prefix-2-p len2) (section-name-prefix-p name2)
+      (let ((end (min len1 len2)))
+        (if (or prefix-1-p prefix-2-p)
+            (string-equal name1 name2 :end1 end :end2 end)
+            (string-equal name1 name2))))))
+
 @ When we look up a named section, either the name used to perform the
-lookup, the name for the section in the tree, or both may be an abbreviation
-of the full section name. Any prefix of the full name is allowed, followed
-by `$\ldots$'; e.g., \.{@@<foo...@@>} is an acceptable abbreviation for
-either \.{@@<foo bar@@>} or \.{@@<foo baz@@>}. It is a correctable error if
-a prefix is ambiguous.
+lookup, the name for the section in the tree, or both might be a prefix
+of the full section name.
 
 @l
 (defmethod find-or-insert (item (root named-section) &key
@@ -305,13 +341,12 @@ a prefix is ambiguous.
             :report "Use the first match."
             (return (values node t)))
           (use-alt-match ()
-            :report "Use the alternate match."
+            :report "Use alternate match."
             (return (values alt t))))))))
 
-@ The named section tree is stored in the global variable
-|*named-sections*|, which is reset before each tangling or weaving.
-The reason this is global is the same as the reason |*sections*| was:
-to allow for incremental redefinition.
+@ We store our named section tree in the global variable |*named-sections*|,
+which is reset before each tangling or weaving. The reason this is global is
+the same as the reason |*sections*| was: to allow incremental redefinition.
 
 @l
 (defvar *named-sections* nil)
@@ -319,23 +354,8 @@ to allow for incremental redefinition.
 @ @<Initialize global variables@>=
 (setq *named-sections* nil)
 
-@ The next routine is our primary interface to named sections: it looks up
-a section by name, and creates a new one if no such section exists.
-
-@l
-(defun find-section (name)
-  (if (null *named-sections*)
-      (values (setq *named-sections* (make-instance 'named-section :name name))
-              nil)
-      (multiple-value-bind (section present-p)
-          (find-or-insert name *named-sections*)
-        (when present-p
-          ;; Update the section name in case the new one is better.
-          (setf (section-name section) name))
-        (values section present-p))))
-
 @ Section names are normalized by |squeeze|, which trims leading and
-trailing whitespace, and replaces all runs of one or more whitespace
+trailing whitespace and replaces all runs of one or more whitespace
 characters with a single space.
 
 @l
@@ -357,52 +377,34 @@ characters with a single space.
             do (setq squeezing nil) and collect char into chars
         finally (return (coerce chars 'string))))
 
-@ Here's a little utility routine that makes working with section names
-easier. Given a name, it returns two values: true or false depending on
-whether the name is a prefix or not, and the length of the non-`\.{...}'
-segment of the name.
+@ The next routine is our primary interface to named sections: it looks up
+a section by name in the tree, and creates a new one if no such section
+exists.
 
 @l
-(defun section-name-prefix-p (name)
-  (let ((len (length name)))
-    (if (string= name "..." :start1 (max (- len 3) 0) :end1 len)
-        (values t (- len 3))
-        (values nil len))))
-
-@ Next, we need some special comparison routines for section names that
-handle abbreviations. We'll use these as the |:test| and |:predicate|
-functions in our binary tree.
-
-@l
-(defun section-name-lessp (name1 name2)
-  (let ((len1 (nth-value 1 (section-name-prefix-p name1)))
-        (len2 (nth-value 1 (section-name-prefix-p name2))))
-    (string-lessp name1 name2 :end1 len1 :end2 len2)))
-
-(defun section-name-equal (name1 name2)
-  (multiple-value-bind (prefix-1-p len1) (section-name-prefix-p name1)
-    (multiple-value-bind (prefix-2-p len2) (section-name-prefix-p name2)
-      (let ((end (min len1 len2)))
-        (if (or prefix-1-p prefix-2-p)
-            (string-equal name1 name2 :end1 end :end2 end)
-            (string-equal name1 name2))))))
+(defun find-section (name &aux (name (squeeze name)))
+  (if (null *named-sections*)
+      (values (setq *named-sections* (make-instance 'named-section :name name));
+              nil)
+      (multiple-value-bind (section present-p)
+          (find-or-insert name *named-sections*)
+        (when present-p
+          @<Update the section name if the new one is better@>)
+        (values section present-p))))
 
 @ We only actually update the name of a section in two cases: if the new
 name is not an abbreviation but the old one was, or if they are both
-abbreviations but the new one is shorter. We only need to compare against
-the shortest available prefix, since we detect ambiguous matches.
+abbreviations but the new one is shorter. (We only need to compare against
+the shortest available prefix, since we detect ambiguous matches.)
 
-@l
-(defmethod (setf section-name) :around (new-name (section named-section))
-  (when new-name
-    (multiple-value-bind (new-prefix-p new-len)
-        (section-name-prefix-p new-name)
-      (multiple-value-bind (old-prefix-p old-len)
-          (section-name-prefix-p (section-name section))
-        (if (or (and old-prefix-p (not new-prefix-p))
-                (and old-prefix-p new-prefix-p (< new-len old-len)))
-            (call-next-method)
-            new-name)))))
+@<Update the section name...@>=
+(multiple-value-bind (new-prefix-p new-len)
+    (section-name-prefix-p name)
+  (multiple-value-bind (old-prefix-p old-len)
+      (section-name-prefix-p (section-name section))
+    (when (or (and old-prefix-p (not new-prefix-p))
+              (and old-prefix-p new-prefix-p (< new-len old-len)))
+      (setf (section-name section) name))))
 
 @*Reading. We recognize five distinct modes, or contexts, for reading.
 Limbo mode is for \TeX\ text that proceeds the first section in a file.
