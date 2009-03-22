@@ -1,14 +1,13 @@
 % -*-CLWEB-*-
 
 \newif\ifzapf \zapftrue
-\newif\ifslimbach
-
 \ifzapf
 \input palatino
 \input euler
 \font\tenss=lopr8r at 10pt
 \font\tenssi=lopri8r at 10pt
 \font\tenssb=lopb8r at 10pt
+\mainfont
 \def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
 \def\){\/\egroup}
 {\catcode`\(=\active \catcode`\)=\active
@@ -16,21 +15,15 @@
  \gdef({{\tenrm\char`\(}\kern.025em}
  \gdef){{\tenrm\char`\)}\kern.025em}}
 \def\csc#1{{\sc #1}}
-\mainfont
-\else\ifslimbach
-\input minion
-\input euler
-\font\tenss=pmyr8y at 10pt
-\font\tenssi=pmyri8y at 10pt
-\font\tenssb=pmys8y at 10pt
-\def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
-\def\){\/\egroup}
-\let\cmntfont=\tenssi
-\def\csc#1{{\sc #1}}
-\mainfont
-\else
-\def\csc#1{{\sc \uppercase{#1}}}
-\fi\fi
+\def\lheader{\headertrue\mainfont\the\pageno\sc\qquad\grouptitle
+  \hfill\lowercase\expandafter{\jobname}\qquad
+  \mainfont\topsecno} % top line on left-hand pages
+\def\rheader{\headertrue\mainfont\topsecno
+  \sc\qquad\lowercase\expandafter{\jobname}\hfill
+  \grouptitle\qquad\mainfont\the\pageno} % top line on right-hand pages
+\def\grouptitle{\let\i=I\let\j=J\lowercase\expandafter{\expandafter
+                        \takethree\topmark}}
+\fi
 
 \def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
@@ -96,8 +89,6 @@ such as Emacs to provide incremental re-definition of \CLWEB\ sections;
 the user will generally never need to call it directly.
 
 @e
-(declaim (optimize (debug 3)))
-
 (defpackage "COMMON-LISP-WEB"
   (:nicknames "CLWEB")
   (:use "COMMON-LISP")
