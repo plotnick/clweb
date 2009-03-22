@@ -7,6 +7,7 @@
 \font\tenss=lopr8r at 10pt
 \font\tenssi=lopri8r at 10pt
 \font\tenssb=lopb8r at 10pt
+\let\cmntfont=\tenssi
 \mainfont
 \def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
 \def\){\/\egroup}
