@@ -27,6 +27,10 @@
   \grouptitle\qquad\mainfont\the\pageno} % top line on right-hand pages
 \def\grouptitle{\let\i=I\let\j=J\lowercase\expandafter{\expandafter
                         \takethree\topmark}}
+\else
+\def\ldq{\relax} % left guillemet
+\def\rdq{\relax} % right guillemet
+\def\csc#1{{\sc\uppercase{#1}}}
 \fi
 
 \def\pb{\.{|...|}} % program brackets
