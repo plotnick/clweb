@@ -1160,15 +1160,16 @@ the actual value, and store the radix in our marker.
 (defun radix-reader (stream sub-char arg)
   (make-instance 'radix-marker
                  :base (or (cdr (assoc sub-char *radix-prefix-alist*)) arg) 
-                 :value (funcall
-                         (get-dispatch-macro-character #\# sub-char
-                                                       (readtable-for-mode nil))
-                         stream sub-char arg)))
+                 :value @<Call the standard reader macro fun...@>))
 
 (dolist (mode '(:lisp :inner-lisp))
   (dolist (sub-char '(#\B #\O #\X #\R))
     (set-dispatch-macro-character #\# sub-char #'radix-reader ;
                                   (readtable-for-mode mode))))
+
+@ @<Call the standard reader macro function for \.{\#\metasyn{|sub-char|}}@>=
+(funcall (get-dispatch-macro-character #\# sub-char (readtable-for-mode nil))
+         stream sub-char arg)
 
 @ Sharpsign~S requires determining the standard constructor function of the
 structure type named, which we simply can't do portably. So we use the same
