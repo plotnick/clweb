@@ -678,8 +678,8 @@ Others, such as \.{()} and~\.{'}, are indistinguishable after reading from
 other, semantically equivalent objects (here, |nil| and |quote|), but we
 want to preserve the distinction in the output. In fact, nearly every
 standard macro character in Common Lisp is `lossy', in the sense that the
-original source code form can not be reliably recovered from the object
-returned by |read|.
+text of the original source code can not be reliably recovered from the
+object returned by |read|.
 
 But during weaving, we want to more closely approximate the original source
 code than would be possible using the standard reader. Markers are our
