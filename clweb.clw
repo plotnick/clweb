@@ -42,9 +42,9 @@
 Lisp. It is modeled after the \CWEB\ system by Silvio Levy and Donald
 E.~Knuth, which was in turn adapted from Knuth's original \WEB\ system.
 It shares with those earlier systems not only their underlying philosophy,
-but also most of their syntax and commands. Readers unfamiliar with either
-of them---or with literate programming in general---should consult the
-\CWEB\ manual or Knuth's {\it \ldq Literate Programming\rdq}
+but also most of their syntax and control codes. Readers unfamiliar with
+either of them---or with literate programming in general---should consult
+the \CWEB\ manual or Knuth's {\it \ldq Literate Programming\rdq}
 (\csc{csli}:~1992).
 
 @ A literate programming system provides two primary operations:
@@ -325,7 +325,10 @@ of the full section name.
             (values node t))
         (values node nil))))
 
-@ @<Check for an ambiguous match...@>=
+@ If there is an ambiguity in a prefix match, the tree ordering guarantees
+that it will occur in the sub-tree rooted at |node|.
+
+@<Check for an ambiguous match...@>=
 (dolist (child (list (left-child node) (right-child node)))
   (when child
     (multiple-value-bind (alt present-p)
