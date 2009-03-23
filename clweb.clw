@@ -74,7 +74,7 @@ version of that web.
 The fourth exported symbol, |load-sections-from-temp-file|, is conceptually
 part of the tangler, but is a special-purpose routine designed to be used
 in conjunction with an editor such as Emacs to provide incremental
-re-definition of sections; the user will generally never need to call
+redefinition of sections; the user will generally never need to call
 it directly.
 
 @e
