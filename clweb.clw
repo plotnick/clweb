@@ -1632,7 +1632,7 @@ removes unbound markers.
 
 @ |tangle| repeatedly calls |tangle-1| on |form| until it can no longer be
 expanded. Like |tangle-1|, it returns the possibly-expanded form and an
-`expanded' flag.
+`expanded' flag. This code is adapted from SBCL's |macroexpand|.
 
 @l
 (defun tangle (form)
