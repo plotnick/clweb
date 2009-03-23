@@ -86,7 +86,7 @@ something like writing \TeX\ documents, but with an additional `C mode'
 that is added to \TeX's horizontal mode, vertical mode, and math mode.''
 The same applies, {\it mutatis mutandis,} to the current system, but one
 might just as easily think of a web as some code with documentation blocks
-and special control codes sprinkled throughout, or as a completely seperate
+and special control codes sprinkled throughout, or as a completely separate
 language containing blocks that happen to have the syntax (more or less) of
 \TeX\ and Lisp. For the purposes of understanding the implementation, this
 last view is perhaps the most useful, since the control codes determine
@@ -146,7 +146,7 @@ and ones with none upon thars.
 @l
 (defclass starred-section (section) ())
 
-@ There can also be \TeX\ text preceeding the start of the first section
+@ There can also be \TeX\ text preceding the start of the first section
 (i.e., before the first \.{@@\ } or \.{@@*}), called {\it limbo text}.
 Limbo text is generally used to define document-specific formatting
 macros, set up fonts, \etc. The weaver passes it through virtually verbatim
@@ -163,7 +163,7 @@ its |commentary| slot; it will never have a code part.
 vector and set its number to its index therein. This means that section
 objects won't be collected by the \csc{gc} even after the tangling or
 weaving has completed, but there's a good reason: keeping them around
-allows incremental redfinition of a web, which is important for interactive
+allows incremental redefinition of a web, which is important for interactive
 development.
 
 @l
@@ -705,7 +705,7 @@ from its containing form; this is used, e.g., for newlines and comments.
 @ We also define |print-object| methods for all marker classes. These
 methods are distinct from the pretty-printing routines used by the weaver,
 and usually less precise, in that they don't try to approximate the original
-source form. The idea of these methods to produce a printed reprsentation of
+source form. The idea of these methods to produce a printed representation of
 an object that is semantically equivalent to the one originally specified.
 
 The simple method defined here suffices for many marker types: it simply
@@ -1653,7 +1653,7 @@ list of all of the forms in all of the unnamed sections' code parts.
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so
 that it can handle input from a file or an arbitrary stream. The logic
-is straightfoward: loop over the tangled forms read from the stream,
+is straightforward: loop over the tangled forms read from the stream,
 evaluating each one in turn.
 
 Note that like |load|, we bind |*readtable*| and |*package*| to their
@@ -2128,7 +2128,7 @@ In the loop, we keep a one-token look-ahead to check for newlines, so that
 we can output separating spaces when and only when there isn't a newline
 coming up.
 
-The logical-block building machinary above set the indentation on newlines
+The logical-block building machinery above set the indentation on newlines
 to the difference in character positions of the first form following
 the newline and the block indentation. For differences of 1 or~2 columns,
 we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
