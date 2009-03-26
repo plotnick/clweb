@@ -1,6 +1,6 @@
 % -*-CLWEB-*-
 
-\newif\ifzapf \zapftrue
+\newif\ifzapf \zapffalse
 \ifzapf
 \input palatino
 \input euler
