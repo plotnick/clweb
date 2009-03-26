@@ -82,8 +82,7 @@ redefinition of sections; the user will generally never need to call
 it directly.
 
 @e
-(defpackage "COMMON-LISP-WEB"
-  (:nicknames "CLWEB")
+(defpackage "CLWEB"
   (:use "COMMON-LISP")
   (:export "TANGLE-FILE" "LOAD-WEB" "WEAVE" "LOAD-SECTIONS-FROM-TEMP-FILE"))
 (in-package "CLWEB")
