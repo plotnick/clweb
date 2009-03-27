@@ -720,12 +720,25 @@ source form. The idea of these methods to produce a printed representation of
 an object that is semantically equivalent to the one originally specified.
 
 The simple method defined here suffices for many marker types: it simply
-prints the marker's value if it is bound.
+prints the marker's value if it is bound. Markers that require specialized
+printing will override this method.
+
+We also define a global variable, |*print-marker*|, that controls the way
+markers are printed. If it is true (as it is by default), then markers will
+be printed as just described. If it is false, markers are printed using the
+unreadable `\.\#\<' notation. This can be useful for debugging some of the
+reader routines, but will break others, so be careful.
 
 @l
+(defvar *print-marker* t)
+
 (defmethod print-object ((obj marker) stream)
-  (when (marker-boundp obj)
-    (write (marker-value obj) :stream stream)))
+  (if *print-marker*
+      (when (marker-boundp obj)
+        (write (marker-value obj) :stream stream))
+      (print-unreadable-object (obj stream :type t :identity t)
+        (when (marker-boundp obj)
+          (princ (marker-value obj) stream)))))
 
 @ A few of the markers behave differently when tangling for the purposes
 of evaluation (e.g., within a call to |load-web|) than when writing out a
@@ -955,7 +968,9 @@ unreasonable, since without it the file tangler won't work anyway.
     (read-from-string (prin1-to-string marker))))
 
 (defmethod print-object ((obj backquote-marker) stream)
-  (format stream "`~W" (backq-form obj)))
+  (if *print-marker*
+      (format stream "`~W" (backq-form obj))
+      (print-unreadable-object (obj stream :type t :identity t))))
 
 (defun backquote-reader (stream char)
   (declare (ignore char))
@@ -983,7 +998,9 @@ value.
 (defmethod marker-value ((marker comma-marker)) marker)
 
 (defmethod print-object ((obj comma-marker) stream)
-  (format stream ",~@[~C~]~W" (comma-modifier obj) (comma-form obj)))
+  (if *print-marker*
+      (format stream ",~@[~C~]~W" (comma-modifier obj) (comma-form obj))
+      (print-unreadable-object (obj stream :type t :identity t))))
 
 (defun comma-reader (stream char)
   (declare (ignore char))
@@ -1132,7 +1149,9 @@ value; and in a tangled source file, we get a \.{\#.} form.
   ((form :reader read-time-eval-form :initarg :form)))
 
 (defmethod print-object ((obj read-time-eval) stream)
-  (format stream "#.~W" (read-time-eval-form obj)))
+  (if *print-marker*
+      (format stream "#.~W" (read-time-eval-form obj))
+      (print-unreadable-object (obj stream :type t :identity t))))
 
 (defclass read-time-eval-marker (read-time-eval marker) ())
 
@@ -1196,7 +1215,9 @@ out to a string and let the standard reader parse it when we need the value.
     (read-from-string (prin1-to-string marker))))
 
 (defmethod print-object ((obj structure-marker) stream)
-  (format stream "#S~W" (structure-marker-form obj)))
+  (if *print-marker*
+      (format stream "#S~W" (structure-marker-form obj))
+      (print-unreadable-object (obj stream :type t :identity t))))
 
 (defun structure-reader (stream sub-char arg)
   (declare (ignore sub-char arg))
@@ -1245,10 +1266,12 @@ characters that the reader scans, and use that to reconstruct the form.
    (form :reader read-time-conditional-form :initarg :form)))
 
 (defmethod print-object ((obj read-time-conditional) stream)
-  (format stream "#~:[-~;+~]~S ~A"
-          (read-time-conditional-plusp obj)
-          (read-time-conditional-test obj)
-          (read-time-conditional-form obj)))
+  (if *print-marker*
+      (format stream "#~:[-~;+~]~S ~A"
+              (read-time-conditional-plusp obj)
+              (read-time-conditional-test obj)
+              (read-time-conditional-form obj))
+      (print-unreadable-object (obj stream :type t :identity t))))
 
 (defclass read-time-conditional-marker (read-time-conditional marker) ())
 
