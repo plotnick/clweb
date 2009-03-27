@@ -1,6 +1,6 @@
 % -*-CLWEB-*-
 
-\newif\ifzapf \zapftrue
+\newif\ifzapf \zapffalse
 \ifzapf
 \input palatino
 \input euler
@@ -27,6 +27,10 @@
   \grouptitle\qquad\mainfont\the\pageno} % top line on right-hand pages
 \def\grouptitle{\let\i=I\let\j=J\lowercase\expandafter{\expandafter
                         \takethree\topmark}}
+\else
+\def\ldq{\relax} % left guillemet
+\def\rdq{\relax} % right guillemet
+\def\csc#1{{\sc\uppercase{#1}}}
 \fi
 
 \def\pb{\.{|...|}} % program brackets
@@ -39,13 +43,18 @@
 \def\metasyn#1{$\langle${\it #1\/}$\rangle$} % metasyntactic variable
 
 @*Introduction. This is \CLWEB, a literate programming system for Common
-Lisp. It is modeled after the \CWEB\ system by Silvio Levy and Donald
-E.~Knuth, which was in turn adapted from Knuth's original \WEB\ system.
-It shares with those earlier systems not only their underlying philosophy,
-but also most of their syntax and control codes. Readers unfamiliar with
-either of them---or with literate programming in general---should consult
-the \CWEB\ manual or Knuth's {\it \ldq Literate Programming\rdq}
+Lisp by Alex Plotnick \metasyn{plotnick@@cs.brandeis.edu}. It is modeled
+after the \CWEB\ system by Silvio Levy and Donald E.~Knuth, which was in
+turn adapted from Knuth's original \WEB\ system.  It shares with those
+earlier systems not only their underlying philosophy, but also most of
+their syntax and control codes. Readers unfamiliar with either of them---or
+with literate programming in general---should consult the \CWEB\ manual or
+Knuth's {\it \ldq Literate Programming\rdq}
 (\csc{csli}:~1992).
+
+This is a preliminary, $\alpha$-quality release of the system; for the
+latest version, please visit\par\noindent
+\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}.
 
 @ A literate programming system provides two primary operations:
 {\it tangling\/} and {\it weaving\/}. The tangler prepares a literate 
@@ -55,7 +64,7 @@ human. These operations reflect the two uses of a literate program, and the
 two audiences by whom it must be read: the computer on the one hand, and
 the human programmers that must understand and maintain it on the other.
 
-Our tangler has two interface functions: |tangle-file| and |load-web|.
+Our tangler has two main interface functions: |tangle-file| and |load-web|.
 The first is analogous to |compile-file|: given a file containing \CLWEB\
 source, it produces an output file that can subsequently be loaded into a
 Lisp image with |load|. The function |load-web| is analogous to |load|,
@@ -69,12 +78,11 @@ version of that web.
 The fourth exported symbol, |load-sections-from-temp-file|, is conceptually
 part of the tangler, but is a special-purpose routine designed to be used
 in conjunction with an editor such as Emacs to provide incremental
-re-definition of sections; the user will generally never need to call
+redefinition of sections; the user will generally never need to call
 it directly.
 
 @e
-(defpackage "COMMON-LISP-WEB"
-  (:nicknames "CLWEB")
+(defpackage "CLWEB"
   (:use "COMMON-LISP")
   (:export "TANGLE-FILE" "LOAD-WEB" "WEAVE" "LOAD-SECTIONS-FROM-TEMP-FILE"))
 (in-package "CLWEB")
