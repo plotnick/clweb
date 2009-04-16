@@ -50,4 +50,4 @@ otherwise, it will be replaced."
 (define-key clweb-mode-map "\M-p" 'backward-section)
 (define-key clweb-mode-map "\C-c\C-s" 'eval-section)
 
-(add-to-list 'auto-mode-alist '("\\.lw" . clweb-mode))
+(add-to-list 'auto-mode-alist '("\\.clw" . clweb-mode))
