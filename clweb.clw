@@ -716,8 +716,8 @@ from its containing form; this is used, e.g., for newlines and comments.
 @ We also define |print-object| methods for all marker classes. These
 methods are distinct from the pretty-printing routines used by the weaver,
 and usually less precise, in that they don't try to approximate the original
-source form. The idea of these methods to produce a printed representation of
-an object that is semantically equivalent to the one originally specified.
+source form. The idea of these methods is to produce a printed representation
+of an object that is semantically equivalent to the one originally specified.
 
 The simple method defined here suffices for many marker types: it simply
 prints the marker's value if it is bound. Markers that require specialized
