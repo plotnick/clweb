@@ -459,6 +459,24 @@ given forms with |*readtable*| bound appropriately for the given mode.
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
+@ Sometimes we'll have to detect and report errors during reading. This
+condition class and associated signaling function allow |format|-style
+error reporting.
+
+@l
+(define-condition simple-reader-error (reader-error simple-condition) ()
+  (:report (lambda (condition stream)
+             (format stream "~S on ~S:~%~?"
+                     condition (stream-error-stream condition)
+                     (simple-condition-format-control condition)
+                     (simple-condition-format-arguments condition)))))
+
+(defun simple-reader-error (stream control &rest args)
+  (error 'simple-reader-error
+         :stream stream
+         :format-control control
+         :format-arguments args))
+
 @ We frequently need an object to use as the |eof-value| argument to
 |read|. It need not be a symbol; it need not even be an atom.
 
@@ -1026,24 +1044,6 @@ reader macros. Because it's a dispatching macro character, we have to
 handle each sub-char individually, and unfortunately we need to override
 most of them. We'll handle them in the order given in section~2.4.8
 of the CL standard.
-
-@ Sometimes we'll have to detect and report errors during reading. This
-condition class and associated signaling function allow |format|-style
-error reporting.
-
-@l
-(define-condition simple-reader-error (reader-error simple-condition) ()
-  (:report (lambda (condition stream)
-             (format stream "~S on ~S:~%~?"
-                     condition (stream-error-stream condition)
-                     (simple-condition-format-control condition)
-                     (simple-condition-format-arguments condition)))))
-
-(defun simple-reader-error (stream control &rest args)
-  (error 'simple-reader-error
-         :stream stream
-         :format-control control
-         :format-arguments args))
 
 @ Sharpsign single-quote is just like single-quote, except that the form is
 `quoted' with |function| instead of |quote|.
