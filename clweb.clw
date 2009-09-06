@@ -1520,7 +1520,6 @@ explicit closing delimiters.) It returns a list of |section| objects.
                @<Setup named section...@>)
              section))
       (prog (form commentary code section sections)
-       limbo
          (setq section (make-instance 'limbo-section))
          @<Accumulate limbo text in |commentary|@>
        commentary
