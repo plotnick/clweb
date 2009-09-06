@@ -132,13 +132,20 @@ ignores it. The code part contains Lisp forms and named section references;
 the tangler will eventually evaluate or compile those forms, while the
 weaver pretty-prints them to the \TeX\ output file.
 
+We'll see below that we need a keyword argument on the |(setf section-code)|
+method for named sections, so we have to define the \csc{gf} manually.
+
 @l
 (defclass section ()
   ((name :accessor section-name :initarg :name)
    (number :accessor section-number)
    (commentary :accessor section-commentary :initarg :commentary)
-   (code :accessor section-code :initarg :code))
+   (code :reader section-code :initarg :code))
   (:default-initargs :commentary nil :name nil :code nil))
+
+(defgeneric (setf section-code) (forms section &key))
+(defmethod (setf section-code) (forms (section section) &key)
+  (setf (slot-value section 'code) forms))
 
 @ Two control codes begin a section: \.{@@\ } and~\.{@@*}. Sections
 introduced with \.{@@*} (`starred' sections) begin a new major group of
@@ -264,7 +271,7 @@ of the other sections that share this name.
 @l
 (defclass named-section (binary-search-tree)
   ((key :accessor section-name :initarg :name)
-   (value :accessor section-code :initarg :code)
+   (value :reader section-code :initarg :code)
    (number :accessor section-number)
    (used-by :accessor used-by :initform '())
    (see-also :accessor see-also :initform '())))
@@ -275,8 +282,8 @@ definition. However, sometimes we want to override that behavior and have
 the new forms replace the old, such as during interactive development.
 
 @l
-(defun set-named-section-code (section forms &optional (appendp t))
-  (setf (section-code section)
+(defmethod (setf section-code) (forms (section named-section) &key (appendp t))
+  (setf (slot-value section 'value)
         (if (and appendp (slot-boundp section 'value))
             (append (section-code section) forms)
             forms)))
@@ -1620,7 +1627,7 @@ whitespace from the first, and any trailing newline marker from |code|.
 (let ((named-section (find-section (section-name section)))
       (number (section-number section))
       (code (section-code section)))
-  (set-named-section-code named-section code appendp)
+  (setf (section-code named-section :appendp appendp) code)
   (when (or (not (slot-boundp named-section 'number))
             (not appendp))
     (setf (section-number named-section) number))
