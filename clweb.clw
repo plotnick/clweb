@@ -45,7 +45,7 @@
 @*Introduction. This is \CLWEB, a literate programming system for Common
 Lisp by Alex Plotnick \metasyn{plotnick@@cs.brandeis.edu}. It is modeled
 after the \CWEB\ system by Silvio Levy and Donald E.~Knuth, which was in
-turn adapted from Knuth's original \WEB\ system.  It shares with those
+turn adapted from Knuth's original \WEB\ system. It shares with those
 earlier systems not only their underlying philosophy, but also most of
 their syntax and control codes. Readers unfamiliar with either of them---or
 with literate programming in general---should consult the \CWEB\ manual or
@@ -59,16 +59,16 @@ latest version, please visit\par\noindent
 @ A literate programming system provides two primary operations:
 {\it tangling\/} and {\it weaving\/}. The tangler prepares a literate 
 program, or {\it web}, for evaluation by a machine, while the weaver
-prepares it for typesetting with \TeX\ and subsequent reading by a
-human. These operations reflect the two uses of a literate program, and the
-two audiences by whom it must be read: the computer on the one hand, and
-the human programmers that must understand and maintain it on the other.
+prepares it for typesetting and subsequent reading by a human. These
+operations reflect the two uses of a literate program, and the two
+audiences by whom it must be read: the computer on the one hand, and the
+human programmers that must understand and maintain it on the other.
 
 Our tangler has two main interface functions: |tangle-file| and |load-web|.
-The first is analogous to |compile-file|: given a file containing \CLWEB\
-source, it produces an output file that can subsequently be loaded into a
-Lisp image with |load|. The function |load-web| is analogous to |load|,
-but also accepts \CLWEB\ source as input instead of ordinary Lisp source;
+The first is analogous to |cl:compile-file|: given a file containing \CLWEB\
+source, it produces an output file that can be subsequently loaded into a
+Lisp image with |load|. The function |load-web| is analogous to |cl:load|,
+but also accepts \CLWEB\ source as input instead of ordinary Lisp source:
 it loads a web into the Lisp environment.
 
 The weaver has a single entry point: |weave| takes a web as input and
@@ -88,8 +88,8 @@ it directly.
 (in-package "CLWEB")
 
 @ A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
-control codes, but which one is primary depends on your point of view.
-The \CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
+control codes, but which is primary depends on your point of view. The
+\CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
 something like writing \TeX\ documents, but with an additional `C mode'
 that is added to \TeX's horizontal mode, vertical mode, and math mode.''
 The same applies, {\it mutatis mutandis,} to the current system, but one
@@ -253,7 +253,8 @@ name, and the number of the first such section.
 And that's what we store in the \csc{bst}: nodes that look like sections,
 inasmuch as they have specialized |section-name|, |section-code|, and
 |section-number| methods, but are not actually instances of the class
-|section|.
+|section|. We don't need to store any commentary in these nodes, since
+that's stored in the |section| instances.
 
 The two additional slots, |used-by| and |see-also|, are used by the weaver
 to generate cross-references. The former contains a list of all the
@@ -282,7 +283,7 @@ the new forms replace the old, such as during interactive development.
 
 @ Section names in the input file can be abbreviated by giving a prefix of
 the full name followed by `$\ldots$': e.g., \.{@@<Frob...@@>} might refer
-to the section named `Frob foo and tweak bar'.
+to the section named `Frob \(foo\) and tweak \(bar\)'.
 
 Here's a little utility routine that makes working with such section names
 easier. Given a name, it returns two values: true or false depending on
@@ -296,9 +297,9 @@ segment of the name.
         (values t (- len 3))
         (values nil len))))
 
-@ Next, we need some special comparison routines for section names that
-handle abbreviations. We'll use these as the |:test| and |:predicate|
-functions for our \csc{bst}.
+@ Next we need some special comparison routines for section names that
+might be abbreviations. We'll use these as the |:test| and |:predicate|
+functions, respectively, for our \csc{bst}.
 
 @l
 (defun section-name-lessp (name1 name2)
@@ -417,7 +418,7 @@ the shortest available prefix, since we detect ambiguous matches.)
               (and old-prefix-p new-prefix-p (< new-len old-len)))
       (setf (section-name section) name))))
 
-@*Reading. We recognize five distinct modes for reading. Limbo mode is
+@*Reading. We distinguish five distinct modes for reading. Limbo mode is
 used for \TeX\ text that proceeds the first section in a file. \TeX\ mode
 is used for reading the commentary that begins a section. Lisp mode is
 used for reading the code part of a section; inner-Lisp mode is for
@@ -497,7 +498,7 @@ objects. But because they're sub-types of |stream|, they can be used with
 all of the standard stream functions.
 
 The current character position is retrieved with the \csc{gf} |charpos|.
-It relies the last stored charpos (stored in the |charpos| slot) and a
+It relies on the last stored charpos (stored in the |charpos| slot) and a
 buffer that stores the characters input or output since the last call to
 |charpos|, retrieved with the \csc{gf} |get-charpos-stream-buffer|.
 
@@ -595,8 +596,8 @@ instance.
                      (remhash stream *charpos-streams*))
           (t (warn "Not tracking charpos for ~S" stream)))))
 
-@ Here are a few convenience methods for creating charpos streams. Note that
-|input-stream| and |output-stream| are stream designators.
+@ Here are a few convenience methods for creating charpos streams. The
+|input-stream| and |output-stream| arguments are stream designators.
 
 @l
 (defun make-charpos-input-stream (input-stream &key (charpos 0))
@@ -615,9 +616,9 @@ instance.
                            (otherwise output-stream))
                  :charpos charpos))
 
-@ And finally, a couple of macros that make using them easy and trouble-free.
-They execute |body| in a lexical environment in which |var| is bound to a
-proxy stream the tracks the character position for |stream|.
+@ And finally, here are a couple of macros that make using them easy and
+trouble-free. They execute |body| in a lexical environment in which |var|
+is bound to a proxy stream the tracks the character position for |stream|.
 
 @l
 (defmacro with-charpos-input-stream ((var stream &key (charpos 0)) &body body)
@@ -635,7 +636,7 @@ proxy stream the tracks the character position for |stream|.
 @ Sometimes we'll want to look more than one character ahead in a stream.
 This macro lets us do so, after a fashion: it executes |body| in a lexical
 environment where |var| is bound to a stream whose input comes from
-|stream| and |rewind| is a local function that `rewinds' the stream to its
+|stream| and |rewind| is a local function that `rewinds' that stream to its
 state prior to any reads executed in the body.
 
 @l
@@ -700,9 +701,10 @@ varying degrees of accuracy, what was originally given in the source.
 
 If a marker is {\it bound}---i.e., if |marker-boundp| returns non-nil when
 called with it as an argument---then the tangler will call |marker-value|
-to obtain the associated value. (The value need not be stored in the
-|value| slot, but often is.) Otherwise, the marker will be silently dropped
-from its containing form; this is used, e.g., for newlines and comments.
+to obtain the associated value. (The weaver will never ask for a marker's
+value). Otherwise, the marker will be silently dropped from its containing
+form; this is used, e.g., for newlines and comments. The value need not be
+stored in the |value| slot, but often is.
 
 @l
 (defclass marker ()
@@ -750,7 +752,7 @@ evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}.
 
 @ Our first marker is for newlines, which we preserve for the purposes of
 indentation. They are represented in code forms by an unbound marker, so
-they will simply be dropped by the tangler.
+the tangler will ignore them.
 
 Note that we don't set a macro character for |#\Newline| in inner-Lisp mode,
 since indentation is completely ignored there.
@@ -912,9 +914,8 @@ might think is needed.
   (set-macro-character #\' #'single-quote-reader nil (readtable-for-mode mode)))
 
 @ {\it Semicolon.} Comments in Lisp code also need to be preserved for
-output during weaving. We use a slot distinct from the value slot for
-storing the text of the comment so that they can remain unbound and thus
-be stripped during tangling.
+output during weaving. Comment markers are always unbound, and are
+therefore stripped during tangling.
 
 @l
 (defclass comment-marker (marker)
@@ -1238,9 +1239,9 @@ This routine, adapted from SBCL, interprets such an expression.
      (case (car x)
        ((:not not)
         (cond
-          ((cddr x)
+          ((cddr x) ;
            (error "too many subexpressions in feature expression: ~S" x))
-          ((null (cdr x))
+          ((null (cdr x)) ;
            (error "too few subexpressions in feature expression: ~S" x))
           (t (not (featurep (cadr x))))))
        ((:and and) (every #'featurep (cdr x)))
@@ -1308,7 +1309,7 @@ characters that the reader scans, and use that to reconstruct the form.
   (set-dispatch-macro-character #\# #\- #'read-time-conditional-reader ;
                                 (readtable-for-mode mode)))
 
-@ Okay, so much for the standard macro characters. Now we're ready to move
+@ So much for the standard macro characters. Now we're ready to move
 on to \WEB-specific reading. We accumulate \TeX\ mode material such as
 commentary, section names, \etc. using the following function, which reads
 from |stream| until encountering either \EOF\ or an element of the
@@ -1323,7 +1324,7 @@ from |stream| until encountering either \EOF\ or an element of the
   (with-output-to-string (string)
     (loop for char = (peek-char nil stream nil *eof* nil)
           until (or (eof-p char) (member char control-chars))
-            do (write-char (read-char stream) string))))
+          do (write-char (read-char stream) string))))
 
 @ In \TeX\ mode (including restricted contexts), we allow embedded Lisp
 code to be surrounded by \pb, where it is read in inner-Lisp mode.
@@ -1515,7 +1516,8 @@ explicit closing delimiters.) It returns a list of |section| objects.
              @<Trim whitespace and reverse...@>
              (setf (section-commentary section) commentary)
              (setf (section-code section) code)
-             (when (section-name section) @<Setup named section...@>)
+             (when (section-name section)
+               @<Setup named section...@>)
              section))
       (prog (form commentary code section sections)
        limbo
@@ -1686,14 +1688,14 @@ list of all of the forms in all of the unnamed sections' code parts.
               (remove-if #'section-name (read-sections stream appendp)))))
 
 @ We're now ready for the high-level tangler interface. We begin with
-|load-web|, which uses a helper function, |load-web-from-stream|, so
-that it can handle input from a file or an arbitrary stream. The logic
-is straightforward: loop over the tangled forms read from the stream,
-evaluating each one in turn.
+|load-web|, which uses a helper function, |load-web-from-stream|, so that
+it can handle input from an arbitrary stream. The logic is straightforward:
+we loop over the tangled forms read from the stream, evaluating each one in
+turn.
 
 Note that like |load|, we bind |*readtable*| and |*package*| to their
 current values, so that assignments to those variables in the \WEB\ code
-will not effect the calling environment.
+will not affect the calling environment.
 
 @l
 (defun load-web-from-stream (stream print &optional (appendp t))
@@ -1772,12 +1774,12 @@ file and then invoking the file compiler on that file.
           (pprint form lisp)))))
   (apply #'compile-file lisp-file args))
 
-@*The weaver. The top-level weaver interface is modeled after |compile-file|.
-The function |weave| reads the \WEB\ |input-file| and produces an output
-\TeX\ file named by |output-file|. If the weaving was successful, |weave|
-returns the truename of the output file. If |output-file| is not supplied
-or is |nil|, a pathname will be generated from |input-file| by replacing
-its |:type| component with \.{"tex"}.
+@*The weaver. The top-level weaver interface is modeled after
+|cl:compile-file|.  The function |weave| reads the \WEB\ |input-file| and
+produces an output \TeX\ file named by |output-file|. If the weaving is
+successful, |weave| returns the truename of the output file. If
+|output-file| is not supplied or is |nil|, a pathname will be generated
+from |input-file| by replacing its |type| component with \.{"tex"}.
 
 If |verbose| is true, |weave| prints a message in the form of a comment to
 standard output indicating what file is being woven. If |verbose| is not
