@@ -516,12 +516,7 @@ instances of |cl:stream| (and can't be, without relying on an extension to
 Common Lisp like Gray streams). But they contain a standard composite
 stream we'll call a {\it proxy stream} which is hooked up to the underlying
 stream whose position they're tracking, and it's these proxy streams that
-we'll pass around.
-
-The current character position is retrieved with the \csc{gf} |charpos|.
-It relies on the last stored charpos (stored in the |charpos| slot) and a
-buffer that stores the characters input or output since the last call to
-|charpos|, retrieved with the \csc{gf} |get-charpos-stream-buffer|.
+we'll pass around, so that the standard stream functions will all work.
 
 @l
 (defclass charpos-stream ()
@@ -529,8 +524,22 @@ buffer that stores the characters input or output since the last call to
    (proxy-stream :accessor charpos-proxy-stream :initarg :proxy))
   (:default-initargs :charpos 0))
 
-(defgeneric charpos (stream))
+@ The \csc{gf} |charpos| returns the current character position of a charpos
+stream. It relies on the last calculated character position (stored in the
+|charpos| slot) and a buffer that stores the characters input or output
+since the last call to |charpos|, retrieved with |get-charpos-stream-buffer|.
+
+@l
 (defgeneric get-charpos-stream-buffer (stream))
+
+(defgeneric charpos (stream))
+(defmethod charpos ((stream charpos-stream))
+  (let* ((buffer (get-charpos-stream-buffer stream))
+         (len (length buffer))
+         (newline (position #\Newline buffer :test #'char= :from-end t)))
+    (if newline
+        (setf (slot-value stream 'charpos) (- len 1 newline))
+        (incf (slot-value stream 'charpos) len))))
 
 @ For tracking the character position of an input stream, our proxy stream
 will be an echo stream that takes input from the underlying stream and sends
@@ -570,20 +579,6 @@ given stream and a fresh string stream, again used as a buffer.
 (defmethod get-charpos-stream-buffer ((stream charpos-output-stream))
   (get-output-stream-string
    (first (broadcast-stream-streams (charpos-proxy-stream stream)))))
-
-@ Finding the actual character position is now straightforward, and the same
-for both input and output streams.
-
-@l
-(defmethod charpos ((stream charpos-stream))
-  (let* ((i 0)
-         (newline (position #\Newline (get-charpos-stream-buffer stream)
-                            :key (lambda (x) (incf i) x)
-                            :test #'char=
-                            :from-end t)))
-    (if newline
-        (setf (slot-value stream 'charpos) i)
-        (incf (slot-value stream 'charpos) i))))
 
 @ Because we'll be passing around the proxy streams, we need to manually
 maintain a mapping between them and their associated instances of
