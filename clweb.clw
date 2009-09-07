@@ -52,6 +52,26 @@ with literate programming in general---should consult the \CWEB\ manual or
 Knuth's {\it \ldq Literate Programming\rdq}
 (\csc{csli}:~1992).
 
+A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
+control codes, but which is primary depends on your point of view. The
+\CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
+something like writing \TeX\ documents, but with an additional `C mode'
+that is added to \TeX's horizontal mode, vertical mode, and math mode.''
+The same applies, {\it mutatis mutandis,} to the current system, but one
+might just as easily think of a web as some code with documentation blocks
+and special control codes sprinkled throughout, or as a completely separate
+language containing blocks that happen to have the syntax (more or less) of
+\TeX\ and Lisp. For the purposes of understanding the implementation, this
+last view is perhaps the most useful, since the control codes determine
+which syntax to use in reading the material that follows.
+
+The syntax of the \CLWEB\ control codes themselves is similar to that of
+dispatching reader macro characters in Lisp: they all begin with
+`\.{@@}$x$', where~$x$ is a single character that selects the control code.
+Most of the \CLWEB\ control codes are quite similar to the ones used in
+\CWEB; see the \CWEB\ manual for detailed descriptions of the individual
+codes.
+
 This is a preliminary, $\alpha$-quality release of the system; for the
 latest version, please visit\par\noindent
 \.{http://www.cs.brandeis.edu/\~plotnick/clweb/}.
@@ -81,31 +101,24 @@ in conjunction with an editor such as Emacs to provide incremental
 redefinition of sections; the user will generally never need to call
 it directly.
 
+The remainder of the exported symbols are condition classes for the various
+errors and warnings that may be generated while processing a web.
+
 @e
 (defpackage "CLWEB"
   (:use "COMMON-LISP")
-  (:export "TANGLE-FILE" "LOAD-WEB" "WEAVE" "LOAD-SECTIONS-FROM-TEMP-FILE"))
+  (:export "TANGLE-FILE"
+           "LOAD-WEB"
+           "WEAVE"
+           "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "SIMPLE-READER-ERROR"
+           "UNUSED-NAMED-SECTION-WARNING"))
 (in-package "CLWEB")
 
-@ A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
-control codes, but which is primary depends on your point of view. The
-\CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
-something like writing \TeX\ documents, but with an additional `C mode'
-that is added to \TeX's horizontal mode, vertical mode, and math mode.''
-The same applies, {\it mutatis mutandis,} to the current system, but one
-might just as easily think of a web as some code with documentation blocks
-and special control codes sprinkled throughout, or as a completely separate
-language containing blocks that happen to have the syntax (more or less) of
-\TeX\ and Lisp. For the purposes of understanding the implementation, this
-last view is perhaps the most useful, since the control codes determine
-which syntax to use in reading the material that follows.
+@ We'll define our condition classes as we need them.
 
-The syntax of the \CLWEB\ control codes themselves is similar to that of
-dispatching reader macro characters in Lisp: they all begin with
-`\.{@@}$x$', where~$x$ is a single character that selects the control code.
-Most of the \CLWEB\ control codes are quite similar to the ones used in
-\CWEB; see the \CWEB\ manual for detailed descriptions of the individual
-codes.
+@l
+@<Define condition classes@>
 
 @*Sections. The fundamental unit of a web is the {\it section}, which may
 be either {\it named\/} or~{\it unnamed\/}. Named sections are conceptually
@@ -463,7 +476,7 @@ given forms with |*readtable*| bound appropriately for the given mode.
 condition class and associated signaling function allow |format|-style
 error reporting.
 
-@l
+@<Define condition classes@>=
 (define-condition simple-reader-error (reader-error simple-condition) ()
   (:report (lambda (condition stream)
              (format stream "~S on ~S:~%~?"
@@ -1768,7 +1781,22 @@ file and then invoking the file compiler on that file.
       (let ((*evaluating* nil))
         (dolist (form (tangle (read-code-parts input t)))
           (pprint form lisp)))))
+  @<Complain about any unused named sections@>
   (apply #'compile-file lisp-file args))
+
+@ @<Define condition classes@>=
+(define-condition unused-named-section-warning (simple-warning) ())
+
+@ @<Complain about any unused...@>=
+(labels ((warn-unused-named-sections (section)
+           (when section
+             (warn-unused-named-sections (left-child section))
+             (when (null (used-by section))
+               (warn 'unused-named-section-warning
+                     :format-control "Unused named section <~A>."
+                     :format-arguments (list (section-name section))))
+             (warn-unused-named-sections (right-child section)))))
+  (warn-unused-named-sections *named-sections*))
 
 @*The weaver. The top-level weaver interface is modeled after
 |cl:compile-file|.  The function |weave| reads the \WEB\ |input-file| and

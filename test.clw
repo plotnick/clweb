@@ -31,6 +31,13 @@ copacetic.
 (defun do-some-stuff ()
   (list 'some 'stuff))
 
+@ And this one gets used by no one at all.
+@<Unused section@>=
+(error "Unused")
+
+@ @<Unused section@>=
+(error "Also unused")
+
 @*Markers. Here we test out some of the trickier markers.
 
 @l
