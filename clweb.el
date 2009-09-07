@@ -44,7 +44,25 @@ otherwise, it will be replaced."
 
 (define-derived-mode clweb-mode lisp-mode "CLWEB"
   "Major mode for editing CLWEB programs.
-\\{clweb-mode-map}")
+\\{clweb-mode-map}"
+  (setq fill-paragraph-function nil)
+  (set (make-local-variable 'parse-sexp-lookup-properties) t)
+  (setq font-lock-defaults
+	'((lisp-font-lock-keywords
+	   lisp-font-lock-keywords-1 lisp-font-lock-keywords-2)
+	  nil
+          nil
+          (("+-/.!?$%_&~^:" . "w"))
+          nil
+	  (font-lock-mark-block-function . mark-defun)
+	  (font-lock-syntactic-face-function
+	   . lisp-font-lock-syntactic-face-function)
+          (font-lock-syntactic-keywords
+           . (("\\(@\\)[ *]" 1 "< b")
+              ("@\\([LlPpEe]\\)" 1 "> b")
+              ("\\(@\\)<" 1 "< b")
+              ("@\\(>\\)[^=]" 1 "> b")
+              ("@>\\(=\\)" 1 "> b"))))))
 
 (define-key clweb-mode-map "\M-n" 'forward-section)
 (define-key clweb-mode-map "\M-p" 'backward-section)
