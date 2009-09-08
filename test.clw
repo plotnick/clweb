@@ -32,11 +32,11 @@ copacetic.
   (list 'some 'stuff))
 
 @ And this one gets used by no one at all.
-@<Unused section@>=
-(error "Unused")
-
-@ @<Unused section@>=
-(error "Also unused")
+@<Unused section@>=nil
+@ Also unused, but with the same name as the last one.
+@<Unused section@>=()
+@ And one more, with a different name.
+@<Another unused section@>=t
 
 @*Markers. Here we test out some of the trickier markers.
 

@@ -1784,19 +1784,27 @@ file and then invoking the file compiler on that file.
   @<Complain about any unused named sections@>
   (apply #'compile-file lisp-file args))
 
-@ @<Define condition classes@>=
+@ A named section doesn't do any good if it's never referenced, so we issue
+warnings about unused named sections.
+
+@<Define condition classes@>=
 (define-condition unused-named-section-warning (simple-warning) ())
 
 @ @<Complain about any unused...@>=
-(labels ((warn-unused-named-sections (section)
-           (when section
-             (warn-unused-named-sections (left-child section))
-             (when (null (used-by section))
-               (warn 'unused-named-section-warning
-                     :format-control "Unused named section <~A>."
-                     :format-arguments (list (section-name section))))
-             (warn-unused-named-sections (right-child section)))))
-  (warn-unused-named-sections *named-sections*))
+(let ((unused-sections '()))
+  (labels ((collect-unused-sections (section)
+             (when section
+               (collect-unused-sections (left-child section))
+               (collect-unused-sections (right-child section))
+               (when (null (used-by section))
+                 (push section unused-sections)))))
+    (collect-unused-sections *named-sections*)
+    (map nil
+         (lambda (section)
+           (warn 'unused-named-section-warning
+                 :format-control "Unused named section <~A>."
+                 :format-arguments (list (section-name section))))
+         (sort unused-sections #'< :key #'section-number))))
 
 @*The weaver. The top-level weaver interface is modeled after
 |cl:compile-file|.  The function |weave| reads the \WEB\ |input-file| and
