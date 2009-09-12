@@ -354,6 +354,18 @@ of the full section name.
             (values node t))
         (values node nil))))
 
+@ @<Define condition classes@>=
+(define-condition ambiguous-prefix-error (error)
+  ((prefix :reader ambiguous-prefix :initarg :prefix)
+   (first-match :reader ambiguous-prefix-first-match :initarg :first-match)
+   (alt-match :reader ambiguous-prefix-alt-match :initarg :alt-match))
+  (:report
+   (lambda (condition stream)
+     (format stream "~@<Ambiguous prefix: <~A> matches both <~A> and <~A>~:@>"
+             (ambiguous-prefix condition)
+             (ambiguous-prefix-first-match condition)
+             (ambiguous-prefix-alt-match condition)))))
+
 @ If there is an ambiguity in a prefix match, the tree ordering guarantees
 that it will occur in the sub-tree rooted at |node|.
 
@@ -367,8 +379,10 @@ that it will occur in the sub-tree rooted at |node|.
                           :insert-if-not-found nil)
       (when present-p
         (restart-case
-            (error "~<Ambiguous prefix <~A>: matches both <~A> and <~A>~:@>"
-                   (list item (node-key node) (node-key alt)))
+            (error 'ambiguous-prefix-error
+                   :prefix item
+                   :first-match (node-key node)
+                   :alt-match (node-key alt))
           (use-first-match ()
             :report "Use the first match."
             (return (values node t)))
