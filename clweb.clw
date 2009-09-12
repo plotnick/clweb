@@ -690,7 +690,7 @@ state prior to any reads executed in the body.
                 (setq ,var (make-concatenated-stream
                             (make-string-input-stream ;
                              (get-output-stream-string ,out))
-                            ,stream))))
+                            ,var))))
          ,@body))))
 
 @ And sometimes, we'll want to call |read| on a stream, and keep a copy of
