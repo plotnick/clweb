@@ -8,6 +8,17 @@
            "SIMPLE-READER-ERROR"
            "UNUSED-NAMED-SECTION-WARNING"))
 (IN-PACKAGE "CLWEB")
+(DEFINE-CONDITION AMBIGUOUS-PREFIX-ERROR
+    (ERROR)
+    ((PREFIX :READER AMBIGUOUS-PREFIX :INITARG :PREFIX)
+     (FIRST-MATCH :READER AMBIGUOUS-PREFIX-FIRST-MATCH :INITARG :FIRST-MATCH)
+     (ALT-MATCH :READER AMBIGUOUS-PREFIX-ALT-MATCH :INITARG :ALT-MATCH))
+  (:REPORT
+   (LAMBDA (CONDITION STREAM)
+     (FORMAT STREAM "~@<Ambiguous prefix: <~A> matches both <~A> and <~A>~:@>"
+             (AMBIGUOUS-PREFIX CONDITION)
+             (AMBIGUOUS-PREFIX-FIRST-MATCH CONDITION)
+             (AMBIGUOUS-PREFIX-ALT-MATCH CONDITION)))))
 (DEFINE-CONDITION SIMPLE-READER-ERROR
     (READER-ERROR SIMPLE-CONDITION)
     NIL
@@ -116,10 +127,10 @@
                           (CALL-NEXT-METHOD ITEM CHILD :PREDICATE PREDICATE
                            :TEST TEST :INSERT-IF-NOT-FOUND NIL)
                         (WHEN PRESENT-P
-                          (RESTART-CASE (ERROR
-                                         "~<Ambiguous prefix <~A>: matches both <~A> and <~A>~:@>"
-                                         (LIST ITEM (NODE-KEY NODE)
-                                               (NODE-KEY ALT)))
+                          (RESTART-CASE (ERROR 'AMBIGUOUS-PREFIX-ERROR :PREFIX
+                                               ITEM :FIRST-MATCH
+                                               (NODE-KEY NODE) :ALT-MATCH
+                                               (NODE-KEY ALT))
                             (USE-FIRST-MATCH NIL :REPORT "Use the first match."
                              (RETURN (VALUES NODE T)))
                             (USE-ALT-MATCH NIL :REPORT "Use alternate match."
@@ -277,7 +288,7 @@
                         (MAKE-CONCATENATED-STREAM
                          (MAKE-STRING-INPUT-STREAM
                           (GET-OUTPUT-STREAM-STRING ,OUT))
-                         ,STREAM))))
+                         ,VAR))))
          ,@BODY))))
 (DEFMACRO READ-WITH-ECHO
           ((STREAM VALUES ECHOED &KEY PREFIX)
@@ -296,7 +307,7 @@
                 (,LENGTH (LENGTH ,RAW-OUTPUT))
                 (,ECHOED
                  (SUBSEQ ,RAW-OUTPUT ,0
-                         (IF (OR (EOF-P (PEEK-CHAR ,NIL ,STREAM NIL *EOF*))
+                         (IF (OR (EOF-P (PEEK-CHAR ,NIL ,REWIND NIL *EOF*))
                                  (TOKEN-DELIMITER-P
                                   (ELT ,RAW-OUTPUT (1- ,LENGTH))))
                              ,LENGTH
@@ -375,20 +386,22 @@
                                     T) AS CHARPOS = (STREAM-CHARPOS STREAM)
         UNTIL (CHAR= FIRST-CHAR #\))
         IF (CHAR= FIRST-CHAR #\.)
-        DO (WITH-REWIND-STREAM (STREAM STREAM)
-             (READ-CHAR STREAM T)
-             (LET ((NEXT-CHAR (READ-CHAR STREAM T)))
-               (COND
-                ((TOKEN-DELIMITER-P NEXT-CHAR)
-                 (UNLESS (OR LIST *READ-SUPPRESS*)
-                   (SIMPLE-READER-ERROR STREAM
-                                        "Nothing appears before . in list."))
-                 (PUSH *CONSING-DOT* LIST) (PUSH CHARPOS CHARPOS-LIST))
-                (T (REWIND)
-                 (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
-                   (WHEN VALUES
-                     (PUSH (CAR VALUES) LIST)
-                     (PUSH CHARPOS CHARPOS-LIST))))))) ELSE
+        DO (WITH-REWIND-STREAM (STREAM STREAM) (READ-CHAR STREAM T)
+                               (LET ((NEXT-CHAR (READ-CHAR STREAM T)))
+                                 (COND
+                                  ((TOKEN-DELIMITER-P NEXT-CHAR)
+                                   (UNLESS (OR LIST *READ-SUPPRESS*)
+                                     (SIMPLE-READER-ERROR STREAM
+                                                          "Nothing appears before . in list."))
+                                   (PUSH *CONSING-DOT* LIST)
+                                   (PUSH CHARPOS CHARPOS-LIST))
+                                  (T (REWIND)
+                                   (LET ((VALUES
+                                          (MULTIPLE-VALUE-LIST
+                                           (READ STREAM T NIL T))))
+                                     (WHEN VALUES
+                                       (PUSH (CAR VALUES) LIST)
+                                       (PUSH CHARPOS CHARPOS-LIST))))))) ELSE
         DO (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
              (WHEN VALUES
                (PUSH (CAR VALUES) LIST)
@@ -511,15 +524,16 @@
   (DECLARE (IGNORE SUB-CHAR))
   (LET ((*READTABLE* (READTABLE-FOR-MODE NIL)))
     (READ-WITH-ECHO (STREAM VALUES BITS :PREFIX (FORMAT NIL "#~@[~D~]*" ARG))
-      (APPLY #'MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS
-             (MAP 'BIT-VECTOR (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
-                  (SUBSEQ BITS 0
-                          (LET ((N (LENGTH BITS)))
-                            (CASE (ELT BITS (1- N))
-                              ((#\0 #\1) N)
-                              (T (1- N))))))
-             (IF ARG
-                 (LIST :LENGTH ARG))))))
+                    (APPLY #'MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS
+                           (MAP 'BIT-VECTOR
+                                (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
+                                (SUBSEQ BITS 0
+                                        (LET ((N (LENGTH BITS)))
+                                          (CASE (ELT BITS (1- N))
+                                            ((#\0 #\1) N)
+                                            (T (1- N))))))
+                           (IF ARG
+                               (LIST :LENGTH ARG))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\* #'SIMPLE-BIT-VECTOR-READER
                                 (READTABLE-FOR-MODE MODE)))
@@ -629,9 +643,10 @@
               (FEATUREP TEST))))
     (PEEK-CHAR T STREAM T NIL T)
     (READ-WITH-ECHO (STREAM VALUES FORM)
-      (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP PLUSP :TEST
-             TEST :FORM FORM
-             (AND (NOT *READ-SUPPRESS*) VALUES (LIST :VALUE (CAR VALUES)))))))
+                    (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP
+                           PLUSP :TEST TEST :FORM FORM
+                           (AND (NOT *READ-SUPPRESS*) VALUES
+                                (LIST :VALUE (CAR VALUES)))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\+ #'READ-TIME-CONDITIONAL-READER
                                 (READTABLE-FOR-MODE MODE))
