@@ -717,7 +717,7 @@ will be concatenated onto the front of |stream| prior to reading.
                 (,echoed (subseq ,raw-output
                                  0
                                  (if (or (eof-p ;
-                                          (peek-char nil ,stream nil *eof*))
+                                          (peek-char nil ,rewind nil *eof*))
                                          (token-delimiter-p ;
                                           (elt ,raw-output (1- ,length))))
                                      ,length
