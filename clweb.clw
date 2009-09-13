@@ -105,8 +105,9 @@ The remainder of the exported symbols are condition classes for the various
 errors and warnings that may be generated while processing a web.
 
 @e
+(require 'rt "rt")
 (defpackage "CLWEB"
-  (:use "COMMON-LISP")
+  (:use "COMMON-LISP" "RT")
   (:export "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
@@ -1426,20 +1427,23 @@ evaluated code-parts should be used only for establishing state that is
 needed by the reader: package definitions, structure definitions that are
 used with \.{\#S}, \etc.
 
+And \.{@@t} (`t' for `test') is used to introduce some testing code, which
+may be optionally elided during tangling or weaving.
+
 @l
 (defclass start-code-marker (marker)
   ((name :reader section-name :initarg :name)
-   (evalp :reader evaluated-code-p :initarg :evalp))
+   (evalp :reader evaluated-code-p :initarg :evalp)
+   (testp :reader test-code-p :initarg :testp))
   (:default-initargs :name nil :evalp nil))
 
 (defun start-code-reader (stream sub-char arg)
   (declare (ignore stream arg))
   (make-instance 'start-code-marker
-                 :evalp (ecase (char-downcase sub-char)
-                          ((#\l #\p) nil)
-                          ((#\e) t))))
+                 :evalp (char= (char-downcase sub-char) #\e)
+                 :testp (char= (char-downcase sub-char) #\t)))
 
-(dolist (sub-char '(#\l #\p #\e))
+(dolist (sub-char '(#\l #\p #\e #\t))
   (set-control-code sub-char #'start-code-reader '(:TeX :lisp)))
 
 @ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
