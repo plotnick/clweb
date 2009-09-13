@@ -973,7 +973,7 @@ appear in the output.
 
 @l
 (defun comment-reader (stream char)
-  (if (char= (peek-char nil stream nil nil t) #\Newline)
+  (if (eql (peek-char nil stream nil nil t) #\Newline)
       (progn (read-char stream t nil t) (values))
       (make-instance 'comment-marker
                      :text @<Read characters up to...@>)))

@@ -386,22 +386,20 @@
                                     T) AS CHARPOS = (STREAM-CHARPOS STREAM)
         UNTIL (CHAR= FIRST-CHAR #\))
         IF (CHAR= FIRST-CHAR #\.)
-        DO (WITH-REWIND-STREAM (STREAM STREAM) (READ-CHAR STREAM T)
-                               (LET ((NEXT-CHAR (READ-CHAR STREAM T)))
-                                 (COND
-                                  ((TOKEN-DELIMITER-P NEXT-CHAR)
-                                   (UNLESS (OR LIST *READ-SUPPRESS*)
-                                     (SIMPLE-READER-ERROR STREAM
-                                                          "Nothing appears before . in list."))
-                                   (PUSH *CONSING-DOT* LIST)
-                                   (PUSH CHARPOS CHARPOS-LIST))
-                                  (T (REWIND)
-                                   (LET ((VALUES
-                                          (MULTIPLE-VALUE-LIST
-                                           (READ STREAM T NIL T))))
-                                     (WHEN VALUES
-                                       (PUSH (CAR VALUES) LIST)
-                                       (PUSH CHARPOS CHARPOS-LIST))))))) ELSE
+        DO (WITH-REWIND-STREAM (STREAM STREAM)
+             (READ-CHAR STREAM T)
+             (LET ((NEXT-CHAR (READ-CHAR STREAM T)))
+               (COND
+                ((TOKEN-DELIMITER-P NEXT-CHAR)
+                 (UNLESS (OR LIST *READ-SUPPRESS*)
+                   (SIMPLE-READER-ERROR STREAM
+                                        "Nothing appears before . in list."))
+                 (PUSH *CONSING-DOT* LIST) (PUSH CHARPOS CHARPOS-LIST))
+                (T (REWIND)
+                 (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
+                   (WHEN VALUES
+                     (PUSH (CAR VALUES) LIST)
+                     (PUSH CHARPOS CHARPOS-LIST))))))) ELSE
         DO (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
              (WHEN VALUES
                (PUSH (CAR VALUES) LIST)
@@ -428,7 +426,7 @@
   (SET-MACRO-CHARACTER #\' #'SINGLE-QUOTE-READER NIL (READTABLE-FOR-MODE MODE)))
 (DEFCLASS COMMENT-MARKER (MARKER) ((TEXT :READER COMMENT-TEXT :INITARG :TEXT)))
 (DEFUN COMMENT-READER (STREAM CHAR)
-  (IF (CHAR= (PEEK-CHAR NIL STREAM NIL NIL T) #\Newline)
+  (IF (EQL (PEEK-CHAR NIL STREAM NIL NIL T) #\Newline)
       (PROGN (READ-CHAR STREAM T NIL T) (VALUES))
       (MAKE-INSTANCE 'COMMENT-MARKER :TEXT
                      (WITH-OUTPUT-TO-STRING (S)
@@ -524,16 +522,15 @@
   (DECLARE (IGNORE SUB-CHAR))
   (LET ((*READTABLE* (READTABLE-FOR-MODE NIL)))
     (READ-WITH-ECHO (STREAM VALUES BITS :PREFIX (FORMAT NIL "#~@[~D~]*" ARG))
-                    (APPLY #'MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS
-                           (MAP 'BIT-VECTOR
-                                (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
-                                (SUBSEQ BITS 0
-                                        (LET ((N (LENGTH BITS)))
-                                          (CASE (ELT BITS (1- N))
-                                            ((#\0 #\1) N)
-                                            (T (1- N))))))
-                           (IF ARG
-                               (LIST :LENGTH ARG))))))
+      (APPLY #'MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS
+             (MAP 'BIT-VECTOR (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
+                  (SUBSEQ BITS 0
+                          (LET ((N (LENGTH BITS)))
+                            (CASE (ELT BITS (1- N))
+                              ((#\0 #\1) N)
+                              (T (1- N))))))
+             (IF ARG
+                 (LIST :LENGTH ARG))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\* #'SIMPLE-BIT-VECTOR-READER
                                 (READTABLE-FOR-MODE MODE)))
@@ -643,10 +640,9 @@
               (FEATUREP TEST))))
     (PEEK-CHAR T STREAM T NIL T)
     (READ-WITH-ECHO (STREAM VALUES FORM)
-                    (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP
-                           PLUSP :TEST TEST :FORM FORM
-                           (AND (NOT *READ-SUPPRESS*) VALUES
-                                (LIST :VALUE (CAR VALUES)))))))
+      (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP PLUSP :TEST
+             TEST :FORM FORM
+             (AND (NOT *READ-SUPPRESS*) VALUES (LIST :VALUE (CAR VALUES)))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\+ #'READ-TIME-CONDITIONAL-READER
                                 (READTABLE-FOR-MODE MODE))
