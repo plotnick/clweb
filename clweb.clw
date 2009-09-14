@@ -1814,12 +1814,12 @@ package definitions, structure definitions that are used with \.{\#S}, \etc.
 
 (deftest (start-code-marker 2)
   (with-mode :TeX
-    (evaluated-code-p (read-from-string "@l!")))
+    (not (not (evaluated-code-p (read-from-string "@l!")))))
   t)
 
 (deftest (start-code-marker 3)
   (with-mode :TeX
-    (test-code-p (read-from-string "@t")))
+    (not (not (test-code-p (read-from-string "@t")))))
   t)
 
 @ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
