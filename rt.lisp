@@ -19,6 +19,7 @@
  |  SOFTWARE.                                                                 |
  |----------------------------------------------------------------------------|#
 
+(provide :rt)
 (defpackage :rt
   (:use #:cl)
   (:export #:*do-tests-when-defined* #:*test* #:continue-testing
@@ -252,5 +253,3 @@
           ))
       (finish-output s)
       (null pending))))
-
-(provide 'rt)
