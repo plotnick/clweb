@@ -2192,8 +2192,7 @@ will not affect the calling environment.
 
 @l
 (defun load-web-from-stream (stream print &optional (appendp t))
-  (let (#+sbcl(sb-ext:*evaluator-mode* :compile)
-        (*readtable* *readtable*)
+  (let ((*readtable* *readtable*)
         (*package* *package*)
         (*evaluating* t))
     (dolist (form (tangle (read-code-parts stream appendp)) t)
