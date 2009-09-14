@@ -1985,7 +1985,7 @@ tiny state machine that models the global syntax of a \WEB\ file.
 explicit closing delimiters.) It returns a list of |section| objects.
 
 @l
-(defun read-sections (input-stream &optional (appendp t))
+(defun read-sections (input-stream &key (appendp t))
   (with-charpos-input-stream (stream input-stream)
     (flet ((finish-section (section commentary code)
              @<Trim whitespace and reverse...@>
@@ -2178,11 +2178,12 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 list of all of the forms in all of the unnamed sections' code parts.
 
 @l
-(defun read-code-parts (stream appendp)
+(defun read-code-parts (stream &key (appendp t))
   (apply #'append
          (map 'list
               #'section-code
-              (remove-if #'section-name (read-sections stream appendp)))))
+              (remove-if #'section-name
+                         (read-sections stream :appendp appendp)))))
 
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so that
@@ -2195,11 +2196,11 @@ current values, so that assignments to those variables in the \WEB\ code
 will not affect the calling environment.
 
 @l
-(defun load-web-from-stream (stream print &optional (appendp t))
+(defun load-web-from-stream (stream print &key (appendp t))
   (let ((*readtable* *readtable*)
         (*package* *package*)
         (*evaluating* t))
-    (dolist (form (tangle (read-code-parts stream appendp)) t)
+    (dolist (form (tangle (read-code-parts stream :appendp appendp)) t)
       (if print
           (let ((results (multiple-value-list (eval form))))
             (format t "~&; ~{~S~^, ~}~%" results))
@@ -2235,7 +2236,7 @@ this allows for incremental redefinition.
   (when truename
     (unwind-protect
          (with-open-file (stream truename :direction :input)
-           (load-web-from-stream stream t appendp))
+           (load-web-from-stream stream t :appendp appendp))
       (delete-file truename))))
 
 @ The file tangler operates by writing out the tangled code to a Lisp source
@@ -2267,7 +2268,7 @@ file and then invoking the file compiler on that file.
       (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT." input-file)
       (let ((*evaluating* nil)
             (*print-marker* t))
-        (dolist (form (tangle (read-code-parts input t)))
+        (dolist (form (tangle (read-code-parts input)))
           (pprint form lisp)))))
   @<Complain about any unused named sections@>
   (apply #'compile-file lisp-file args))
