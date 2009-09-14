@@ -1272,8 +1272,10 @@ unreasonable, since without it the file tangler won't work anyway.
 
 @ @t
 (deftest read-backquote
-  (marker-value (read-form-from-string "`(a b c)"))
-  '(a b c))
+  (let ((marker (read-form-from-string "`(a b c)")))
+    (and (typep marker 'backquote-marker)
+         (marker-value marker)))
+  #.(read-from-string "`(a b c)"))
 
 @ {\it Comma\/} is really just part of the backquote-syntax, and so we're
 after the same goal as above: reconstructing just enough of the original
