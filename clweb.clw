@@ -112,7 +112,10 @@ errors and warnings that may be generated while processing a web.
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
-           "SIMPLE-READER-ERROR"
+           "AMBIGUOUS-PREFIX-ERROR"
+           "SECTION-NAME-CONTEXT-ERROR"
+           "SECTION-NAME-USE-ERROR"
+           "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING"))
 (in-package "CLWEB")
 
@@ -211,6 +214,11 @@ development.
 @ @<Initialize global variables@>=
 (setf (fill-pointer *sections*) 0)
 
+@ @t
+(deftest current-section
+  (eql (make-instance 'section) (current-section))
+  t)
+
 @ We keep named sections in a binary search tree whose keys are section
 names and whose values are code forms; the tangler will replace references
 to those names with the associated code. We use a tree instead of, say,
@@ -265,6 +273,21 @@ whether or not the node was already in the tree.
         (setf (right-child parent) node)))
   (values node nil))
 
+@ @t
+(deftest bst
+  (let ((tree (make-instance 'binary-search-tree :key 0)))
+    (find-or-insert -1 tree)
+    (find-or-insert 1 tree)
+    (values (node-key tree)
+            (node-key (left-child tree))
+            (node-key (right-child tree))))
+  0 -1 1)
+
+(deftest bst-find-no-insert
+  (let ((tree (make-instance 'binary-search-tree :key 0)))
+    (find-or-insert -1 tree :insert-if-not-found nil))
+  nil nil)
+
 @ As mentioned above, named sections can be defined piecemeal, with the
 code spread out over several sections in the \CLWEB\ source. We might think
 of a named section as a sort of `virtual' section, which consists of a
@@ -302,6 +325,24 @@ the new forms replace the old, such as during interactive development.
             (append (section-code section) forms)
             forms)))
 
+@ @t
+(deftest set-named-section-code
+  (let ((section (make-instance 'named-section)))
+    (setf (section-code section) '(a b c)))
+  (a b c))
+
+(deftest append-named-section-code
+  (let ((section (make-instance 'named-section)))
+    (setf (section-code section) '(a))
+    (setf (section-code section) '(b c)))
+  (a b c))
+
+(deftest replace-named-section-code
+  (let ((section (make-instance 'named-section)))
+    (setf (section-code section) '(a b c))
+    (setf (section-code section :appendp nil) '(d e f)))
+  (d e f))
+
 @ Section names in the input file can be abbreviated by giving a prefix of
 the full name followed by `$\ldots$': e.g., \.{@@<Frob...@@>} might refer
 to the section named `Frob \(foo\) and tweak \(bar\)'.
@@ -317,6 +358,11 @@ segment of the name.
     (if (string= name "..." :start1 (max (- len 3) 0) :end1 len)
         (values t (- len 3))
         (values nil len))))
+
+@ @t
+(deftest (section-name-prefix-p 1) (section-name-prefix-p "a") nil 1)
+(deftest (section-name-prefix-p 2) (section-name-prefix-p "ab...") t 2)
+(deftest (section-name-prefix-p 3) (section-name-prefix-p "abcd...") t 4)
 
 @ Next we need some special comparison routines for section names that
 might be abbreviations. We'll use these as the |:test| and |:predicate|
@@ -335,6 +381,16 @@ functions, respectively, for our \csc{bst}.
         (if (or prefix-1-p prefix-2-p)
             (string-equal name1 name2 :end1 end :end2 end)
             (string-equal name1 name2))))))
+
+@ @t
+(deftest (section-name-lessp 1) (section-name-lessp "b" "a") nil)
+(deftest (section-name-lessp 2) (section-name-lessp "b..." "a...") nil)
+(deftest (section-name-lessp 3) (section-name-lessp "ab" "a...") nil)
+
+(deftest (section-name-equal 1) (section-name-equal "a" "b") nil)
+(deftest (section-name-equal 2) (section-name-equal "a" "a") t)
+(deftest (section-name-equal 3) (section-name-equal "a..." "ab") t)
+(deftest (section-name-equal 4) (section-name-equal "a..." "ab...") t)
 
 @ When we look up a named section, either the name used to perform the
 lookup, the name for the section in the tree, or both might be a prefix
@@ -424,6 +480,11 @@ characters with a single space.
             do (setq squeezing nil) and collect char into chars
         finally (return (coerce chars 'string))))
 
+@ @t
+(deftest (squeeze 1) (squeeze "abc") "abc")
+(deftest (squeeze 2) (squeeze "ab c") "ab c")
+(deftest (squeeze 3) (squeeze (format nil " a b ~C c " #\Tab)) "a b c")
+
 @ The next routine is our primary interface to named sections: it looks up
 a section by name in the tree, and creates a new one if no such section
 exists.
@@ -453,6 +514,34 @@ the shortest available prefix, since we detect ambiguous matches.)
               (and old-prefix-p new-prefix-p (< new-len old-len)))
       (setf (section-name section) name))))
 
+@ @t
+(defvar *test-named-sections*
+  (let ((sections (make-instance 'named-section :name "baz" :code '(baz))))
+    (setf (section-code (find-or-insert "foo" sections)) '(foo))
+    (setf (section-code (find-or-insert "bar" sections)) '(bar))
+    (setf (section-code (find-or-insert "qux" sections)) '(qux))
+    sections))
+
+(defun find-test-section (name)
+  (find-or-insert name *test-named-sections* :insert-if-not-found nil))
+
+(deftest find-named-section (section-name (find-test-section "bar")) "bar")
+(deftest find-section-by-prefix (section-name (find-test-section "q...")) "qux")
+(deftest find-section-by-ambiguous-prefix
+  (section-name
+   (handler-bind ((ambiguous-prefix-error
+                   (lambda (condition)
+                     (declare (ignore condition))
+                     (invoke-restart 'use-alt-match))))
+     (find-test-section "b...")))
+  "bar")
+
+(deftest find-section
+  (let ((*named-sections* *test-named-sections*))
+    (find-section (format nil " foo  bar ~C baz..." #\Tab))
+    (section-name (find-section "foo...")))
+  "foo")
+
 @*Reading. We distinguish five distinct modes for reading. Limbo mode is
 used for \TeX\ text that proceeds the first section in a file. \TeX\ mode
 is used for reading the commentary that begins a section. Lisp mode is
@@ -479,6 +568,13 @@ stores a virgin copy of the standard readtable.
   (declare (type (or mode null) mode))
   (cdr (assoc mode *readtables*)))
 
+@ @t
+(deftest (readtable-for-mode 1) (readtablep (readtable-for-mode :tex)) t)
+(deftest (readtable-for-mode 2) (readtablep (readtable-for-mode nil)) t)
+(deftest (readtable-for-mode 3)
+  (eql (readtable-for-mode :tex) (readtable-for-mode :lisp))
+  nil)
+
 @ The following macro is just a bit of syntactic sugar for executing the
 given forms with |*readtable*| bound appropriately for the given mode.
 
@@ -486,6 +582,12 @@ given forms with |*readtable*| bound appropriately for the given mode.
 (defmacro with-mode (mode &body body)
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
+
+@ @t
+(deftest with-mode
+  (loop for (mode . readtable) in *readtables*
+        always (with-mode mode (eql *readtable* readtable)))
+  t)
 
 @ Sometimes we'll have to detect and report errors during reading. This
 condition class and associated signaling function allow |format|-style
@@ -513,6 +615,10 @@ error reporting.
 (defun eof-p (x) (eq x *eof*))
 (deftype eof () '(satisfies eof-p))
 
+@ @t
+(deftest eof-p (eof-p (read-from-string "" nil *eof*)) t)
+(deftest eof-type (typep (read-from-string "" nil *eof*) 'eof) t)
+
 @ We'll occasionally need to know if a given character terminates a token
 or not. This function answers that question, but only approximately---if
 the user has frobbed the current readtable and set non-standard characters
@@ -527,6 +633,10 @@ obtaining a list of all the characters with a given syntax.
       (multiple-value-bind (function non-terminating-p)
           (get-macro-character char)
         (and function (not non-terminating-p)))))
+
+@ @t
+(deftest (token-delimiter-p 1) (not (token-delimiter-p #\Space)) nil)
+(deftest (token-delimiter-p 2) (not (token-delimiter-p #\))) nil)
 
 @ We want the weaver to output properly indented code, but it's basically
 impossible to automatically indent Common Lisp code without a complete
@@ -676,6 +786,29 @@ is bound to a proxy stream the tracks the character position for |stream|.
      (unwind-protect (progn ,@body)
        (release-charpos-stream ,var))))
 
+@ @t
+(deftest charpos-input-stream
+  (with-charpos-input-stream (s (make-string-input-stream
+                                 (format nil "012~%abc")))
+    (values (stream-charpos s)
+            (read-line s)
+            (stream-charpos s)
+            (read-char s)
+            (read-char s)
+            (read-char s)
+            (stream-charpos s)))
+  0 "012" 0 #\a #\b #\c 3)
+
+(deftest charpos-output-stream
+  (let ((string-stream (make-string-output-stream)))
+    (with-charpos-output-stream (s string-stream)
+      (values (stream-charpos s)
+              (progn (write-string "012" s) (stream-charpos s))
+              (progn (write-char #\Newline s) (stream-charpos s))
+              (progn (write-string "abc" s) (stream-charpos s))
+              (get-output-stream-string string-stream))))
+  0 3 0 3 #.(format nil "012~%abc"))
+
 @ Sometimes we'll want to look more than one character ahead in a stream.
 This macro lets us do so, after a fashion: it executes |body| in a lexical
 environment where |var| is bound to a stream whose input comes from
@@ -693,6 +826,16 @@ state prior to any reads executed in the body.
                              (get-output-stream-string ,out))
                             ,var))))
          ,@body))))
+
+@ @t
+(deftest rewind-stream
+  (with-rewind-stream (s (make-string-input-stream "abcdef"))
+    (values (read-char s)
+            (read-char s)
+            (read-char s)
+            (progn (rewind) (read-char s))
+            (progn (rewind) (read-line s))))
+  #\a #\b #\c #\a "bcdef")
 
 @ And sometimes, we'll want to call |read| on a stream, and keep a copy of
 the characters that |read| actually scans. This macro reads from |stream|,
@@ -725,6 +868,17 @@ will be concatenated onto the front of |stream| prior to reading.
                                      (1- ,length)))))
            (declare (ignorable ,values ,echoed))
            ,@body)))))
+
+@ @t
+(deftest read-with-echo
+  (read-with-echo ((make-string-input-stream "foo bar") values chars)
+    (values values chars))
+  (foo) "foo ")
+
+(deftest read-with-echo-to-eof
+  (read-with-echo ((make-string-input-stream "foo") values chars)
+    (values values chars))
+  (foo) "foo")
 
 @ Next, we define a class of objects called {\it markers\/} that denote
 abstract objects in source code. Some of these objects, such as newlines
@@ -785,6 +939,20 @@ reader routines, but will break others, so be careful.
         (when (marker-boundp obj)
           (princ (marker-value obj) stream)))))
 
+@ @t
+(deftest print-marker
+  (let ((*print-marker* t))
+    (format nil "~A" (make-instance 'marker :value 'foo)))
+  "FOO")
+
+(deftest print-marker-unreadably
+  (let ((*print-marker* nil)
+        (*print-readably* t))
+    (handler-case (format nil "~W" (make-instance 'marker :value 'foo))
+      (print-not-readable (condition)
+        (marker-value (print-not-readable-object condition)))))
+  foo)
+
 @ A few of the markers behave differently when tangling for the purposes
 of evaluation (e.g., within a call to |load-web|) than when writing out a
 tangled Lisp source file. We need this distinction only for read-time
@@ -810,6 +978,12 @@ since indentation is completely ignored there.
                        (declare (ignore stream char))
                        (make-instance 'newline-marker))
                      nil (readtable-for-mode :lisp))
+
+@ @t
+(deftest read-newline
+  (newlinep (with-input-from-string (s (format nil "~%"))
+              (with-mode :lisp (read s))))
+  t)
 
 @ The rest of the reader macro functions for standard macro characters are
 defined in the order given in section~2.4 of the \csc{ansi} Common Lisp
@@ -934,6 +1108,54 @@ in which case we don't want to push anything.
     (push (car values) list)
     (push charpos charpos-list)))
 
+@ When we're testing the reader functions, we'll often want to read from
+a string-stream that tracks character positions.
+
+@t
+(defmacro read-from-string-with-charpos (string &optional
+                                         (eof-error-p t)
+                                         (eof-value nil) &key
+                                         (preserve-whitespace nil) &aux
+                                         (string-stream (gensym))
+                                         (charpos-stream (gensym)))
+  `(with-open-stream (,string-stream (make-string-input-stream ,string))
+     (with-charpos-input-stream (,charpos-stream ,string-stream)
+       (if ,preserve-whitespace
+           (read-preserving-whitespace ,charpos-stream ,eof-error-p ,eof-value)
+           (read ,charpos-stream ,eof-error-p ,eof-value)))))
+
+@ In fact, most of the tests will involve reading a single Lisp form.
+
+@t
+(defun read-form-from-string (string &key (mode :lisp))
+  (with-mode mode
+    (read-from-string-with-charpos string)))
+
+@ @t
+(deftest read-empty-list-inner-lisp
+  (typep (read-form-from-string "()" :mode :inner-lisp) 'empty-list-marker)
+  t)
+
+(deftest read-empty-list
+  (typep (read-form-from-string "()") 'empty-list-marker)
+  t)
+
+(deftest read-list-inner-lisp
+  (listp (read-form-from-string "(a b c)" :mode :inner-lisp))
+  t)
+
+(deftest read-list
+  (marker-value (read-form-from-string "(a b c)"))
+  (a b c))
+
+(deftest read-dotted-list
+  (marker-value (read-form-from-string "(a b . c)"))
+  (a b . c))
+
+(deftest list-marker-charpos
+  (list-marker-charpos (read-form-from-string "(a b c)"))
+  (1 3 5))
+
 @ {\it Single-Quote.} We want to distinguish between a form quoted with
 a single-quote and one quoted (for whatever reason) with |quote|, another
 distinction ignored by the standard Lisp reader. We'll use this marker
@@ -955,6 +1177,14 @@ might think is needed.
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\' #'single-quote-reader nil (readtable-for-mode mode)))
+
+@ @t
+(deftest read-quoted-form
+  (let ((marker (read-form-from-string "'foo")))
+    (values (quoted-form marker)
+            (marker-value marker)))
+  foo
+  (quote foo))
 
 @ {\it Semicolon.} Comments in Lisp code also need to be preserved for
 output during weaving. Comment markers are always unbound, and are
@@ -988,6 +1218,18 @@ appear in the output.
       ((char= (peek-char nil stream nil #\Newline t) #\Newline))
     (write-char (read-char stream t nil t) s)))
 
+@ @t
+(deftest read-comment
+  (let ((marker (read-form-from-string "; foo")))
+    (values (comment-text marker)
+            (marker-boundp marker)))
+  "; foo"
+  nil)
+
+(deftest soft-newline
+  (read-form-from-string (format nil ";~%foo"))
+  foo)
+
 @ {\it Backquote\/} is hairy, and so we use a kludge to avoid implementing
 the whole thing. Our reader macro functions for |#\`| and |#\,| do the
 absolute minimum amount of processing necessary to be able to reconstruct
@@ -1008,8 +1250,9 @@ unreasonable, since without it the file tangler won't work anyway.
 (defmethod marker-value ((marker backquote-marker))
   (let ((*print-pretty* nil)
         (*print-readably* t)
+        (*print-marker* t)
         (*readtable* (readtable-for-mode nil)))
-    (read-from-string (prin1-to-string marker))))
+    (values (read-from-string (prin1-to-string marker)))))
 
 (defmethod print-object ((obj backquote-marker) stream)
   (if *print-marker*
@@ -1022,6 +1265,11 @@ unreasonable, since without it the file tangler won't work anyway.
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\` #'backquote-reader nil (readtable-for-mode mode)))
+
+@ @t
+(deftest read-backquote
+  (marker-value (read-form-from-string "`(a b c)"))
+  '(a b c))
 
 @ {\it Comma\/} is really just part of the backquote-syntax, and so we're
 after the same goal as above: reconstructing just enough of the original
@@ -1057,6 +1305,11 @@ value.
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\, #'comma-reader nil (readtable-for-mode mode)))
 
+@ @t
+(deftest read-comma
+  (eval (marker-value (read-form-from-string "`(a ,@'(b c) d)")))
+  (a b c d))
+
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
 handle each sub-char individually, and unfortunately we need to override
@@ -1077,9 +1330,17 @@ of the CL standard.
   (set-dispatch-macro-character #\# #\' #'sharpsign-quote-reader ;
                                 (readtable-for-mode mode)))
 
-@ Sharpsign left-parenthesis and sharpsign asterisk create |simple-vector|s
-and |simple-bit-vector|s, respectively. The feature that we care about
-preserving is the length specification and consequent possible abbreviation.
+@ @t
+(deftest read-function
+  (let ((marker (read-form-from-string "#'identity")))
+    (values (quoted-form marker)
+            (marker-value marker)))
+  identity
+  #'identity)
+
+@ Sharpsign left-parenthesis creates |simple-vector|s. The feature that we
+care about preserving is the length specification and consequent possible
+abbreviation.
 
 @l
 (defclass simple-vector-marker (marker)
@@ -1121,9 +1382,15 @@ preserving is the length specification and consequent possible abbreviation.
   (set-dispatch-macro-character #\# #\( #'simple-vector-reader ;
                                 (readtable-for-mode mode)))
 
+@ @t
+(deftest read-simple-vector
+  (marker-value (read-form-from-string "#5(a b c)"))
+  #(a b c c c))
+
 @ Sharpsign asterisk is similar, but the token following the asterisk must
-be composed entirely of \.{0}s and \.{1}s. It supports the same kind of
-abbreviation that \.{\#()} does.
+be composed entirely of \.{0}s and \.{1}s, from which a |simple-bit-vector|
+is constructed. It supports the same kind of abbreviation that \.{\#()}
+does.
 
 Note the use of the word `token' above. By defining \.{\#*} in terms of the
 {\it token\/} following the \.{*}, the authors of the standard have made it
@@ -1160,6 +1427,11 @@ token, so we have to be careful.
      (subseq bits 0 (let ((n (length bits)))
                       (case (elt bits (1- n)) ((#\0 #\1) n) (t (1- n))))))
 
+@ @t
+(deftest read-bit-vector
+  (marker-value (read-form-from-string "#5*101"))
+  #5*101)
+
 @ Sharpsign dot permits read-time evaluation. Ordinarily, of course, the
 form evaluated is lost, as only the result of the evaluation is returned.
 We want to preserve the form for both weaving and tangling to a file. But
@@ -1189,7 +1461,8 @@ value; and in a tangled source file, we get a \.{\#.} form.
 
 (defun sharpsign-dot-reader (stream sub-char arg)
   (declare (ignore sub-char arg))
-  (let ((form (read stream t nil t)))
+  (let* ((*readtable* (if *evaluating* (readtable-for-mode nil) *readtable*))
+         (form (read stream t nil t)))
     (unless *read-suppress*
       (unless *read-eval*
         (simple-reader-error stream "can't read #. while *READ-EVAL* is NIL"))
@@ -1198,6 +1471,20 @@ value; and in a tangled source file, we get a \.{\#.} form.
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader ;
                                 (readtable-for-mode mode)))
+
+@ @t
+(deftest (read-time-eval 1)
+  (let* ((*read-eval* t)
+         (*evaluating* nil)
+         (*print-marker* t))
+    (prin1-to-string (marker-value (read-form-from-string "#.(+ 1 1)"))))
+  "#.(+ 1 1)")
+
+(deftest (read-time-eval 2)
+  (let* ((*read-eval* t)
+         (*evaluating* t))
+    (marker-value (read-form-from-string "#.(+ 1 1)")))
+  2)
 
 @ Sharpsign B, O, X, and~R all represent rational numbers in a specific
 radix, but the radix is discarded by the standard reader, which just
@@ -1224,6 +1511,21 @@ the actual value, and store the radix in our marker.
 (funcall (get-dispatch-macro-character #\# sub-char (readtable-for-mode nil))
          stream sub-char arg)
 
+@ @t
+(deftest (read-radix 1)
+  (let ((marker (read-form-from-string "#B1011")))
+    (values (radix-marker-base marker)
+            (marker-value marker)))
+  2
+  11)
+
+(deftest (read-radix 2)
+  (let ((marker (read-form-from-string "#14R11")))
+    (values (radix-marker-base marker)
+            (marker-value marker)))
+  14
+  15)
+
 @ Sharpsign~S requires determining the standard constructor function of the
 structure type named, which we simply can't do portably. So we use the same
 trick we used for backquote above: we cache the form as given, then dump it
@@ -1237,8 +1539,9 @@ out to a string and let the standard reader parse it when we need the value.
 (defmethod marker-value ((marker structure-marker))
   (let ((*print-pretty* nil)
         (*print-readably* t)
+        (*print-marker* t)
         (*readtable* (readtable-for-mode nil)))
-    (read-from-string (prin1-to-string marker))))
+    (values (read-from-string (prin1-to-string marker)))))
 
 (defmethod print-object ((obj structure-marker) stream)
   (if *print-marker*
@@ -1274,6 +1577,12 @@ This routine, adapted from SBCL, interprets such an expression.
        (t
         (error "unknown operator in feature expression: ~S." x))))
     (symbol (not (null (member x *features* :test #'eq))))))
+
+@ @t
+(deftest featurep
+  (let ((*features* '(:a :b)))
+    (featurep '(:and :a (:or :c :b) (:not :d))))
+  t)
 
 @ For sharpsign +/--, we use the same sort of trick we used for \.{\#.}
 above: we have a marker that returns the appropriate value when tangling for
@@ -1334,6 +1643,28 @@ characters that the reader scans, and use that to reconstruct the form.
   (set-dispatch-macro-character #\# #\- #'read-time-conditional-reader ;
                                 (readtable-for-mode mode)))
 
+@ @t
+(deftest (read-time-conditional 1)
+  (let ((*features* '(:a))
+        (*evaluating* nil)
+        (*print-marker* t))
+    (values (prin1-to-string (marker-value (read-form-from-string "#+a 1")))
+            (prin1-to-string (marker-value (read-form-from-string "#-a 1")))))
+  "#+:A 1"
+  "#-:A 1")
+
+(deftest (read-time-conditional 2)
+  (let ((*features* '(:a))
+        (*evaluating* t))
+    (values (marker-value (read-form-from-string "#+a 1"))
+            (marker-value (read-form-from-string "#-b 2"))
+            (marker-boundp (read-form-from-string "#-a 1"))
+            (marker-boundp (read-form-from-string "#+b 2"))))
+  1
+  2
+  nil
+  nil)
+
 @ So much for the standard macro characters. Now we're ready to move
 on to \WEB-specific reading. We accumulate \TeX\ mode material such as
 commentary, section names, \etc. using the following function, which reads
@@ -1351,6 +1682,14 @@ from |stream| until encountering either \EOF\ or an element of the
           until (or (eof-p char) (member char control-chars))
           do (write-char (read-char stream) string))))
 
+@ @t
+(deftest snarf-until-control-char
+  (with-input-from-string (s "abc*123")
+    (values (snarf-until-control-char s #\*)
+            (snarf-until-control-char s '(#\a #\3))))
+  "abc"
+  "*12")
+
 @ In \TeX\ mode (including restricted contexts), we allow embedded Lisp
 code to be surrounded by \pb, where it is read in inner-Lisp mode.
 
@@ -1361,6 +1700,12 @@ code to be surrounded by \pb, where it is read in inner-Lisp mode.
 
 (dolist (mode '(:TeX :restricted))
   (set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode mode)))
+
+@ @t
+(deftest read-inner-lisp
+  (with-mode :TeX
+    (values (read-from-string "|foo bar|")))
+  (foo bar))
 
 @ The call to |read-delimited-list| in |read-inner-lisp| will only stop at
 the closing \v\ if we make it a terminating macro character, overriding its
@@ -1378,7 +1723,7 @@ reader macro functions that implement the control codes.
 (dolist (mode *modes*)
   ;; The CL standard does not say that calling |make-dispatch-macro-character|
   ;; on a character that's already a dispatching macro character is supposed
-  ;; to signal an error, but SBCL does so; hence the |ignore-errors|.
+  ;; to signal an error, but SBCL does so anyway; hence the |ignore-errors|.
   (ignore-errors
     (make-dispatch-macro-character #\@ t (readtable-for-mode mode))))
 
@@ -1397,6 +1742,12 @@ it should really only be used in \TeX\ text.
 (set-control-code #\@ (lambda (stream sub-char arg)
                         (declare (ignore sub-char stream arg))
                         (string "@")))
+
+@ @t
+(deftest literal-@
+  (with-mode :TeX
+    (values (read-from-string "@@")))
+  "@")
 
 @ Sections are introduced by the two section-starting control codes,
 \.{@@\ } and~\.{@@*}, which differ only in the way they are output during
@@ -1446,6 +1797,28 @@ may be optionally elided during tangling or weaving.
 (dolist (sub-char '(#\l #\p #\e #\t))
   (set-control-code sub-char #'start-code-reader '(:TeX :lisp)))
 
+@ @t
+(deftest (start-code-marker @l)
+  (with-mode :TeX
+    (values-list (mapcar (lambda (marker)
+                           (and (typep marker 'start-code-marker)
+                                (not (evaluated-code-p marker))
+                                (not (test-code-p marker))))
+                         (list (read-from-string "@l")
+                               (read-from-string "@p")))))
+  t
+  t)
+
+(deftest (start-code-marker @e)
+  (with-mode :TeX
+    (evaluated-code-p (read-from-string "@e")))
+  t)
+
+(deftest (start-code-marker @t)
+  (with-mode :TeX
+    (test-code-p (read-from-string "@t")))
+  t)
+
 @ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
 called {\it control text}, that extends to the next \.{@@>}. When we first
 read control text, we ignore inner-Lisp material (that is, Lisp forms
@@ -1456,14 +1829,25 @@ material.
 (defvar *end-control-text* (make-symbol "@>"))
 (set-control-code #\> (constantly *end-control-text*) :restricted)
 
-(defun read-control-text (stream)
+(defun read-control-text (stream &optional
+                          (eof-error-p t)
+                          (eof-value nil)
+                          (recursive-p nil))
   (with-mode :restricted
     (apply #'concatenate 'string
            (loop for text = (snarf-until-control-char stream #\@)
-                 as x = (read-preserving-whitespace stream t nil t)
+                 as x = (read-preserving-whitespace stream
+                                                    eof-error-p eof-value
+                                                    recursive-p)
                  collect text
                  if (eq x *end-control-text*) do (loop-finish)
                  else collect x))))
+
+@ @t
+(deftest read-control-text
+  (with-input-from-string (s "frob |foo|@>")
+    (read-control-text s))
+  "frob |foo|")
 
 @ The control code \.{@@<} introduces a section name, which extends to the
 closing \.{@@>}. Its meaning is context-dependent.
@@ -1480,7 +1864,7 @@ citations, and so are not expanded.
 (defun make-section-name-reader (definition-allowed-p)
   (lambda (stream sub-char arg)
     (declare (ignore sub-char arg))
-    (let* ((name (read-control-text stream))
+    (let* ((name (read-control-text stream t nil t))
            (definitionp (eql (peek-char nil stream nil nil t) #\=)))
       (if definitionp
           (if definition-allowed-p
@@ -1497,22 +1881,70 @@ citations, and so are not expanded.
 (set-control-code #\< (make-section-name-reader t) :TeX)
 (set-control-code #\< (make-section-name-reader nil) '(:lisp :inner-lisp))
 
+@ @<Define condition classes@>=
+(define-condition section-name-context-error (error)
+  ((name :reader section-name :initarg :name)))
+
+(define-condition section-name-definition-error (section-name-context-error)
+  ()
+  (:report (lambda (condition stream)
+             (format stream "Can't define a named section in Lisp mode: ~A"
+                     (section-name condition)))))
+
+(define-condition section-name-use-error (section-name-context-error)
+  ()
+  (:report (lambda (condition stream)
+             (format stream "Can't use a section name in TeX mode: ~A"
+                     (section-name condition)))))
+
 @ @<Signal an error about section definition in Lisp mode@>=
-(restart-case
-    (error "Can't define a named section in Lisp mode: ~A" name)
+(restart-case (error 'section-name-definition-error :name name)
   (use-section ()
     :report "Don't define the section, just use it."
     (find-section name)))
 
 @ @<Signal an error about section name use in \TeX\ mode@>=
-(restart-case
-    (error "Can't use a section name in TeX mode: ~A" name)
+(restart-case (error 'section-name-use-error :name name)
   (name-section ()
     :report "Name the current section and start the code part."
     (make-instance 'start-code-marker :name name))
   (cite-section ()
     :report "Assume the section is just being cited."
     (find-section name)))
+
+@ @t
+(deftest (read-section-name :TeX)
+  (with-mode :TeX
+    (section-name (read-from-string "@<foo@>=")))
+  "foo")
+
+(deftest (read-section-name :lisp)
+  (let ((*named-sections* *test-named-sections*))
+    (with-mode :lisp
+      (section-name (read-from-string "@<foo@>"))))
+  "foo")
+
+(deftest section-name-definition-error
+  (let ((*named-sections* *test-named-sections*))
+    (section-name
+     (handler-bind ((section-name-definition-error
+                     (lambda (condition)
+                       (declare (ignore condition))
+                       (invoke-restart 'use-section))))
+       (with-mode :lisp
+         (read-from-string "@<foo@>=")))))
+  "foo")
+
+(deftest section-name-use-error
+  (let ((*named-sections* *test-named-sections*))
+    (section-name
+     (handler-bind ((section-name-use-error
+                     (lambda (condition)
+                       (declare (ignore condition))
+                       (invoke-restart 'cite-section))))
+       (with-mode :TeX
+         (read-from-string "@<foo@>")))))
+  "foo")
 
 @ When we're accumulating forms from the code part of a section, we'll
 interpret two newlines in a row as ending a paragraph, as in \TeX.
@@ -1531,6 +1963,16 @@ the new object is an empty string or |nil|.
   `(let ((,g ,obj))
      (when (if (stringp ,g) (plusp (length ,g)) ,g)
        (push ,g ,place))))
+
+@ @t
+(deftest maybe-push
+  (let ((list '()))
+    (maybe-push 'a list)
+    (maybe-push nil list)
+    (maybe-push "" list)
+    (maybe-push 'b list)
+    list)
+  (b a))
 
 @ We come now to the heart of the \WEB\ parser. This function is a
 tiny state machine that models the global syntax of a \WEB\ file.
@@ -1690,6 +2132,23 @@ removes unbound markers.
                        (cons a d))
                    (or car-expanded-p cdr-expanded-p)))))))
 
+@ @t
+(deftest (tangle-1 1)
+  (tangle-1 (read-form-from-string "a"))
+  a
+  nil)
+
+(deftest (tangle-1 2)
+  (tangle-1 (read-form-from-string "(a b c)"))
+  (a b c)
+  t)
+
+(deftest (tangle-1 3)
+  (let ((*named-sections* *test-named-sections*))
+    (eql (tangle-1 (read-form-from-string "@<foo@>"))
+         (find-test-section "foo")))
+  t)
+
 @ |tangle| repeatedly calls |tangle-1| on |form| until it can no longer be
 expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 `expanded' flag. This code is adapted from SBCL's |macroexpand|.
@@ -1703,6 +2162,13 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
                    (expand new-form t)
                    (values new-form expanded)))))
     (expand form nil)))
+
+@ @t
+(deftest tangle
+  (let ((*named-sections* *test-named-sections*))
+    (tangle (read-form-from-string (format nil "(a @<foo@>~% b)"))))
+  (a foo b)
+  t)
 
 @ A little utility function invokes the main section reader and returns a
 list of all of the forms in all of the unnamed sections' code parts.
@@ -1796,7 +2262,8 @@ file and then invoking the file compiler on that file.
                           :if-exists :supersede
                           :external-format external-format)
       (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT." input-file)
-      (let ((*evaluating* nil))
+      (let ((*evaluating* nil)
+            (*print-marker* t))
         (dolist (form (tangle (read-code-parts input t)))
           (pprint form lisp)))))
   @<Complain about any unused named sections@>
@@ -2040,6 +2507,12 @@ in the input. Otherwise, $c$ will be output without escaping.
                (string (write-string escape stream)))
         else
           do (write-char char stream)))
+
+@ @t
+(deftest write-string-escaped
+  (with-output-to-string (s)
+    (write-string-escaped "foo#{bar}*baz" s))
+  "foo\\#$\\{$bar$\\}$*baz")
 
 @ @l
 (defun print-string (stream string)
