@@ -104,10 +104,9 @@ it directly.
 The remainder of the exported symbols are condition classes for the various
 errors and warnings that may be generated while processing a web.
 
-@e
-(require 'rt "rt")
+@l!
 (defpackage "CLWEB"
-  (:use "COMMON-LISP" "RT")
+  (:use "COMMON-LISP")
   (:export "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
@@ -118,6 +117,11 @@ errors and warnings that may be generated while processing a web.
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING"))
 (in-package "CLWEB")
+
+@ @t!
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (require 'rt)
+  (use-package "RT"))
 
 @ We'll define our condition classes as we need them.
 
@@ -1764,22 +1768,20 @@ return an instance of the appropriate section class.
 (dolist (sub-char '(#\Space #\*))
   (set-control-code sub-char #'start-section-reader '(:limbo :TeX :lisp)))
 
-@ The control codes \.{@@l} and ~\.{@@p} (where `l' is for `Lisp' and `p'
+@ The control codes \.{@@l} and~\.{@@p} (where `l' is for `Lisp' and `p'
 is for `program'---both control codes do the same thing) begin the code
-part of an unnamed section. They are recognized only in \TeX\ mode---every
-section must begin with a commentary, even if it is empty.
+part of an unnamed section. The control code \.{@@t} is similar, but
+indicates that the code that follows is testing code, which may be
+elided during tangling. Each of these are recognized only in \TeX\
+mode---every section must begin with a commentary, even if it is empty.
 
-The control code \.{@@e} (`e' for `evaluate') is similar to \.{@@l} in that
-it begins the code part of an unnamed section, but every form in that part
-is evaluated by both the tangler and the weaver as soon as they read it,
-{\it in addition to\/} being tangled into the output file (and therefore
-evaluated at run-time, and possibly compile-time, too). Sections containing
-evaluated code-parts should be used only for establishing state that is
-needed by the reader: package definitions, structure definitions that are
-used with \.{\#S}, \etc.
-
-And \.{@@t} (`t' for `test') is used to introduce some testing code, which
-may be optionally elided during tangling or weaving.
+If any of these control codes are immediately followed by an exclamation
+point (\.{!}), then every form in that part will be evaluated by both the
+tangler and the weaver as soon as they read it, {\it in addition to\/}
+being tangled into the output file (and therefore evaluated at run-time,
+and possibly compile-time, too). Sections containing evaluated code-parts
+should be used only for establishing state that is needed by the reader:
+package definitions, structure definitions that are used with \.{\#S}, \etc.
 
 @l
 (defclass start-code-marker (marker)
@@ -1789,16 +1791,17 @@ may be optionally elided during tangling or weaving.
   (:default-initargs :name nil :evalp nil))
 
 (defun start-code-reader (stream sub-char arg)
-  (declare (ignore stream arg))
+  (declare (ignore arg))
   (make-instance 'start-code-marker
-                 :evalp (char= (char-downcase sub-char) #\e)
-                 :testp (char= (char-downcase sub-char) #\t)))
+                 :testp (eql (char-downcase sub-char) #\t)
+                 :evalp (and (eql (peek-char nil stream nil nil t) #\!)
+                             (read-char stream))))
 
-(dolist (sub-char '(#\l #\p #\e #\t))
+(dolist (sub-char '(#\l #\p #\t))
   (set-control-code sub-char #'start-code-reader '(:TeX :lisp)))
 
 @ @t
-(deftest (start-code-marker @l)
+(deftest (start-code-marker 1)
   (with-mode :TeX
     (values-list (mapcar (lambda (marker)
                            (and (typep marker 'start-code-marker)
@@ -1809,12 +1812,12 @@ may be optionally elided during tangling or weaving.
   t
   t)
 
-(deftest (start-code-marker @e)
+(deftest (start-code-marker 2)
   (with-mode :TeX
-    (evaluated-code-p (read-from-string "@e")))
+    (evaluated-code-p (read-from-string "@l!")))
   t)
 
-(deftest (start-code-marker @t)
+(deftest (start-code-marker 3)
   (with-mode :TeX
     (test-code-p (read-from-string "@t")))
   t)
@@ -2040,9 +2043,8 @@ is detected, we also set the name of the current section, which may be |nil|.
       (t (push form commentary)))))
 
 @ The code part of a section consists of zero or more Lisp forms and is
-terminated by either \EOF\ or the start of a new section. If the code
-part was begun by a \.{@@e} control code, we evaluate the code forms as we
-read them.
+terminated by either \EOF\ or the start of a new section. We might also
+need to evaluate the code forms as we read them.
 
 @<Accumulate Lisp-mode material in |code|@>=
 (check-type form start-code-marker)
