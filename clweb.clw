@@ -1846,6 +1846,13 @@ structure definitions that are used with \.{\#S}, \etc.
 
 (set-control-code #\e #'read-evaluated-form :lisp)
 
+@ @t
+(deftest read-evaluated-form
+  (let ((marker (read-form-from-string (format nil "@e~%1"))))
+    (and (typep marker 'evaluated-form-marker)
+         (marker-value marker)))
+  1)
+
 @ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
 called {\it control text}, that extends to the next \.{@@>}. When we first
 read control text, we ignore inner-Lisp material (that is, Lisp forms
