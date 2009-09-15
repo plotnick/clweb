@@ -49,10 +49,13 @@ turn adapted from Knuth's original \WEB\ system. It shares with those
 earlier systems not only their underlying philosophy, but also most of
 their syntax and control codes. Readers unfamiliar with either of them---or
 with literate programming in general---should consult the \CWEB\ manual or
-Knuth's {\it \ldq Literate Programming\rdq}
-(\csc{csli}:~1992).
+Knuth's {\it \ldq Literate Programming\rdq} (\csc{csli}:~1992).
 
-A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
+This is a preliminary, $\alpha$-quality release of the system; for the
+latest version, please visit\par\noindent
+\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}.
+
+@ A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
 control codes, but which is primary depends on your point of view. The
 \CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
 something like writing \TeX\ documents, but with an additional `C mode'
@@ -71,10 +74,6 @@ dispatching reader macro characters in Lisp: they all begin with
 Most of the \CLWEB\ control codes are quite similar to the ones used in
 \CWEB; see the \CWEB\ manual for detailed descriptions of the individual
 codes.
-
-This is a preliminary, $\alpha$-quality release of the system; for the
-latest version, please visit\par\noindent
-\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}.
 
 @ A literate programming system provides two primary operations:
 {\it tangling\/} and {\it weaving\/}. The tangler prepares a literate 
@@ -95,11 +94,13 @@ The weaver has a single entry point: |weave| takes a web as input and
 generates a file that can be fed to \TeX\ to generate a pretty-printed
 version of that web.
 
-The fourth exported symbol, |load-sections-from-temp-file|, is conceptually
+@ We'll start by setting up a package for the system. In addition to the
+top-level tangler and weaver functions mentioned above, there's a fourth
+exported function, |load-sections-from-temp-file|, that is conceptually
 part of the tangler, but is a special-purpose routine designed to be used
 in conjunction with an editor such as Emacs to provide incremental
-redefinition of sections; the user will generally never need to call
-it directly.
+redefinition of sections; the user will generally never need to call it
+directly.
 
 The remainder of the exported symbols are condition classes for the various
 errors and warnings that may be generated while processing a web.
@@ -118,7 +119,12 @@ errors and warnings that may be generated while processing a web.
            "UNUSED-NAMED-SECTION-WARNING"))
 (in-package "CLWEB")
 
-@ @t!
+@ The test suite for this system uses Richard Waters's \csc{rt} library,
+a copy of which is included in the distribution. For more information on
+\csc{rt}, see Richard C.~Waters, ``Supporting the Regression Testing of
+Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991): 47--53.
+
+@t!
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (require 'rt)
   (use-package "RT"))
@@ -153,17 +159,25 @@ ignores it. The code part contains Lisp forms and named section references;
 the tangler will eventually evaluate or compile those forms, while the
 weaver pretty-prints them to the \TeX\ output file.
 
-We'll see below that we need a keyword argument on the |(setf section-code)|
-method for named sections, so we have to define the \csc{gf} manually.
+Finally, a section may be marked as a {\it test section\/}, which is a
+section whose code part contains some sort of tests. Such code may be elided
+by the tangler (for delivery, say, to an environment where requiring a test
+harness at runtime might not be desirable).
 
 @l
 (defclass section ()
   ((name :accessor section-name :initarg :name)
    (number :accessor section-number)
    (commentary :accessor section-commentary :initarg :commentary)
+   (testp :accessor test-section-p :initarg :testp)
    (code :reader section-code :initarg :code))
-  (:default-initargs :commentary nil :name nil :code nil))
+  (:default-initargs :commentary nil :name nil :testp nil :code nil))
 
+@ We'll see below that we need a keyword argument on the
+|(setf section-code)| method for named sections, so we need to
+define that \csc{gf} manually.
+
+@l
 (defgeneric (setf section-code) (forms section &key))
 (defmethod (setf section-code) (forms (section section) &key)
   (setf (slot-value section 'code) forms))
@@ -518,7 +532,11 @@ the shortest available prefix, since we detect ambiguous matches.)
               (and old-prefix-p new-prefix-p (< new-len old-len)))
       (setf (section-name section) name))))
 
-@ @t
+@ We'll use |*test-named-sections*| whenever we need to test with some
+named sections defined. These tests don't depend on these sections having
+code parts, but later tests will.
+
+@t
 (defvar *test-named-sections*
   (let ((sections (make-instance 'named-section :name "baz" :code '(baz))))
     (setf (section-code (find-or-insert "foo" sections)) '(foo))
@@ -1128,7 +1146,8 @@ a string-stream that tracks character positions.
            (read-preserving-whitespace ,charpos-stream ,eof-error-p ,eof-value)
            (read ,charpos-stream ,eof-error-p ,eof-value)))))
 
-@ In fact, most of the tests will involve reading a single Lisp form.
+@ In fact, most of the reader tests will involve reading a single form in
+Lisp mode.
 
 @t
 (defun read-form-from-string (string &key (mode :lisp))
@@ -2052,6 +2071,8 @@ need to evaluate the code forms as we read them.
 (check-type form start-code-marker)
 (with-mode :lisp
   (let ((evalp (evaluated-code-p form)))
+    (unless (section-name section)
+      (setf (test-section-p section) (test-code-p form)))
     (loop
       (setq form (read-preserving-whitespace stream nil *eof* nil))
       (typecase form
@@ -2178,11 +2199,13 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 list of all of the forms in all of the unnamed sections' code parts.
 
 @l
-(defun read-code-parts (stream &key (appendp t))
+(defun read-code-parts (stream &key (appendp t) (elide-tests nil))
   (apply #'append
          (map 'list
               #'section-code
-              (remove-if #'section-name
+              (remove-if (lambda (section)
+                           (or (section-name section)
+                               (and elide-tests (test-section-p section))))
                          (read-sections stream :appendp appendp)))))
 
 @ We're now ready for the high-level tangler interface. We begin with
@@ -2240,11 +2263,15 @@ this allows for incremental redefinition.
       (delete-file truename))))
 
 @ The file tangler operates by writing out the tangled code to a Lisp source
-file and then invoking the file compiler on that file.
+file and then invoking the file compiler on that file. With the exception of
+|elide-tests|, which, when true, causes the code of test sections to be
+omitted from the output file, the arguments are essentially the same as
+those to |cl:compile-file|.
 
 @l
 (defun tangle-file (input-file &rest args &key
                     output-file
+                    (elide-tests nil)
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
@@ -2268,10 +2295,10 @@ file and then invoking the file compiler on that file.
       (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT." input-file)
       (let ((*evaluating* nil)
             (*print-marker* t))
-        (dolist (form (tangle (read-code-parts input)))
+        (dolist (form (tangle (read-code-parts input :elide-tests elide-tests)))
           (pprint form lisp)))))
   @<Complain about any unused named sections@>
-  (apply #'compile-file lisp-file args))
+  (apply #'compile-file lisp-file :allow-other-keys t args))
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
