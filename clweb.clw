@@ -235,12 +235,13 @@ for interactive development.
                                :adjustable t
                                :fill-pointer 0))
 
+(defgeneric push-section (section))
+(defmethod push-section ((section section))
+  (setf (section-number section) (vector-push-extend section *sections*)))
+
 (defmethod initialize-instance :after ((section section) &rest initargs &key)
   (declare (ignore initargs))
   (push-section section))
-
-(defmethod push-section ((section section))
-  (setf (section-number section) (vector-push-extend section *sections*)))
 
 (defun current-section ()
   (elt *sections* (1- (fill-pointer *sections*))))
