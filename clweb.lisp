@@ -940,15 +940,12 @@
   (SET-CONTROL-CODE SUB-CHAR #'START-SECTION-READER '(:LIMBO :TEX :LISP)))
 (DEFCLASS START-CODE-MARKER (MARKER)
           ((NAME :READER SECTION-NAME :INITARG :NAME)
-           (EVALP :READER EVALUATED-CODE-P :INITARG :EVALP)
            (TESTP :READER TEST-CODE-P :INITARG :TESTP))
-          (:DEFAULT-INITARGS :NAME NIL :EVALP NIL))
+          (:DEFAULT-INITARGS :NAME NIL :TESTP NIL))
 (DEFUN START-CODE-READER (STREAM SUB-CHAR ARG)
-  (DECLARE (IGNORE ARG))
-  (MAKE-INSTANCE 'START-CODE-MARKER :TESTP (EQL (CHAR-DOWNCASE SUB-CHAR) #\t)
-                 :EVALP
-                 (AND (EQL (PEEK-CHAR NIL STREAM NIL NIL T) #\!)
-                      (READ-CHAR STREAM))))
+  (DECLARE (IGNORE STREAM ARG))
+  (MAKE-INSTANCE 'START-CODE-MARKER :TESTP
+                 (CHAR= (CHAR-DOWNCASE SUB-CHAR) #\t)))
 (DOLIST (SUB-CHAR '(#\l #\p #\t))
   (SET-CONTROL-CODE SUB-CHAR #'START-CODE-READER '(:TEX :LISP)))
 (DEFTEST (START-CODE-MARKER 1)
@@ -957,18 +954,20 @@
             (MAPCAR
              (LAMBDA (MARKER)
                (AND (TYPEP MARKER 'START-CODE-MARKER)
-                    (NOT (EVALUATED-CODE-P MARKER))
                     (NOT (TEST-CODE-P MARKER))))
              (LIST (READ-FROM-STRING "@l") (READ-FROM-STRING "@p")))))
          T T)
 (DEFTEST (START-CODE-MARKER 2)
          (WITH-MODE :TEX
-           (NOT (NOT (EVALUATED-CODE-P (READ-FROM-STRING "@l!")))))
+           (TEST-CODE-P (READ-FROM-STRING "@t")))
          T)
-(DEFTEST (START-CODE-MARKER 3)
-         (WITH-MODE :TEX
-           (NOT (NOT (TEST-CODE-P (READ-FROM-STRING "@t")))))
-         T)
+(DEFCLASS EVALUATED-FORM-MARKER (MARKER) NIL)
+(DEFUN READ-EVALUATED-FORM (STREAM SUB-CHAR ARG)
+  (DECLARE (IGNORE SUB-CHAR ARG))
+  (LOOP FOR FORM = (READ STREAM T NIL T)
+        UNTIL (NOT (NEWLINEP FORM))
+        FINALLY (RETURN (MAKE-INSTANCE 'EVALUATED-FORM-MARKER :VALUE FORM))))
+(SET-CONTROL-CODE #\e #'READ-EVALUATED-FORM :LISP)
 (DEFVAR *END-CONTROL-TEXT* (MAKE-SYMBOL "@>"))
 (SET-CONTROL-CODE #\> (CONSTANTLY *END-CONTROL-TEXT*) :RESTRICTED)
 (DEFUN READ-CONTROL-TEXT
@@ -1115,29 +1114,31 @@
              (T (PUSH FORM COMMENTARY)))))
        LISP
         (CHECK-TYPE FORM START-CODE-MARKER)
+        (UNLESS (SECTION-NAME SECTION)
+          (SETF (TEST-SECTION-P SECTION) (TEST-CODE-P FORM)))
         (WITH-MODE :LISP
-          (LET ((EVALP (EVALUATED-CODE-P FORM)))
-            (UNLESS (SECTION-NAME SECTION)
-              (SETF (TEST-SECTION-P SECTION) (TEST-CODE-P FORM)))
-            (LOOP (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
-                  (TYPECASE FORM
-                    (EOF (GO EOF))
-                    (SECTION (GO COMMENTARY))
-                    (START-CODE-MARKER
-                     (CERROR "Start a new unnamed section with no commentary."
-                             "Can't start a section with a code part.")
-                     (SETQ FORM (MAKE-INSTANCE 'SECTION))
-                     (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
-                     (CHECK-TYPE FORM SECTION)
-                     (SETQ SECTION FORM
-                           COMMENTARY 'NIL
-                           CODE 'NIL))
-                    (NEWLINE-MARKER
-                     (UNLESS (NULL CODE)
-                       (COND
-                        ((NEWLINEP (CAR CODE)) (POP CODE) (PUSH *PAR* CODE))
-                        (T (PUSH FORM CODE)))))
-                    (T (WHEN EVALP (EVAL (TANGLE FORM))) (PUSH FORM CODE))))))
+          (LOOP (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
+                (TYPECASE FORM
+                  (EOF (GO EOF))
+                  (SECTION (GO COMMENTARY))
+                  (START-CODE-MARKER
+                   (CERROR "Start a new unnamed section with no commentary."
+                           "Can't start a section with a code part.")
+                   (SETQ FORM (MAKE-INSTANCE 'SECTION))
+                   (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
+                   (CHECK-TYPE FORM SECTION)
+                   (SETQ SECTION FORM
+                         COMMENTARY 'NIL
+                         CODE 'NIL))
+                  (NEWLINE-MARKER
+                   (UNLESS (NULL CODE)
+                     (COND ((NEWLINEP (CAR CODE)) (POP CODE) (PUSH *PAR* CODE))
+                           (T (PUSH FORM CODE)))))
+                  (EVALUATED-FORM-MARKER
+                   (LET ((FORM (MARKER-VALUE FORM)))
+                     (EVAL (TANGLE FORM))
+                     (PUSH FORM CODE)))
+                  (T (PUSH FORM CODE)))))
        EOF
         (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
         (RETURN (NREVERSE SECTIONS))))))

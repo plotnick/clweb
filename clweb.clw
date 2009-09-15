@@ -105,7 +105,8 @@ directly.
 The remainder of the exported symbols are condition classes for the various
 errors and warnings that may be generated while processing a web.
 
-@l!
+@l
+@e
 (defpackage "CLWEB"
   (:use "COMMON-LISP")
   (:export "TANGLE-FILE"
@@ -117,6 +118,7 @@ errors and warnings that may be generated while processing a web.
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING"))
+@e
 (in-package "CLWEB")
 
 @ The test suite for this system uses Richard Waters's \csc{rt} library,
@@ -124,7 +126,8 @@ a copy of which is included in the distribution. For more information on
 \csc{rt}, see Richard C.~Waters, ``Supporting the Regression Testing of
 Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991): 47--53.
 
-@t!
+@t
+@e
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (require 'rt)
   (use-package "RT"))
@@ -1793,30 +1796,19 @@ return an instance of the appropriate section class.
 is for `program'---both control codes do the same thing) begin the code
 part of an unnamed section. The control code \.{@@t} is similar, but
 indicates that the code that follows is testing code, which may be
-elided during tangling. Each of these are recognized only in \TeX\
+elided during tangling. All of these are recognized only in \TeX\
 mode---every section must begin with a commentary, even if it is empty.
-
-If any of these control codes are immediately followed by an exclamation
-point (\.{!}), then every form in that part will be evaluated by both the
-tangler and the weaver as soon as they read it, {\it in addition to\/}
-being tangled into the output file (and therefore evaluated at run-time,
-and possibly compile-time, too). Sections containing evaluated code-parts
-should be used only for establishing state that is needed by the reader:
-package definitions, structure definitions that are used with \.{\#S}, \etc.
 
 @l
 (defclass start-code-marker (marker)
   ((name :reader section-name :initarg :name)
-   (evalp :reader evaluated-code-p :initarg :evalp)
    (testp :reader test-code-p :initarg :testp))
-  (:default-initargs :name nil :evalp nil))
+  (:default-initargs :name nil :testp nil))
 
 (defun start-code-reader (stream sub-char arg)
-  (declare (ignore arg))
+  (declare (ignore stream arg))
   (make-instance 'start-code-marker
-                 :testp (eql (char-downcase sub-char) #\t)
-                 :evalp (and (eql (peek-char nil stream nil nil t) #\!)
-                             (read-char stream))))
+                 :testp (char= (char-downcase sub-char) #\t)))
 
 (dolist (sub-char '(#\l #\p #\t))
   (set-control-code sub-char #'start-code-reader '(:TeX :lisp)))
@@ -1826,7 +1818,6 @@ package definitions, structure definitions that are used with \.{\#S}, \etc.
   (with-mode :TeX
     (values-list (mapcar (lambda (marker)
                            (and (typep marker 'start-code-marker)
-                                (not (evaluated-code-p marker))
                                 (not (test-code-p marker))))
                          (list (read-from-string "@l")
                                (read-from-string "@p")))))
@@ -1835,13 +1826,25 @@ package definitions, structure definitions that are used with \.{\#S}, \etc.
 
 (deftest (start-code-marker 2)
   (with-mode :TeX
-    (not (not (evaluated-code-p (read-from-string "@l!")))))
+    (test-code-p (read-from-string "@t")))
   t)
 
-(deftest (start-code-marker 3)
-  (with-mode :TeX
-    (not (not (test-code-p (read-from-string "@t")))))
-  t)
+@ The control code \.{@@e} (`e' for `eval') indicates that the following
+form should be evaluated by the section reader, {\it in addition to\/}
+being tangled into the output file. Evaluated forms should be used only
+for establishing state that is needed by the reader: package definitions,
+structure definitions that are used with \.{\#S}, \etc.
+
+@l
+(defclass evaluated-form-marker (marker) ())
+
+(defun read-evaluated-form (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (loop for form = (read stream t nil t)
+        until (not (newlinep form)) ; skip over newlines
+        finally (return (make-instance 'evaluated-form-marker :value form))))
+
+(set-control-code #\e #'read-evaluated-form :lisp)
 
 @ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
 called {\it control text}, that extends to the next \.{@@>}. When we first
@@ -2064,24 +2067,24 @@ is detected, we also set the name of the current section, which may be |nil|.
       (t (push form commentary)))))
 
 @ The code part of a section consists of zero or more Lisp forms and is
-terminated by either \EOF\ or the start of a new section. We might also
-need to evaluate the code forms as we read them.
+terminated by either \EOF\ or the start of a new section.
 
 @<Accumulate Lisp-mode material in |code|@>=
 (check-type form start-code-marker)
+(unless (section-name section)
+  (setf (test-section-p section) (test-code-p form)))
 (with-mode :lisp
-  (let ((evalp (evaluated-code-p form)))
-    (unless (section-name section)
-      (setf (test-section-p section) (test-code-p form)))
-    (loop
-      (setq form (read-preserving-whitespace stream nil *eof* nil))
-      (typecase form
-        (eof (go eof))
-        (section (go commentary))
-        (start-code-marker @<Complain about starting a section...@>)
-        (newline-marker @<Maybe push the newline marker@>)
-        (t (when evalp (eval (tangle form)))
-           (push form code))))))
+  (loop
+    (setq form (read-preserving-whitespace stream nil *eof* nil))
+    (typecase form
+      (eof (go eof))
+      (section (go commentary))
+      (start-code-marker @<Complain about starting a section...@>)
+      (newline-marker @<Maybe push the newline marker@>)
+      (evaluated-form-marker (let ((form (marker-value form)))
+                               (eval (tangle form))
+                               (push form code)))
+      (t (push form code)))))
 
 @ @<Complain about starting a section without a commentary part@>=
 (cerror "Start a new unnamed section with no commentary."
