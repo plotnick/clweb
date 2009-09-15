@@ -349,20 +349,20 @@ the new forms replace the old, such as during interactive development.
 @ @t
 (deftest set-named-section-code
   (let ((section (make-instance 'named-section)))
-    (setf (section-code section) '(a b c)))
-  (a b c))
+    (setf (section-code section) '(:a :b :c)))
+  (:a :b :c))
 
 (deftest append-named-section-code
   (let ((section (make-instance 'named-section)))
-    (setf (section-code section) '(a))
-    (setf (section-code section) '(b c)))
-  (a b c))
+    (setf (section-code section) '(:a))
+    (setf (section-code section) '(:b :c)))
+  (:a :b :c))
 
 (deftest replace-named-section-code
   (let ((section (make-instance 'named-section)))
-    (setf (section-code section) '(a b c))
-    (setf (section-code section :appendp nil) '(d e f)))
-  (d e f))
+    (setf (section-code section) '(:a :b :c))
+    (setf (section-code section :appendp nil) '(:d :e :f)))
+  (:d :e :f))
 
 @ Section names in the input file can be abbreviated by giving a prefix of
 the full name followed by `$\ldots$': e.g., \.{@@<Frob...@@>} might refer
@@ -542,9 +542,9 @@ code parts, but later tests will.
 @t
 (defvar *test-named-sections*
   (let ((sections (make-instance 'named-section :name "baz" :code '(baz))))
-    (setf (section-code (find-or-insert "foo" sections)) '(foo))
-    (setf (section-code (find-or-insert "bar" sections)) '(bar))
-    (setf (section-code (find-or-insert "qux" sections)) '(qux))
+    (setf (section-code (find-or-insert "foo" sections)) '(:foo))
+    (setf (section-code (find-or-insert "bar" sections)) '(:bar))
+    (setf (section-code (find-or-insert "qux" sections)) '(:qux))
     sections))
 
 (defun find-test-section (name)
@@ -896,14 +896,14 @@ will be concatenated onto the front of |stream| prior to reading.
 
 @ @t
 (deftest read-with-echo
-  (read-with-echo ((make-string-input-stream "foo bar") values chars)
+  (read-with-echo ((make-string-input-stream ":foo :bar") values chars)
     (values values chars))
-  (foo) "foo ")
+  (:foo) ":foo ")
 
 (deftest read-with-echo-to-eof
-  (read-with-echo ((make-string-input-stream "foo") values chars)
+  (read-with-echo ((make-string-input-stream ":foo") values chars)
     (values values chars))
-  (foo) "foo")
+  (:foo) ":foo")
 
 @ Next, we define a class of objects called {\it markers\/} that denote
 abstract objects in source code. Some of these objects, such as newlines
@@ -967,16 +967,16 @@ reader routines, but will break others, so be careful.
 @ @t
 (deftest print-marker
   (let ((*print-marker* t))
-    (format nil "~A" (make-instance 'marker :value 'foo)))
+    (format nil "~A" (make-instance 'marker :value ':foo)))
   "FOO")
 
 (deftest print-marker-unreadably
   (let ((*print-marker* nil)
         (*print-readably* t))
-    (handler-case (format nil "~W" (make-instance 'marker :value 'foo))
+    (handler-case (format nil "~W" (make-instance 'marker :value ':foo))
       (print-not-readable (condition)
         (marker-value (print-not-readable-object condition)))))
-  foo)
+  :foo)
 
 @ A few of the markers behave differently when tangling for the purposes
 of evaluation (e.g., within a call to |load-web|) than when writing out a
@@ -1167,19 +1167,19 @@ Lisp mode.
   t)
 
 (deftest read-list-inner-lisp
-  (listp (read-form-from-string "(a b c)" :mode :inner-lisp))
+  (listp (read-form-from-string "(:a :b :c)" :mode :inner-lisp))
   t)
 
 (deftest read-list
-  (marker-value (read-form-from-string "(a b c)"))
-  (a b c))
+  (marker-value (read-form-from-string "(:a :b :c)"))
+  (:a :b :c))
 
 (deftest read-dotted-list
-  (marker-value (read-form-from-string "(a b . c)"))
-  (a b . c))
+  (marker-value (read-form-from-string "(:a :b . :c)"))
+  (:a :b . :c))
 
 (deftest list-marker-charpos
-  (list-marker-charpos (read-form-from-string "(a b c)"))
+  (list-marker-charpos (read-form-from-string "(1 2 3)"))
   (1 3 5))
 
 @ {\it Single-Quote.} We want to distinguish between a form quoted with
@@ -1206,11 +1206,11 @@ might think is needed.
 
 @ @t
 (deftest read-quoted-form
-  (let ((marker (read-form-from-string "'foo")))
+  (let ((marker (read-form-from-string "':foo")))
     (values (quoted-form marker)
             (marker-value marker)))
-  foo
-  (quote foo))
+  :foo
+  (quote :foo))
 
 @ {\it Semicolon.} Comments in Lisp code also need to be preserved for
 output during weaving. Comment markers are always unbound, and are
@@ -1253,8 +1253,8 @@ appear in the output.
   nil)
 
 (deftest soft-newline
-  (read-form-from-string (format nil ";~%foo"))
-  foo)
+  (read-form-from-string (format nil ";~%:foo"))
+  :foo)
 
 @ {\it Backquote\/} is hairy, and so we use a kludge to avoid implementing
 the whole thing. Our reader macro functions for |#\`| and |#\,| do the
@@ -1294,10 +1294,10 @@ unreasonable, since without it the file tangler won't work anyway.
 
 @ @t
 (deftest read-backquote
-  (let ((marker (read-form-from-string "`(a b c)")))
+  (let ((marker (read-form-from-string "`(:a :b :c)")))
     (and (typep marker 'backquote-marker)
          (marker-value marker)))
-  #.(read-from-string "`(a b c)"))
+  #.(read-from-string "`(:a :b :c)"))
 
 @ {\it Comma\/} is really just part of the backquote-syntax, and so we're
 after the same goal as above: reconstructing just enough of the original
@@ -1335,8 +1335,8 @@ value.
 
 @ @t
 (deftest read-comma
-  (eval (marker-value (read-form-from-string "`(a ,@'(b c) d)")))
-  (a b c d))
+  (eval (marker-value (read-form-from-string "`(:a ,@'(:b :c) :d)")))
+  (:a :b :c :d))
 
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
@@ -1412,8 +1412,8 @@ abbreviation.
 
 @ @t
 (deftest read-simple-vector
-  (marker-value (read-form-from-string "#5(a b c)"))
-  #(a b c c c))
+  (marker-value (read-form-from-string "#5(:a :b :c)"))
+  #(:a :b :c :c :c))
 
 @ Sharpsign asterisk is similar, but the token following the asterisk must
 be composed entirely of \.{0}s and \.{1}s, from which a |simple-bit-vector|
@@ -1732,8 +1732,8 @@ code to be surrounded by \pb, where it is read in inner-Lisp mode.
 @ @t
 (deftest read-inner-lisp
   (with-mode :TeX
-    (values (read-from-string "|foo bar|")))
-  (foo bar))
+    (values (read-from-string "|:foo :bar|")))
+  (:foo :bar))
 
 @ The call to |read-delimited-list| in |read-inner-lisp| will only stop at
 the closing \v\ if we make it a terminating macro character, overriding its
@@ -2169,13 +2169,13 @@ removes unbound markers.
 
 @ @t
 (deftest (tangle-1 1)
-  (tangle-1 (read-form-from-string "a"))
-  a
+  (tangle-1 (read-form-from-string ":a"))
+  :a
   nil)
 
 (deftest (tangle-1 2)
-  (tangle-1 (read-form-from-string "(a b c)"))
-  (a b c)
+  (tangle-1 (read-form-from-string "(:a :b :c)"))
+  (:a :b :c)
   t)
 
 (deftest (tangle-1 3)
@@ -2201,8 +2201,8 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 @ @t
 (deftest tangle
   (let ((*named-sections* *test-named-sections*))
-    (tangle (read-form-from-string (format nil "(a @<foo@>~% b)"))))
-  (a foo b)
+    (tangle (read-form-from-string (format nil "(:a @<foo@>~% :b)"))))
+  (:a :foo :b)
   t)
 
 @ A little utility function invokes the main section reader and returns a
