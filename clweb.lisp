@@ -1,4 +1,4 @@
-;;;; TANGLED OUTPUT FROM WEB #P"clweb.clw". DO NOT EDIT.
+;;;; TANGLED OUTPUT FROM WEB "clweb.clw". DO NOT EDIT.
 (DEFPACKAGE "CLWEB"
   (:USE "COMMON-LISP")
   (:EXPORT "TANGLE-FILE"
@@ -961,9 +961,10 @@
         (INPUT-FILE
          (MERGE-PATHNAMES INPUT-FILE
                           (MAKE-PATHNAME :TYPE "CLW" :CASE :COMMON)))
+        (OUTPUT-FILE (APPLY #'COMPILE-FILE-PATHNAME INPUT-FILE ARGS))
         (LISP-FILE
          (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "LISP" :CASE :COMMON)
-                          INPUT-FILE))
+                          OUTPUT-FILE))
         (TESTS-FILE
          (IF TESTS-FILE
              (MERGE-PATHNAMES TESTS-FILE
@@ -974,14 +975,14 @@
                                  (MAKE-PATHNAME :NAME
                                                 (CONCATENATE 'STRING
                                                              (PATHNAME-NAME
-                                                              INPUT-FILE :CASE
+                                                              OUTPUT-FILE :CASE
                                                               :COMMON)
                                                              "-TESTS")
                                                 :CASE :COMMON)
-                                 INPUT-FILE))))))
+                                 OUTPUT-FILE))))))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (DECLARE (IGNORE OUTPUT-FILE))
-  (WHEN VERBOSE (FORMAT T "~&; tangling WEB from ~S~%" INPUT-FILE))
+  (WHEN VERBOSE (FORMAT T "~&; tangling web from ~A:~%" INPUT-FILE))
   (SETF (FILL-POINTER *SECTIONS*) 0)
   (SETF (FILL-POINTER *TEST-SECTIONS*) 0)
   (SETQ *NAMED-SECTIONS* NIL)
@@ -1006,15 +1007,17 @@
            (WITH-OPEN-FILE
                (OUTPUT OUTPUT-FILE :DIRECTION :OUTPUT :IF-EXISTS :SUPERSEDE
                 :EXTERNAL-FORMAT EXTERNAL-FORMAT)
-             (FORMAT OUTPUT ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT."
+             (FORMAT OUTPUT ";;;; TANGLED OUTPUT FROM WEB \"~A\". DO NOT EDIT."
                      INPUT-FILE)
              (LET ((*EVALUATING* NIL) (*PRINT-MARKER* T))
                (DOLIST (FORM (TANGLE (UNNAMED-SECTION-CODE-PARTS SECTIONS)))
                  (PPRINT FORM OUTPUT))))))
     (WHEN (AND TESTS-FILE (PLUSP (LENGTH *TEST-SECTIONS*)))
+      (WHEN VERBOSE (FORMAT T "~&; writing tests to ~A~%" TESTS-FILE))
       (WRITE-FORMS *TEST-SECTIONS* TESTS-FILE)
       (COMPILE-FILE TESTS-FILE :VERBOSE VERBOSE :PRINT PRINT :EXTERNAL-FORMAT
                     EXTERNAL-FORMAT))
+    (WHEN VERBOSE (FORMAT T "~&; writing tangled code to ~A~%" LISP-FILE))
     (WRITE-FORMS *SECTIONS* LISP-FILE)
     (APPLY #'COMPILE-FILE LISP-FILE :ALLOW-OTHER-KEYS T ARGS)))
 (DEFVAR *WEAVE-VERBOSE* T)
@@ -1025,13 +1028,16 @@
         (IF-DOES-NOT-EXIST T) (EXTERNAL-FORMAT :DEFAULT)
         &AUX
         (INPUT-FILE
-         (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "CLW" :CASE :COMMON)
-                          INPUT-FILE))
+         (MERGE-PATHNAMES INPUT-FILE
+                          (MAKE-PATHNAME :TYPE "CLW" :CASE :COMMON)))
         (OUTPUT-FILE
-         (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "TEX" :CASE :COMMON)
-                          (OR OUTPUT-FILE INPUT-FILE))))
+         (IF OUTPUT-FILE
+             (MERGE-PATHNAMES OUTPUT-FILE
+                              (MAKE-PATHNAME :TYPE "TEX" :CASE :COMMON))
+             (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "TEX" :CASE :COMMON)
+                              INPUT-FILE))))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
-  (WHEN VERBOSE (FORMAT T "~&; weaving WEB from ~S~%" INPUT-FILE))
+  (WHEN VERBOSE (FORMAT T "~&; weaving web from ~A~%" INPUT-FILE))
   (SETF (FILL-POINTER *SECTIONS*) 0)
   (SETF (FILL-POINTER *TEST-SECTIONS*) 0)
   (SETQ *NAMED-SECTIONS* NIL)

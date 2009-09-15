@@ -2355,13 +2355,15 @@ sections' code should be written.
                     (input-file (merge-pathnames ;
                                  input-file ;
                                  (make-pathname :type "CLW" :case :common)))
+                    (output-file (apply #'compile-file-pathname ;
+                                        input-file args))
                     (lisp-file (merge-pathnames ;
                                 (make-pathname :type "LISP" :case :common) ;
-                                input-file))
+                                output-file))
                     (tests-file @<Construct tests file pathname@>))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (declare (ignore output-file))
-  (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
+  (when verbose (format t "~&; tangling web from ~A:~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
                    :direction :input
@@ -2373,28 +2375,30 @@ sections' code should be written.
                             :direction :output
                             :if-exists :supersede
                             :external-format external-format)
-             (format output ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT."
+             (format output ";;;; TANGLED OUTPUT FROM WEB \"~A\". DO NOT EDIT."
                      input-file)
              (let ((*evaluating* nil)
                    (*print-marker* t))
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
     (when (and tests-file (plusp (length *test-sections*)))
+      (when verbose (format t "~&; writing tests to ~A~%" tests-file))
       (write-forms *test-sections* tests-file)
       (compile-file tests-file ; use default output file
                     :verbose verbose
                     :print print
                     :external-format external-format))
+    (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
     (write-forms *sections* lisp-file)
     (apply #'compile-file lisp-file :allow-other-keys t args)))
 
 @ The |tests-file| argument has complicated, but (hopefully) reasonable
 defaulting behavior. If it's supplied and is non-|nil|, then we use a
 pathname derived from the one given by merging with a default type of
-|"lisp"|. If it's not supplied, then we construct a pathname from the input
-file pathname by appending the string |"-tests"| to the name and using
-|"lisp"| for the type. Finally, if the argument is supplied as is |nil|,
-then no tests file will be written at all.
+\.{"lisp"}. If it's not supplied, then we construct a pathname from the
+output file pathname by appending the string \.{"-tests"} to the name and
+using \.{"lisp"} for the type. Finally, if the argument is supplied and
+is |nil|, then no tests file will be written at all.
 
 @<Construct tests file...@>=
 (if tests-file
@@ -2404,11 +2408,11 @@ then no tests file will be written at all.
        (make-pathname :type "LISP" :case :common)
        (merge-pathnames
         (make-pathname :name (concatenate 'string ;
-                                          (pathname-name input-file ;
+                                          (pathname-name output-file ;
                                                          :case :common) ;
                               "-TESTS")
                        :case :common)
-        input-file))))
+        output-file))))
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
@@ -2433,11 +2437,10 @@ warnings about unused named sections.
          (sort unused-sections #'< :key #'section-number))))
 
 @*The weaver. The top-level weaver interface is modeled after
-|cl:compile-file|.  The function |weave| reads the \WEB\ |input-file| and
-produces an output \TeX\ file named by |output-file|. If the weaving is
-successful, |weave| returns the truename of the output file. If
-|output-file| is not supplied or is |nil|, a pathname will be generated
-from |input-file| by replacing its |type| component with \.{"tex"}.
+|cl:compile-file|. The function |weave| reads the \WEB\ |input-file| and
+produces an output \TeX\ file named by |output-file|. If |output-file| is
+not supplied or is |nil|, a pathname will be generated from |input-file| by
+replacing its |type| component with \.{"tex"}.
 
 If |verbose| is true, |weave| prints a message in the form of a comment to
 standard output indicating what file is being woven. If |verbose| is not
@@ -2452,6 +2455,8 @@ to be used when opening both the input file and the output file.
 {\it N.B.:} standard \TeX\ only handles 8-bit characters, and the encodings
 for non-printable-\csc{ascii} characters vary widely.
 
+If successful, |weave| returns the truename of the output file. 
+
 @l
 (defvar *weave-verbose* t)
 (defvar *weave-print* t)
@@ -2462,14 +2467,18 @@ for non-printable-\csc{ascii} characters vary widely.
               (print *weave-print*)
               (if-does-not-exist t)
               (external-format :default) &aux
-              (input-file (merge-pathnames (make-pathname :type "CLW" ;
-                                                          :case :common)
-                                           input-file))
-              (output-file (merge-pathnames (make-pathname :type "TEX" ;
-                                                           :case :common)
-                                            (or output-file input-file))))
+              (input-file (merge-pathnames input-file
+                                           (make-pathname :type "CLW" ;
+                                                          :case :common)))
+              (output-file (if output-file
+                               (merge-pathnames output-file
+                                                (make-pathname :type "TEX" ;
+                                                               :case :common))
+                               (merge-pathnames (make-pathname :type "TEX" ;
+                                                               :case :common)
+                                                input-file))))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
-  (when verbose (format t "~&; weaving WEB from ~S~%" input-file))
+  (when verbose (format t "~&; weaving web from ~A~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
                    :direction :input
