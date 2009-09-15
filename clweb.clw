@@ -121,12 +121,12 @@ errors and warnings that may be generated while processing a web.
 @e
 (in-package "CLWEB")
 
-@ The test suite for this system uses Richard Waters's \csc{rt} library,
+@t The test suite for this system uses Richard Waters's \csc{rt} library,
 a copy of which is included in the distribution. For more information on
 \csc{rt}, see Richard C.~Waters, ``Supporting the Regression Testing of
 Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991): 47--53.
 
-@t
+@l
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (require 'rt)
@@ -162,19 +162,17 @@ ignores it. The code part contains Lisp forms and named section references;
 the tangler will eventually evaluate or compile those forms, while the
 weaver pretty-prints them to the \TeX\ output file.
 
-Finally, a section may be marked as a {\it test section\/}, which is a
-section whose code part contains some sort of tests. Such code may be elided
-by the tangler (for delivery, say, to an environment where requiring a test
-harness at runtime might not be desirable).
+Three control codes begin a section: \.{@@\ }, \.{@@*}, and \.{@@t}.
+Most sections will begin with \.{@@\ }: these are `regular' sections,
+which might be named or unnamed.
 
 @l
 (defclass section ()
   ((name :accessor section-name :initarg :name)
    (number :accessor section-number)
    (commentary :accessor section-commentary :initarg :commentary)
-   (testp :accessor test-section-p :initarg :testp)
    (code :reader section-code :initarg :code))
-  (:default-initargs :commentary nil :name nil :testp nil :code nil))
+  (:default-initargs :name nil :commentary nil :code nil))
 
 @ We'll see below that we need a keyword argument on the
 |(setf section-code)| method for named sections, so we need to
@@ -185,19 +183,31 @@ define that \csc{gf} manually.
 (defmethod (setf section-code) (forms (section section) &key)
   (setf (slot-value section 'code) forms))
 
-@ Two control codes begin a section: \.{@@\ } and~\.{@@*}. Sections
-introduced with \.{@@*} (`starred' sections) begin a new major group of
-sections, and get some special formatting during weaving. The control code
-\.{@@*} should be immediately followed by a title for this group,
-terminated by a period. That title will appear as a run-in heading at the
-beginning of the section, as a running head on all subsequent pages until
-the next starred section, and in the table of contents.
+@ Sections introduced with \.{@@*} (`starred' sections) begin a new major
+group of sections, and get some special formatting during weaving. The
+control code \.{@@*} should be immediately followed by a title for this
+group, terminated by a period. That title will appear as a run-in heading
+at the beginning of the section, as a running head on all subsequent pages
+until the next starred section, and in the table of contents.
 
 The tangler does not care about the distinction between sections with stars
 and ones with none upon thars.
 
 @l
 (defclass starred-section (section) ())
+
+@ Sections that begin with \.{@@} are {\it test sections}. They are used to
+include test cases alongside the normal code, but are treated specially by
+both the tangler and the weaver. The tangler writes them out to a seperate
+file, and the weaver may elide them entirely.
+
+Test sections are associated with the last regular section defined, on the
+assumption that tests will be defined immediately after the code they're
+designed to exercise.
+
+@l
+(defclass test-section (section)
+  ((test-for :accessor test-for-section :initform (current-section))))
 
 @ There can also be \TeX\ text preceding the start of the first section
 (i.e., before the first \.{@@\ } or \.{@@*}), called {\it limbo text}.
@@ -212,12 +222,12 @@ its |commentary| slot; it will never have a code part.
 @l
 (defclass limbo-section (section) ())
 
-@ Whenever we create a section, we store it in the global |*sections*|
-vector and set its number to its index therein. This means that section
-objects won't be collected by the \csc{gc} even after the tangling or
-weaving has completed, but there's a good reason: keeping them around
-allows incremental redefinition of a web, which is important for interactive
-development.
+@ Whenever we create a regular (i.e., non-test) section, we store it in the
+global |*sections*| vector and set its number to its index therein. This
+means that section objects won't be collected by the \csc{gc} even after
+the tangling or weaving has completed, but there's a good reason: keeping
+them around allows incremental redefinition of a web, which is important
+for interactive development.
 
 @l
 (defvar *sections* (make-array 128
@@ -227,6 +237,9 @@ development.
 
 (defmethod initialize-instance :after ((section section) &rest initargs &key)
   (declare (ignore initargs))
+  (push-section section))
+
+(defmethod push-section ((section section))
   (setf (section-number section) (vector-push-extend section *sections*)))
 
 (defun current-section ()
@@ -235,10 +248,31 @@ development.
 @ @<Initialize global variables@>=
 (setf (fill-pointer *sections*) 0)
 
-@ @t
+@t We bind |*sections*| in this test to avoid polluting the global sections
+vector.
+
+@l
 (deftest current-section
-  (eql (make-instance 'section) (current-section))
+  (let ((*sections* (make-array 1 :element-type 'section :fill-pointer 0)))
+    (eql (make-instance 'section) (current-section)))
   t)
+
+@ Test sections aren't stored in the |*sections*| vector; we keep them
+separate so that they won't interfere with the numbering of regular
+sections.
+
+@l
+(defvar *test-sections* (make-array 128
+                                    :element-type 'test-section
+                                    :adjustable t
+                                    :fill-pointer 0))
+
+(defmethod push-section ((section test-section))
+  (let ((*sections* *test-sections*))
+    (call-next-method)))
+
+@ @<Initialize global variables@>=
+(setf (fill-pointer *test-sections*) 0)
 
 @ We keep named sections in a binary search tree whose keys are section
 names and whose values are code forms; the tangler will replace references
@@ -294,7 +328,7 @@ whether or not the node was already in the tree.
         (setf (right-child parent) node)))
   (values node nil))
 
-@ @t
+@t@l
 (deftest bst
   (let ((tree (make-instance 'binary-search-tree :key 0)))
     (find-or-insert -1 tree)
@@ -346,7 +380,7 @@ the new forms replace the old, such as during interactive development.
             (append (section-code section) forms)
             forms)))
 
-@ @t
+@t@l
 (deftest set-named-section-code
   (let ((section (make-instance 'named-section)))
     (setf (section-code section) '(:a :b :c)))
@@ -380,7 +414,7 @@ segment of the name.
         (values t (- len 3))
         (values nil len))))
 
-@ @t
+@t@l
 (deftest (section-name-prefix-p 1) (section-name-prefix-p "a") nil 1)
 (deftest (section-name-prefix-p 2) (section-name-prefix-p "ab...") t 2)
 (deftest (section-name-prefix-p 3) (section-name-prefix-p "abcd...") t 4)
@@ -403,7 +437,7 @@ functions, respectively, for our \csc{bst}.
             (string-equal name1 name2 :end1 end :end2 end)
             (string-equal name1 name2))))))
 
-@ @t
+@t@l
 (deftest (section-name-lessp 1) (section-name-lessp "b" "a") nil)
 (deftest (section-name-lessp 2) (section-name-lessp "b..." "a...") nil)
 (deftest (section-name-lessp 3) (section-name-lessp "ab" "a...") nil)
@@ -501,7 +535,7 @@ characters with a single space.
             do (setq squeezing nil) and collect char into chars
         finally (return (coerce chars 'string))))
 
-@ @t
+@t@l
 (deftest (squeeze 1) (squeeze "abc") "abc")
 (deftest (squeeze 2) (squeeze "ab c") "ab c")
 (deftest (squeeze 3) (squeeze (format nil " a b ~C c " #\Tab)) "a b c")
@@ -535,34 +569,40 @@ the shortest available prefix, since we detect ambiguous matches.)
               (and old-prefix-p new-prefix-p (< new-len old-len)))
       (setf (section-name section) name))))
 
-@ We'll use |*test-named-sections*| whenever we need to test with some
+@t We'll use |*sample-named-sections*| whenever we need to test with some
 named sections defined. These tests don't depend on these sections having
 code parts, but later tests will.
 
-@t
-(defvar *test-named-sections*
+@l
+(defvar *sample-named-sections*
   (let ((sections (make-instance 'named-section :name "baz" :code '(baz))))
     (setf (section-code (find-or-insert "foo" sections)) '(:foo))
     (setf (section-code (find-or-insert "bar" sections)) '(:bar))
     (setf (section-code (find-or-insert "qux" sections)) '(:qux))
     sections))
 
-(defun find-test-section (name)
-  (find-or-insert name *test-named-sections* :insert-if-not-found nil))
+(defun find-sample-section (name)
+  (find-or-insert name *sample-named-sections* :insert-if-not-found nil))
 
-(deftest find-named-section (section-name (find-test-section "bar")) "bar")
-(deftest find-section-by-prefix (section-name (find-test-section "q...")) "qux")
+(deftest find-named-section
+  (section-name (find-sample-section "bar"))
+  "bar")
+
+(deftest find-section-by-prefix
+  (section-name (find-sample-section "q..."))
+  "qux")
+
 (deftest find-section-by-ambiguous-prefix
   (section-name
    (handler-bind ((ambiguous-prefix-error
                    (lambda (condition)
                      (declare (ignore condition))
                      (invoke-restart 'use-alt-match))))
-     (find-test-section "b...")))
+     (find-sample-section "b...")))
   "bar")
 
 (deftest find-section
-  (let ((*named-sections* *test-named-sections*))
+  (let ((*named-sections* *sample-named-sections*))
     (find-section (format nil " foo  bar ~C baz..." #\Tab))
     (section-name (find-section "foo...")))
   "foo")
@@ -593,7 +633,7 @@ stores a virgin copy of the standard readtable.
   (declare (type (or mode null) mode))
   (cdr (assoc mode *readtables*)))
 
-@ @t
+@t@l
 (deftest (readtable-for-mode 1) (readtablep (readtable-for-mode :tex)) t)
 (deftest (readtable-for-mode 2) (readtablep (readtable-for-mode nil)) t)
 (deftest (readtable-for-mode 3)
@@ -608,7 +648,7 @@ given forms with |*readtable*| bound appropriately for the given mode.
   `(let ((*readtable* (readtable-for-mode ,mode)))
      ,@body))
 
-@ @t
+@t@l
 (deftest with-mode
   (loop for (mode . readtable) in *readtables*
         always (with-mode mode (eql *readtable* readtable)))
@@ -640,7 +680,7 @@ error reporting.
 (defun eof-p (x) (eq x *eof*))
 (deftype eof () '(satisfies eof-p))
 
-@ @t
+@t@l
 (deftest eof-p (eof-p (read-from-string "" nil *eof*)) t)
 (deftest eof-type (typep (read-from-string "" nil *eof*) 'eof) t)
 
@@ -659,7 +699,7 @@ obtaining a list of all the characters with a given syntax.
           (get-macro-character char)
         (and function (not non-terminating-p)))))
 
-@ @t
+@t@l
 (deftest (token-delimiter-p 1) (not (token-delimiter-p #\Space)) nil)
 (deftest (token-delimiter-p 2) (not (token-delimiter-p #\))) nil)
 
@@ -811,7 +851,7 @@ is bound to a proxy stream the tracks the character position for |stream|.
      (unwind-protect (progn ,@body)
        (release-charpos-stream ,var))))
 
-@ @t
+@t@l
 (deftest charpos-input-stream
   (with-charpos-input-stream (s (make-string-input-stream
                                  (format nil "012~%abc")))
@@ -852,7 +892,7 @@ state prior to any reads executed in the body.
                             ,var))))
          ,@body))))
 
-@ @t
+@t@l
 (deftest rewind-stream
   (with-rewind-stream (s (make-string-input-stream "abcdef"))
     (values (read-char s)
@@ -894,7 +934,7 @@ will be concatenated onto the front of |stream| prior to reading.
            (declare (ignorable ,values ,echoed))
            ,@body)))))
 
-@ @t
+@t@l
 (deftest read-with-echo
   (read-with-echo ((make-string-input-stream ":foo :bar") values chars)
     (values values chars))
@@ -964,7 +1004,7 @@ reader routines, but will break others, so be careful.
         (when (marker-boundp obj)
           (princ (marker-value obj) stream)))))
 
-@ @t
+@t@l
 (deftest print-marker
   (let ((*print-marker* t))
     (format nil "~A" (make-instance 'marker :value ':foo)))
@@ -1004,7 +1044,7 @@ since indentation is completely ignored there.
                        (make-instance 'newline-marker))
                      nil (readtable-for-mode :lisp))
 
-@ @t
+@t@l
 (deftest read-newline
   (newlinep (with-input-from-string (s (format nil "~%"))
               (with-mode :lisp (read s))))
@@ -1133,10 +1173,10 @@ in which case we don't want to push anything.
     (push (car values) list)
     (push charpos charpos-list)))
 
-@ When we're testing the reader functions, we'll often want to read from
+@t  When we're testing the reader functions, we'll often want to read from
 a string-stream that tracks character positions.
 
-@t
+@l
 (defmacro read-from-string-with-charpos (string &optional
                                          (eof-error-p t)
                                          (eof-value nil) &key
@@ -1149,15 +1189,15 @@ a string-stream that tracks character positions.
            (read-preserving-whitespace ,charpos-stream ,eof-error-p ,eof-value)
            (read ,charpos-stream ,eof-error-p ,eof-value)))))
 
-@ In fact, most of the reader tests will involve reading a single form in
+@t In fact, most of the reader tests will involve reading a single form in
 Lisp mode.
 
-@t
+@l
 (defun read-form-from-string (string &key (mode :lisp))
   (with-mode mode
     (read-from-string-with-charpos string)))
 
-@ @t
+@t@l
 (deftest read-empty-list-inner-lisp
   (typep (read-form-from-string "()" :mode :inner-lisp) 'empty-list-marker)
   t)
@@ -1204,7 +1244,7 @@ might think is needed.
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\' #'single-quote-reader nil (readtable-for-mode mode)))
 
-@ @t
+@t@l
 (deftest read-quoted-form
   (let ((marker (read-form-from-string "':foo")))
     (values (quoted-form marker)
@@ -1244,7 +1284,7 @@ appear in the output.
       ((char= (peek-char nil stream nil #\Newline t) #\Newline))
     (write-char (read-char stream t nil t) s)))
 
-@ @t
+@t@l
 (deftest read-comment
   (let ((marker (read-form-from-string "; foo")))
     (values (comment-text marker)
@@ -1292,7 +1332,7 @@ unreasonable, since without it the file tangler won't work anyway.
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\` #'backquote-reader nil (readtable-for-mode mode)))
 
-@ @t
+@t@l
 (deftest read-backquote
   (let ((marker (read-form-from-string "`(:a :b :c)")))
     (and (typep marker 'backquote-marker)
@@ -1333,7 +1373,7 @@ value.
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\, #'comma-reader nil (readtable-for-mode mode)))
 
-@ @t
+@t@l
 (deftest read-comma
   (eval (marker-value (read-form-from-string "`(:a ,@'(:b :c) :d)")))
   (:a :b :c :d))
@@ -1358,7 +1398,7 @@ of the CL standard.
   (set-dispatch-macro-character #\# #\' #'sharpsign-quote-reader ;
                                 (readtable-for-mode mode)))
 
-@ @t
+@t@l
 (deftest read-function
   (let ((marker (read-form-from-string "#'identity")))
     (values (quoted-form marker)
@@ -1410,7 +1450,7 @@ abbreviation.
   (set-dispatch-macro-character #\# #\( #'simple-vector-reader ;
                                 (readtable-for-mode mode)))
 
-@ @t
+@t@l
 (deftest read-simple-vector
   (marker-value (read-form-from-string "#5(:a :b :c)"))
   #(:a :b :c :c :c))
@@ -1455,7 +1495,7 @@ token, so we have to be careful.
      (subseq bits 0 (let ((n (length bits)))
                       (case (elt bits (1- n)) ((#\0 #\1) n) (t (1- n))))))
 
-@ @t
+@t@l
 (deftest read-bit-vector
   (marker-value (read-form-from-string "#5*101"))
   #5*101)
@@ -1500,7 +1540,7 @@ value; and in a tangled source file, we get a \.{\#.} form.
   (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader ;
                                 (readtable-for-mode mode)))
 
-@ @t
+@t@l
 (deftest (read-time-eval 1)
   (let* ((*read-eval* t)
          (*evaluating* nil)
@@ -1539,7 +1579,7 @@ the actual value, and store the radix in our marker.
 (funcall (get-dispatch-macro-character #\# sub-char (readtable-for-mode nil))
          stream sub-char arg)
 
-@ @t
+@t@l
 (deftest (read-radix 1)
   (let ((marker (read-form-from-string "#B1011")))
     (values (radix-marker-base marker)
@@ -1606,7 +1646,7 @@ This routine, adapted from SBCL, interprets such an expression.
         (error "unknown operator in feature expression: ~S." x))))
     (symbol (not (null (member x *features* :test #'eq))))))
 
-@ @t
+@t@l
 (deftest featurep
   (let ((*features* '(:a :b)))
     (featurep '(:and :a (:or :c :b) (:not :d))))
@@ -1671,7 +1711,7 @@ characters that the reader scans, and use that to reconstruct the form.
   (set-dispatch-macro-character #\# #\- #'read-time-conditional-reader ;
                                 (readtable-for-mode mode)))
 
-@ @t
+@t@l
 (deftest (read-time-conditional 1)
   (let ((*features* '(:a))
         (*evaluating* nil)
@@ -1710,7 +1750,7 @@ from |stream| until encountering either \EOF\ or an element of the
           until (or (eof-p char) (member char control-chars))
           do (write-char (read-char stream) string))))
 
-@ @t
+@t@l
 (deftest snarf-until-control-char
   (with-input-from-string (s "abc*123")
     (values (snarf-until-control-char s #\*)
@@ -1729,7 +1769,7 @@ code to be surrounded by \pb, where it is read in inner-Lisp mode.
 (dolist (mode '(:TeX :restricted))
   (set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode mode)))
 
-@ @t
+@t@l
 (deftest read-inner-lisp
   (with-mode :TeX
     (values (read-from-string "|:foo :bar|")))
@@ -1771,13 +1811,13 @@ it should really only be used in \TeX\ text.
                         (declare (ignore sub-char stream arg))
                         (string "@")))
 
-@ @t
+@t@l
 (deftest literal-@
   (with-mode :TeX
     (values (read-from-string "@@")))
   "@")
 
-@ Sections are introduced by the two section-starting control codes,
+@ Regular sections are introduced by the two section-starting control codes,
 \.{@@\ } and~\.{@@*}, which differ only in the way they are output during
 weaving. The reader macro functions that implement these control codes
 return an instance of the appropriate section class.
@@ -1792,41 +1832,51 @@ return an instance of the appropriate section class.
 (dolist (sub-char '(#\Space #\*))
   (set-control-code sub-char #'start-section-reader '(:limbo :TeX :lisp)))
 
+@ Test sections are handled similarly, but are introduced with \.{@@t}.
+Immediately following whitespace is ignored.
+
+@l
+(defun start-test-section-reader (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (loop until (char/= (peek-char t stream t nil t) #\Newline)
+        do (read-char stream t nil t))
+  (make-instance 'test-section))
+
+(set-control-code #\t #'start-test-section-reader '(:limbo :TeX :lisp))
+
+@t@l
+(deftest start-test-section-reader
+  (with-input-from-string (s (format nil "@t~% !"))
+    (with-mode :lisp
+      (values (typep (read s) 'test-section)
+              (read-char s))))
+  t #\!)
+
 @ The control codes \.{@@l} and~\.{@@p} (where `l' is for `Lisp' and `p'
 is for `program'---both control codes do the same thing) begin the code
-part of an unnamed section. The control code \.{@@t} is similar, but
-indicates that the code that follows is testing code, which may be
-elided during tangling. All of these are recognized only in \TeX\
-mode---every section must begin with a commentary, even if it is empty.
+part of an unnamed section. They are valid only in \TeX\ mode; every
+section must begin with a commentary, even if it is empty. We set the
+control codes in Lisp mode only for error detection.
 
 @l
 (defclass start-code-marker (marker)
-  ((name :reader section-name :initarg :name)
-   (testp :reader test-code-p :initarg :testp))
-  (:default-initargs :name nil :testp nil))
+  ((name :reader section-name :initarg :name))
+  (:default-initargs :name nil))
 
 (defun start-code-reader (stream sub-char arg)
-  (declare (ignore stream arg))
-  (make-instance 'start-code-marker
-                 :testp (char= (char-downcase sub-char) #\t)))
+  (declare (ignore stream sub-char arg))
+  (make-instance 'start-code-marker))
 
-(dolist (sub-char '(#\l #\p #\t))
+(dolist (sub-char '(#\l #\p))
   (set-control-code sub-char #'start-code-reader '(:TeX :lisp)))
 
-@ @t
-(deftest (start-code-marker 1)
+@t@l
+(deftest start-code-marker
   (with-mode :TeX
-    (values-list (mapcar (lambda (marker)
-                           (and (typep marker 'start-code-marker)
-                                (not (test-code-p marker))))
+    (values-list (mapcar (lambda (marker) (typep marker 'start-code-marker))
                          (list (read-from-string "@l")
                                (read-from-string "@p")))))
   t
-  t)
-
-(deftest (start-code-marker 2)
-  (with-mode :TeX
-    (test-code-p (read-from-string "@t")))
   t)
 
 @ The control code \.{@@e} (`e' for `eval') indicates that the following
@@ -1846,12 +1896,18 @@ structure definitions that are used with \.{\#S}, \etc.
 
 (set-control-code #\e #'read-evaluated-form :lisp)
 
-@ @t
-(deftest read-evaluated-form
-  (let ((marker (read-form-from-string (format nil "@e~%1"))))
+@t@l
+(deftest (read-evaluated-form 1)
+  (let ((marker (read-form-from-string (format nil "@e t"))))
     (and (typep marker 'evaluated-form-marker)
          (marker-value marker)))
-  1)
+  t)
+
+(deftest (read-evaluated-form 2)
+  (let ((marker (read-form-from-string (format nil "@e~%t"))))
+    (and (typep marker 'evaluated-form-marker)
+         (marker-value marker)))
+  t)
 
 @ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
 called {\it control text}, that extends to the next \.{@@>}. When we first
@@ -1877,7 +1933,7 @@ material.
                  if (eq x *end-control-text*) do (loop-finish)
                  else collect x))))
 
-@ @t
+@t@l
 (deftest read-control-text
   (with-input-from-string (s "frob |foo|@>")
     (read-control-text s))
@@ -1946,20 +2002,20 @@ citations, and so are not expanded.
     :report "Assume the section is just being cited."
     (find-section name)))
 
-@ @t
+@t@l
 (deftest (read-section-name :TeX)
   (with-mode :TeX
     (section-name (read-from-string "@<foo@>=")))
   "foo")
 
 (deftest (read-section-name :lisp)
-  (let ((*named-sections* *test-named-sections*))
+  (let ((*named-sections* *sample-named-sections*))
     (with-mode :lisp
       (section-name (read-from-string "@<foo@>"))))
   "foo")
 
 (deftest section-name-definition-error
-  (let ((*named-sections* *test-named-sections*))
+  (let ((*named-sections* *sample-named-sections*))
     (section-name
      (handler-bind ((section-name-definition-error
                      (lambda (condition)
@@ -1970,7 +2026,7 @@ citations, and so are not expanded.
   "foo")
 
 (deftest section-name-use-error
-  (let ((*named-sections* *test-named-sections*))
+  (let ((*named-sections* *sample-named-sections*))
     (section-name
      (handler-bind ((section-name-use-error
                      (lambda (condition)
@@ -1998,7 +2054,7 @@ the new object is an empty string or |nil|.
      (when (if (stringp ,g) (plusp (length ,g)) ,g)
        (push ,g ,place))))
 
-@ @t
+@t@l
 (deftest maybe-push
   (let ((list '()))
     (maybe-push 'a list)
@@ -2078,8 +2134,6 @@ terminated by either \EOF\ or the start of a new section.
 
 @<Accumulate Lisp-mode material in |code|@>=
 (check-type form start-code-marker)
-(unless (section-name section)
-  (setf (test-section-p section) (test-code-p form)))
 (with-mode :lisp
   (loop
     (setq form (read-preserving-whitespace stream nil *eof* nil))
@@ -2167,7 +2221,7 @@ removes unbound markers.
                        (cons a d))
                    (or car-expanded-p cdr-expanded-p)))))))
 
-@ @t
+@t@l
 (deftest (tangle-1 1)
   (tangle-1 (read-form-from-string ":a"))
   :a
@@ -2179,9 +2233,9 @@ removes unbound markers.
   t)
 
 (deftest (tangle-1 3)
-  (let ((*named-sections* *test-named-sections*))
+  (let ((*named-sections* *sample-named-sections*))
     (eql (tangle-1 (read-form-from-string "@<foo@>"))
-         (find-test-section "foo")))
+         (find-sample-section "foo")))
   t)
 
 @ |tangle| repeatedly calls |tangle-1| on |form| until it can no longer be
@@ -2198,9 +2252,9 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
                    (values new-form expanded)))))
     (expand form nil)))
 
-@ @t
+@t@l
 (deftest tangle
-  (let ((*named-sections* *test-named-sections*))
+  (let ((*named-sections* *sample-named-sections*))
     (tangle (read-form-from-string (format nil "(:a @<foo@>~% :b)"))))
   (:a :foo :b)
   t)
@@ -2215,7 +2269,7 @@ list of all of the forms in all of the unnamed sections' code parts.
               #'section-code
               (remove-if (lambda (section)
                            (or (section-name section)
-                               (and elide-tests (test-section-p section))))
+                               (and elide-tests (typep section 'test-section))))
                          (read-sections stream :appendp appendp)))))
 
 @ We're now ready for the high-level tangler interface. We begin with
@@ -2549,7 +2603,7 @@ in the input. Otherwise, $c$ will be output without escaping.
         else
           do (write-char char stream)))
 
-@ @t
+@t@l
 (deftest write-string-escaped
   (with-output-to-string (s)
     (write-string-escaped "foo#{bar}*baz" s))
