@@ -126,11 +126,19 @@ a copy of which is included in the distribution. For more information on
 \csc{rt}, see Richard C.~Waters, ``Supporting the Regression Testing of
 Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991): 47--53.
 
+We use the sleazy trick of manually importing the external symbols of
+the \csc{rt} package instead of the more sensible |(use-package "RT")|
+because many compilers issue warnings when the use-list of a package
+changes, which would occur if the |defpackage| form above were evaluated
+after the tests have been loaded.
+
 @l
+(in-package "CLWEB")
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (require 'rt)
-  (use-package "RT"))
+  (loop for symbol being each external-symbol of (find-package "RT")
+        do (import symbol)))
 
 @ We'll define our condition classes as we need them.
 
@@ -196,7 +204,7 @@ and ones with none upon thars.
 @l
 (defclass starred-section (section) ())
 
-@ Sections that begin with \.{@@} are {\it test sections}. They are used to
+@ Sections that begin with \.{@@t} are {\it test sections}. They are used to
 include test cases alongside the normal code, but are treated specially by
 both the tangler and the weaver. The tangler writes them out to a seperate
 file, and the weaver may elide them entirely.
@@ -244,7 +252,9 @@ for interactive development.
   (push-section section))
 
 (defun current-section ()
-  (elt *sections* (1- (fill-pointer *sections*))))
+  (let ((i (fill-pointer *sections*)))
+    (and (plusp i)
+         (elt *sections* (1- i)))))
 
 @ @<Initialize global variables@>=
 (setf (fill-pointer *sections*) 0)
@@ -1845,12 +1855,17 @@ Immediately following whitespace is ignored.
 
 (set-control-code #\t #'start-test-section-reader '(:limbo :TeX :lisp))
 
-@t@l
+@t We bind |*sections*| and |*test-sections*| to avoid polluting the global
+section vectors.
+
+@l
 (deftest start-test-section-reader
-  (with-input-from-string (s (format nil "@t~% !"))
-    (with-mode :lisp
-      (values (typep (read s) 'test-section)
-              (read-char s))))
+  (let ((*sections* (make-array 1 :fill-pointer 0))
+        (*test-sections* (make-array 1 :fill-pointer 0)))
+    (with-input-from-string (s (format nil "@t~% !"))
+      (with-mode :lisp
+        (values (typep (read s) 'test-section)
+                (read-char s)))))
   t #\!)
 
 @ The control codes \.{@@l} and~\.{@@p} (where `l' is for `Lisp' and `p'
@@ -2260,18 +2275,14 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
   (:a :foo :b)
   t)
 
-@ A little utility function invokes the main section reader and returns a
-list of all of the forms in all of the unnamed sections' code parts.
+@ This little utility function returns a list of all of the forms in all
+of the unnamed sections' code parts. This is our first-order approximation
+of the complete program; if you tangle it, you get the whole thing.
 
 @l
-(defun read-code-parts (stream &key (appendp t) (elide-tests nil))
-  (apply #'append
-         (map 'list
-              #'section-code
-              (remove-if (lambda (section)
-                           (or (section-name section)
-                               (and elide-tests (typep section 'test-section))))
-                         (read-sections stream :appendp appendp)))))
+(defun unnamed-section-code-parts (sections)
+  (apply #'append ;
+         (map 'list #'section-code (remove-if #'section-name sections))))
 
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so that
@@ -2288,7 +2299,8 @@ will not affect the calling environment.
   (let ((*readtable* *readtable*)
         (*package* *package*)
         (*evaluating* t))
-    (dolist (form (tangle (read-code-parts stream :appendp appendp)) t)
+    (dolist (form (tangle (unnamed-section-code-parts
+                           (read-sections stream :appendp appendp))) t)
       (if print
           (let ((results (multiple-value-list (eval form))))
             (format t "~&; ~{~S~^, ~}~%" results))
@@ -2305,7 +2317,7 @@ will not affect the calling environment.
   (if (streamp filespec)
       (load-web-from-stream filespec print)
       (with-open-file (stream (merge-pathnames (make-pathname :type "CLW" ;
-                                                              :case :common)
+                                                              :case :common) ;
                                                filespec)
                        :direction :input
                        :external-format external-format
@@ -2328,42 +2340,75 @@ this allows for incremental redefinition.
       (delete-file truename))))
 
 @ The file tangler operates by writing out the tangled code to a Lisp source
-file and then invoking the file compiler on that file. With the exception of
-|elide-tests|, which, when true, causes the code of test sections to be
-omitted from the output file, the arguments are essentially the same as
-those to |cl:compile-file|.
+file and then invoking the file compiler on that file. The arguments are
+essentially the same as those to |cl:compile-file|, except for the
+|tests-file| keyword argument, which specifies the file to which the test
+sections' code should be written.
 
 @l
 (defun tangle-file (input-file &rest args &key
                     output-file
-                    (elide-tests nil)
+                    (tests-file nil tests-file-supplied-p)
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
-                    (input-file (merge-pathnames (make-pathname :type "CLW" ;
-                                                                :case :common)
-                                                 input-file))
-                    (lisp-file (merge-pathnames (make-pathname :type "LISP" ;
-                                                               :case :common)
-                                                input-file)))
+                    (input-file (merge-pathnames ;
+                                 input-file ;
+                                 (make-pathname :type "CLW" :case :common)))
+                    (lisp-file (merge-pathnames ;
+                                (make-pathname :type "LISP" :case :common) ;
+                                input-file))
+                    (tests-file @<Construct tests file pathname@>))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
-  (declare (ignore output-file print))
+  (declare (ignore output-file))
   (when verbose (format t "~&; tangling WEB from ~S~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
-                         :direction :input
-                         :external-format external-format)
-    (with-open-file (lisp lisp-file
-                          :direction :output
-                          :if-exists :supersede
-                          :external-format external-format)
-      (format lisp ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT." input-file)
-      (let ((*evaluating* nil)
-            (*print-marker* t))
-        (dolist (form (tangle (read-code-parts input :elide-tests elide-tests)))
-          (pprint form lisp)))))
+                   :direction :input
+                   :external-format external-format)
+    (read-sections input))
   @<Complain about any unused named sections@>
-  (apply #'compile-file lisp-file :allow-other-keys t args))
+  (flet ((write-forms (sections output-file)
+           (with-open-file (output output-file
+                            :direction :output
+                            :if-exists :supersede
+                            :external-format external-format)
+             (format output ";;;; TANGLED OUTPUT FROM WEB ~S. DO NOT EDIT."
+                     input-file)
+             (let ((*evaluating* nil)
+                   (*print-marker* t))
+               (dolist (form (tangle (unnamed-section-code-parts sections)))
+                 (pprint form output))))))
+    (when (and tests-file (plusp (length *test-sections*)))
+      (write-forms *test-sections* tests-file)
+      (compile-file tests-file ; use default output file
+                    :verbose verbose
+                    :print print
+                    :external-format external-format))
+    (write-forms *sections* lisp-file)
+    (apply #'compile-file lisp-file :allow-other-keys t args)))
+
+@ The |tests-file| argument has complicated, but (hopefully) reasonable
+defaulting behavior. If it's supplied and is non-|nil|, then we use a
+pathname derived from the one given by merging with a default type of
+|"lisp"|. If it's not supplied, then we construct a pathname from the input
+file pathname by appending the string |"-tests"| to the name and using
+|"lisp"| for the type. Finally, if the argument is supplied as is |nil|,
+then no tests file will be written at all.
+
+@<Construct tests file...@>=
+(if tests-file
+    (merge-pathnames tests-file (make-pathname :type "LISP" :case :common))
+    (unless tests-file-supplied-p
+      (merge-pathnames
+       (make-pathname :type "LISP" :case :common)
+       (merge-pathnames
+        (make-pathname :name (concatenate 'string ;
+                                          (pathname-name input-file ;
+                                                         :case :common) ;
+                              "-TESTS")
+                       :case :common)
+        input-file))))
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
@@ -2426,13 +2471,14 @@ for non-printable-\csc{ascii} characters vary widely.
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (when verbose (format t "~&; weaving WEB from ~S~%" input-file))
   @<Initialize global variables@>
-  (with-open-file (stream input-file
+  (with-open-file (input input-file
                    :direction :input
                    :external-format external-format
                    :if-does-not-exist (if if-does-not-exist :error nil))
-    (weave-sections (read-sections stream) output-file
-                    :print print
-                    :external-format external-format)))
+    (read-sections input))
+  (weave-sections *sections* output-file
+                  :print print
+                  :external-format external-format))
 
 @ The following routine does the actual writing of the sections to the output
 file. The individual sections and their contents are printed using the pretty
