@@ -2374,9 +2374,9 @@ will be written at all.
         (merge-pathnames
          (make-pathname :type type :case :common)
          (merge-pathnames
-          (make-pathname :name (concatenate 'string ;
+          (make-pathname :name (concatenate 'string
                                             (pathname-name output-file ;
-                                                           :case :common) ;
+                                                           :case :common)
                                             "-TESTS")
                          :case :common)
           output-file)))))
