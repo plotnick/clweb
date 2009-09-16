@@ -964,16 +964,11 @@
   (IF TESTS-FILE
       (MERGE-PATHNAMES TESTS-FILE (MAKE-PATHNAME :TYPE TYPE :CASE :COMMON))
       (UNLESS TESTS-FILE-SUPPLIED-P
-        (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE TYPE :CASE :COMMON)
-                         (MERGE-PATHNAMES
-                          (MAKE-PATHNAME :NAME
-                                         (CONCATENATE 'STRING
-                                                      (PATHNAME-NAME
-                                                       OUTPUT-FILE :CASE
-                                                       :COMMON)
-                                                      "-TESTS")
-                                         :CASE :COMMON)
-                          OUTPUT-FILE)))))
+        (MAKE-PATHNAME :NAME
+                       (CONCATENATE 'STRING
+                                    (PATHNAME-NAME OUTPUT-FILE :CASE :COMMON)
+                                    "-TESTS")
+                       :TYPE TYPE :DEFAULTS OUTPUT-FILE :CASE :COMMON))))
 (DEFUN TANGLE-FILE
        (INPUT-FILE
         &REST ARGS

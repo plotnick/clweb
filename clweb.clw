@@ -2370,15 +2370,13 @@ will be written at all.
   (if tests-file
       (merge-pathnames tests-file (make-pathname :type type :case :common))
       (unless tests-file-supplied-p
-        (merge-pathnames
-         (make-pathname :type type :case :common)
-         (merge-pathnames
-          (make-pathname :name (concatenate 'string
-                                            (pathname-name output-file ;
-                                                           :case :common)
-                                            "-TESTS")
-                         :case :common)
-          output-file)))))
+        (make-pathname :name (concatenate 'string
+                                          (pathname-name output-file ;
+                                                         :case :common)
+                                          "-TESTS")
+                       :type type
+                       :defaults output-file
+                       :case :common))))
 
 @t@l
 (deftest (tests-file-pathname 1)
