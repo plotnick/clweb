@@ -2358,10 +2358,10 @@ this allows for incremental redefinition.
 has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
 then we use a pathname derived from the one given by merging in a default
 type (\.{"lisp"} in the case of tangling, \.{"tex"} for weaving). If it's
-not supplied, then we construct a pathname from the output file name by
-appending the string \.{"-tests"} and possibly defaulting the type.
-Finally, if the argument is supplied and is |nil|, then no tests file
-will be written at all.
+not supplied, then we construct a pathname from the output file by
+appending the string \.{"-tests"} to its name component. Finally, if the
+argument is supplied and is |nil|, then no tests file will be written at
+all.
 
 @l
 (defun tests-file-pathname (output-file type &key
