@@ -2647,7 +2647,7 @@ re-reads such strings and picks up any inner-Lisp material.
             (format stream "~@<\\+~@;~W~;\\cr~:>" form)
             (format stream "~W" form)))
       (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}
-    (when (typep section 'test-section)
+    (when (and (typep section 'test-section) (section-code section))
       (format stream "\\T~P~D.~%"
               (length (section-code section))
               (section-number (test-for-section section))))
