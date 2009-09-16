@@ -1869,13 +1869,12 @@ is ignored.
 
 (set-control-code #\t #'start-test-section-reader '(:limbo :TeX :lisp))
 
-@t We bind |*sections*| and |*test-sections*| to avoid polluting the global
-section vectors.
+@t We bind |*test-sections*| to avoid polluting the global test section
+vector.
 
 @l
 (deftest start-test-section-reader
-  (let ((*sections* (make-array 1 :fill-pointer 0))
-        (*test-sections* (make-array 1 :fill-pointer 0)))
+  (let ((*test-sections* (make-array 2 :fill-pointer 0)))
     (with-input-from-string (s (format nil "@t~%:foo @t* :bar"))
       (with-mode :lisp
         (values (typep (read s) 'test-section) (read s)
