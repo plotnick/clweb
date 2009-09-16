@@ -1,6 +1,6 @@
 ;;;; A major-mode for editing CLWEB programs.
 
-(defvar *start-section-regexp* "@ \\|@\\*\\|@\n")
+(defvar *start-section-regexp* "@ \\|@\\*\\|@\n\\|@t\\*?")
 
 (defun move-to-section (arg)
   (condition-case nil
