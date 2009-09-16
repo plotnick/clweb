@@ -121,10 +121,11 @@ errors and warnings that may be generated while processing a web.
 @e
 (in-package "CLWEB")
 
-@t The test suite for this system uses Richard Waters's \csc{rt} library,
-a copy of which is included in the distribution. For more information on
-\csc{rt}, see Richard C.~Waters, ``Supporting the Regression Testing of
-Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991): 47--53.
+@t*Test suite. The test suite for this system uses Richard Waters's
+\csc{rt} library, a copy of which is included in the distribution. For more
+information on \csc{rt}, see Richard C.~Waters, ``Supporting the Regression
+Testing of Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991):
+47--53.
 
 We use the sleazy trick of manually importing the external symbols of
 the \csc{rt} package instead of the more sensible |(use-package "RT")|
@@ -216,6 +217,8 @@ code they're designed to exercise.
 @l
 (defclass test-section (section)
   ((test-for :accessor test-for-section :initform (current-section))))
+
+(defclass starred-test-section (test-section starred-section) ())
 
 @ There can also be \TeX\ text preceding the start of the first section
 (i.e., before the first \.{@@\ } or \.{@@*}), called {\it limbo text}.
@@ -1851,14 +1854,18 @@ class.
   (set-control-code sub-char #'start-section-reader '(:limbo :TeX :lisp)))
 
 @ Test sections are handled similarly, but are introduced with \.{@@t}.
-Immediately following whitespace is ignored.
+Test sections may also be `starred'. Immediately following whitespace
+is ignored.
 
 @l
 (defun start-test-section-reader (stream sub-char arg)
   (declare (ignore sub-char arg))
-  (loop until (char/= (peek-char t stream t nil t) #\Newline)
-        do (read-char stream t nil t))
-  (make-instance 'test-section))
+  (prog1 (if (and (char= (peek-char t stream t nil t) #\*)
+                  (read-char stream t nil t))
+             (make-instance 'starred-test-section)
+             (make-instance 'test-section))
+         (loop until (char/= (peek-char t stream t nil t) #\Newline)
+               do (read-char stream t nil t))))
 
 (set-control-code #\t #'start-test-section-reader '(:limbo :TeX :lisp))
 
@@ -1869,11 +1876,12 @@ section vectors.
 (deftest start-test-section-reader
   (let ((*sections* (make-array 1 :fill-pointer 0))
         (*test-sections* (make-array 1 :fill-pointer 0)))
-    (with-input-from-string (s (format nil "@t~% !"))
+    (with-input-from-string (s (format nil "@t~%:foo @t* :bar"))
       (with-mode :lisp
-        (values (typep (read s) 'test-section)
-                (read-char s)))))
-  t #\!)
+        (values (typep (read s) 'test-section) (read s)
+                (typep (read s) 'starred-test-section) (read s)))))
+  t :foo
+  t :bar)
 
 @ The control codes \.{@@l} and~\.{@@p} (where `l' is for `Lisp' and `p'
 is for `program'---both control codes do the same thing) begin the code
@@ -2617,8 +2625,9 @@ re-reads such strings and picks up any inner-Lisp material.
 @ % FIXME: This needs to be broken up and documented.
 @l
 (defun print-section (stream section)
-  (format stream "~&\\~:[M~;N{1}~]{~D}" ; \.{\{1\}} should be depth
+  (format stream "~&\\~:[M~;N{1}~]{~:[~;T~]~D}" ; \.{\{1\}} should be depth
           (typep section 'starred-section)
+          (typep section 'test-section)
           (section-number section))
   (let* ((commentary (section-commentary section))
          (name (section-name section))
@@ -2638,6 +2647,10 @@ re-reads such strings and picks up any inner-Lisp material.
             (format stream "~@<\\+~@;~W~;\\cr~:>" form)
             (format stream "~W" form)))
       (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}
+    (when (typep section 'test-section)
+      (format stream "\\T~P~D.~%"
+              (length (section-code section))
+              (section-number (test-for-section section))))
     (when named-section
       (print-xrefs stream #\A (remove section (see-also named-section)))
       (print-xrefs stream #\U (remove section (used-by named-section)))))
