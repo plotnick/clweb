@@ -2373,6 +2373,24 @@ will be written at all.
                          :case :common)
           output-file)))))
 
+@t@l
+(deftest (tests-file-pathname 1)
+  (equal (tests-file-pathname (make-pathname :name "FOO" :case :common) "LISP"
+                              :tests-file (make-pathname :name "BAR" ;
+                                                         :case :common))
+         (make-pathname :name "BAR" :type "LISP" :case :common))
+  t)
+
+(deftest (tests-file-pathname 2)
+  (equal (tests-file-pathname (make-pathname :name "FOO" :case :common) "TEX")
+         (make-pathname :name "FOO-TESTS" :type "TEX" :case :common))
+  t)
+
+(deftest (tests-file-pathname 3)
+  (tests-file-pathname (make-pathname :name "FOO" :case :common) "LISP"
+                       :tests-file nil)
+  nil)
+
 @ The file tangler operates by writing out the tangled code to a Lisp source
 file and then invoking the file compiler on that file. The arguments are
 essentially the same as those to |cl:compile-file|, except for the
