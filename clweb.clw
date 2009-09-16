@@ -285,6 +285,13 @@ sections.
 @ @<Initialize global variables@>=
 (setf (fill-pointer *test-sections*) 0)
 
+@ The test sections all get woven to a seperate output file, and we'll
+need a copy of the limbo text there, too.
+
+@l
+(defmethod push-section :after ((section limbo-section))
+  (vector-push-extend section *test-sections*))
+
 @ We keep named sections in a binary search tree whose keys are section
 names and whose values are code forms; the tangler will replace references
 to those names with the associated code. We use a tree instead of, say,
@@ -2339,6 +2346,33 @@ this allows for incremental redefinition.
            (load-web-from-stream stream t :appendp appendp))
       (delete-file truename))))
 
+
+@ Both |tangle-file| and |weave|, below, take a |tests-file| argument that
+has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
+then we use a pathname derived from the one given by merging in a default
+type (\.{"lisp"} in the case of tangling, \.{"tex"} for weaving). If it's
+not supplied, then we construct a pathname from the output file name by
+appending the string \.{"-tests"} and possibly defaulting the type.
+Finally, if the argument is supplied and is |nil|, then no tests file
+will be written at all.
+
+@l
+(defun tests-file-pathname (output-file type &key
+                            (tests-file nil tests-file-supplied-p)
+                            &allow-other-keys)
+  (if tests-file
+      (merge-pathnames tests-file (make-pathname :type type :case :common))
+      (unless tests-file-supplied-p
+        (merge-pathnames
+         (make-pathname :type type :case :common)
+         (merge-pathnames
+          (make-pathname :name (concatenate 'string ;
+                                            (pathname-name output-file ;
+                                                           :case :common) ;
+                                            "-TESTS")
+                         :case :common)
+          output-file)))))
+
 @ The file tangler operates by writing out the tangled code to a Lisp source
 file and then invoking the file compiler on that file. The arguments are
 essentially the same as those to |cl:compile-file|, except for the
@@ -2348,7 +2382,7 @@ sections' code should be written.
 @l
 (defun tangle-file (input-file &rest args &key
                     output-file
-                    (tests-file nil tests-file-supplied-p)
+                    tests-file
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
@@ -2360,9 +2394,10 @@ sections' code should be written.
                     (lisp-file (merge-pathnames ;
                                 (make-pathname :type "LISP" :case :common) ;
                                 output-file))
-                    (tests-file @<Construct tests file pathname@>))
+                    (tests-file (apply #'tests-file-pathname
+                                       output-file "LISP" args)))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
-  (declare (ignore output-file))
+  (declare (ignore output-file tests-file))
   (when verbose (format t "~&; tangling web from ~A:~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
@@ -2381,7 +2416,8 @@ sections' code should be written.
                    (*print-marker* t))
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
-    (when (and tests-file (plusp (length *test-sections*)))
+    (when (and tests-file
+               (> (length *test-sections*) 1)) ; there's always a limbo section
       (when verbose (format t "~&; writing tests to ~A~%" tests-file))
       (write-forms *test-sections* tests-file)
       (compile-file tests-file ; use default output file
@@ -2391,28 +2427,6 @@ sections' code should be written.
     (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
     (write-forms *sections* lisp-file)
     (apply #'compile-file lisp-file :allow-other-keys t args)))
-
-@ The |tests-file| argument has complicated, but (hopefully) reasonable
-defaulting behavior. If it's supplied and is non-|nil|, then we use a
-pathname derived from the one given by merging with a default type of
-\.{"lisp"}. If it's not supplied, then we construct a pathname from the
-output file pathname by appending the string \.{"-tests"} to the name and
-using \.{"lisp"} for the type. Finally, if the argument is supplied and
-is |nil|, then no tests file will be written at all.
-
-@<Construct tests file...@>=
-(if tests-file
-    (merge-pathnames tests-file (make-pathname :type "LISP" :case :common))
-    (unless tests-file-supplied-p
-      (merge-pathnames
-       (make-pathname :type "LISP" :case :common)
-       (merge-pathnames
-        (make-pathname :name (concatenate 'string ;
-                                          (pathname-name output-file ;
-                                                         :case :common) ;
-                              "-TESTS")
-                       :case :common)
-        output-file))))
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
@@ -2461,8 +2475,9 @@ If successful, |weave| returns the truename of the output file.
 (defvar *weave-verbose* t)
 (defvar *weave-print* t)
 
-(defun weave (input-file &key
-              (output-file nil)
+(defun weave (input-file &rest args &key
+              output-file
+              tests-file
               (verbose *weave-verbose*)
               (print *weave-print*)
               (if-does-not-exist t)
@@ -2476,15 +2491,25 @@ If successful, |weave| returns the truename of the output file.
                                                                :case :common))
                                (merge-pathnames (make-pathname :type "TEX" ;
                                                                :case :common)
-                                                input-file))))
+                                                input-file)))
+              (tests-file (apply #'tests-file-pathname
+                                 output-file "TEX" args)))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
-  (when verbose (format t "~&; weaving web from ~A~%" input-file))
+  (declare (ignore tests-file))
+  (when verbose (format t "~&; weaving web from ~A:~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
                    :direction :input
                    :external-format external-format
                    :if-does-not-exist (if if-does-not-exist :error nil))
     (read-sections input))
+  (when (and tests-file
+             (> (length *test-sections*) 1)) ; there's always a limbo section
+    (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
+    (weave-sections *test-sections* tests-file
+                    :print print
+                    :external-format external-format))
+  (when verbose (format t "~&; weaving sections to ~A~%" output-file))
   (weave-sections *sections* output-file
                   :print print
                   :external-format external-format))

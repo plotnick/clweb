@@ -84,6 +84,8 @@
 (DEFMETHOD PUSH-SECTION ((SECTION TEST-SECTION))
            (LET ((*SECTIONS* *TEST-SECTIONS*))
              (CALL-NEXT-METHOD)))
+(DEFMETHOD PUSH-SECTION :AFTER ((SECTION LIMBO-SECTION))
+           (VECTOR-PUSH-EXTEND SECTION *TEST-SECTIONS*))
 (DEFCLASS BINARY-SEARCH-TREE NIL
           ((KEY :ACCESSOR NODE-KEY :INITARG :KEY)
            (VALUE :ACCESSOR NODE-VALUE :INITARG :VALUE)
@@ -951,12 +953,27 @@
         (WITH-OPEN-FILE (STREAM TRUENAME :DIRECTION :INPUT)
           (LOAD-WEB-FROM-STREAM STREAM T :APPENDP APPENDP))
       (DELETE-FILE TRUENAME))))
+(DEFUN TESTS-FILE-PATHNAME
+       (OUTPUT-FILE TYPE
+        &KEY (TESTS-FILE NIL TESTS-FILE-SUPPLIED-P) &ALLOW-OTHER-KEYS)
+  (IF TESTS-FILE
+      (MERGE-PATHNAMES TESTS-FILE (MAKE-PATHNAME :TYPE TYPE :CASE :COMMON))
+      (UNLESS TESTS-FILE-SUPPLIED-P
+        (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE TYPE :CASE :COMMON)
+                         (MERGE-PATHNAMES
+                          (MAKE-PATHNAME :NAME
+                                         (CONCATENATE 'STRING
+                                                      (PATHNAME-NAME
+                                                       OUTPUT-FILE :CASE
+                                                       :COMMON)
+                                                      "-TESTS")
+                                         :CASE :COMMON)
+                          OUTPUT-FILE)))))
 (DEFUN TANGLE-FILE
        (INPUT-FILE
         &REST ARGS
-        &KEY OUTPUT-FILE (TESTS-FILE NIL TESTS-FILE-SUPPLIED-P)
-        (VERBOSE *COMPILE-VERBOSE*) (PRINT *COMPILE-PRINT*)
-        (EXTERNAL-FORMAT :DEFAULT) &ALLOW-OTHER-KEYS
+        &KEY OUTPUT-FILE TESTS-FILE (VERBOSE *COMPILE-VERBOSE*)
+        (PRINT *COMPILE-PRINT*) (EXTERNAL-FORMAT :DEFAULT) &ALLOW-OTHER-KEYS
         &AUX
         (INPUT-FILE
          (MERGE-PATHNAMES INPUT-FILE
@@ -965,23 +982,9 @@
         (LISP-FILE
          (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "LISP" :CASE :COMMON)
                           OUTPUT-FILE))
-        (TESTS-FILE
-         (IF TESTS-FILE
-             (MERGE-PATHNAMES TESTS-FILE
-                              (MAKE-PATHNAME :TYPE "LISP" :CASE :COMMON))
-             (UNLESS TESTS-FILE-SUPPLIED-P
-               (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "LISP" :CASE :COMMON)
-                                (MERGE-PATHNAMES
-                                 (MAKE-PATHNAME :NAME
-                                                (CONCATENATE 'STRING
-                                                             (PATHNAME-NAME
-                                                              OUTPUT-FILE :CASE
-                                                              :COMMON)
-                                                             "-TESTS")
-                                                :CASE :COMMON)
-                                 OUTPUT-FILE))))))
+        (TESTS-FILE (APPLY #'TESTS-FILE-PATHNAME OUTPUT-FILE "LISP" ARGS)))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
-  (DECLARE (IGNORE OUTPUT-FILE))
+  (DECLARE (IGNORE OUTPUT-FILE TESTS-FILE))
   (WHEN VERBOSE (FORMAT T "~&; tangling web from ~A:~%" INPUT-FILE))
   (SETF (FILL-POINTER *SECTIONS*) 0)
   (SETF (FILL-POINTER *TEST-SECTIONS*) 0)
@@ -1012,7 +1015,7 @@
              (LET ((*EVALUATING* NIL) (*PRINT-MARKER* T))
                (DOLIST (FORM (TANGLE (UNNAMED-SECTION-CODE-PARTS SECTIONS)))
                  (PPRINT FORM OUTPUT))))))
-    (WHEN (AND TESTS-FILE (PLUSP (LENGTH *TEST-SECTIONS*)))
+    (WHEN (AND TESTS-FILE (> (LENGTH *TEST-SECTIONS*) 1))
       (WHEN VERBOSE (FORMAT T "~&; writing tests to ~A~%" TESTS-FILE))
       (WRITE-FORMS *TEST-SECTIONS* TESTS-FILE)
       (COMPILE-FILE TESTS-FILE :VERBOSE VERBOSE :PRINT PRINT :EXTERNAL-FORMAT
@@ -1024,8 +1027,9 @@
 (DEFVAR *WEAVE-PRINT* T)
 (DEFUN WEAVE
        (INPUT-FILE
-        &KEY (OUTPUT-FILE NIL) (VERBOSE *WEAVE-VERBOSE*) (PRINT *WEAVE-PRINT*)
-        (IF-DOES-NOT-EXIST T) (EXTERNAL-FORMAT :DEFAULT)
+        &REST ARGS
+        &KEY OUTPUT-FILE TESTS-FILE (VERBOSE *WEAVE-VERBOSE*)
+        (PRINT *WEAVE-PRINT*) (IF-DOES-NOT-EXIST T) (EXTERNAL-FORMAT :DEFAULT)
         &AUX
         (INPUT-FILE
          (MERGE-PATHNAMES INPUT-FILE
@@ -1035,9 +1039,11 @@
              (MERGE-PATHNAMES OUTPUT-FILE
                               (MAKE-PATHNAME :TYPE "TEX" :CASE :COMMON))
              (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "TEX" :CASE :COMMON)
-                              INPUT-FILE))))
+                              INPUT-FILE)))
+        (TESTS-FILE (APPLY #'TESTS-FILE-PATHNAME OUTPUT-FILE "TEX" ARGS)))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
-  (WHEN VERBOSE (FORMAT T "~&; weaving web from ~A~%" INPUT-FILE))
+  (DECLARE (IGNORE TESTS-FILE))
+  (WHEN VERBOSE (FORMAT T "~&; weaving web from ~A:~%" INPUT-FILE))
   (SETF (FILL-POINTER *SECTIONS*) 0)
   (SETF (FILL-POINTER *TEST-SECTIONS*) 0)
   (SETQ *NAMED-SECTIONS* NIL)
@@ -1048,6 +1054,11 @@
            :ERROR
            NIL))
     (READ-SECTIONS INPUT))
+  (WHEN (AND TESTS-FILE (> (LENGTH *TEST-SECTIONS*) 1))
+    (WHEN VERBOSE (FORMAT T "~&; weaving tests to ~A~%" TESTS-FILE))
+    (WEAVE-SECTIONS *TEST-SECTIONS* TESTS-FILE :PRINT PRINT :EXTERNAL-FORMAT
+                    EXTERNAL-FORMAT))
+  (WHEN VERBOSE (FORMAT T "~&; weaving sections to ~A~%" OUTPUT-FILE))
   (WEAVE-SECTIONS *SECTIONS* OUTPUT-FILE :PRINT PRINT :EXTERNAL-FORMAT
                   EXTERNAL-FORMAT))
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
