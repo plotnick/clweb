@@ -8,6 +8,10 @@
 @ @<Twice |x|@>=(* x @<The only...@>)
 @ @<Thrice...@>=(* x 3)
 
+@t And here's a test for the simple function defined above.
+@l
+(deftest foo (foo 2) 10)
+
 @*Bar. The function |bar| returns the first four natural numbers (including 0),
 and demonstrates how a named section may be defined piecewise.
 @l
