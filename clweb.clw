@@ -2415,7 +2415,7 @@ sections' code should be written.
                                  input-file ;
                                  (make-pathname :type "CLW" :case :common)))
                     (output-file (apply #'compile-file-pathname ;
-                                        input-file args))
+                                        input-file :allow-other-keys t args))
                     (lisp-file (merge-pathnames ;
                                 (make-pathname :type "LISP" :case :common) ;
                                 output-file))
