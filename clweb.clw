@@ -209,9 +209,9 @@ include test cases alongside the normal code, but are treated specially by
 both the tangler and the weaver. The tangler writes them out to a seperate
 file, and the weaver may elide them entirely.
 
-Test sections are associated with the last regular section defined, on the
-assumption that tests will be defined immediately after the code they're
-designed to exercise.
+Test sections are automatically associated with the last non-test section
+defined, on the assumption that tests will be defined immediately after the
+code they're designed to exercise.
 
 @l
 (defclass test-section (section)
@@ -230,12 +230,12 @@ its |commentary| slot; it will never have a code part.
 @l
 (defclass limbo-section (section) ())
 
-@ Whenever we create a regular (i.e., non-test) section, we store it in the
-global |*sections*| vector and set its number to its index therein. This
-means that section objects won't be collected by the \csc{gc} even after
-the tangling or weaving has completed, but there's a good reason: keeping
-them around allows incremental redefinition of a web, which is important
-for interactive development.
+@ Whenever we create a non-test section, we store it in the global
+|*sections*| vector and set its number to its index therein. This means
+that section objects won't be collected by the \csc{gc} even after the
+tangling or weaving has completed, but there's a good reason: keeping them
+around allows incremental redefinition of a web, which is important for
+interactive development.
 
 @l
 (defvar *sections* (make-array 128
@@ -269,7 +269,7 @@ vector.
   t)
 
 @ Test sections aren't stored in the |*sections*| vector; we keep them
-separate so that they won't interfere with the numbering of regular
+separate so that they won't interfere with the numbering of the other
 sections.
 
 @l
@@ -1828,10 +1828,10 @@ it should really only be used in \TeX\ text.
     (values (read-from-string "@@")))
   "@")
 
-@ Regular sections are introduced by the two section-starting control codes,
-\.{@@\ } and~\.{@@*}, which differ only in the way they are output during
-weaving. The reader macro functions that implement these control codes
-return an instance of the appropriate section class.
+@ Non-test sections are introduced by \.{@@\ } or~\.{@@*}, which differ only
+in the way they are output during weaving. The reader macro functions that
+implement these control codes return an instance of the appropriate section
+class.
 
 @l
 (defun start-section-reader (stream sub-char arg)
