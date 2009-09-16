@@ -2412,7 +2412,7 @@ sections' code should be written.
                     (lisp-file (merge-pathnames ;
                                 (make-pathname :type "LISP" :case :common) ;
                                 output-file))
-                    (tests-file (apply #'tests-file-pathname
+                    (tests-file (apply #'tests-file-pathname ;
                                        output-file "LISP" args)))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (declare (ignore output-file tests-file))
@@ -2494,8 +2494,7 @@ If successful, |weave| returns the truename of the output file.
 (defvar *weave-print* t)
 
 (defun weave (input-file &rest args &key
-              output-file
-              tests-file
+              output-file tests-file
               (verbose *weave-verbose*)
               (print *weave-print*)
               (if-does-not-exist t)
@@ -2510,7 +2509,7 @@ If successful, |weave| returns the truename of the output file.
                                (merge-pathnames (make-pathname :type "TEX" ;
                                                                :case :common)
                                                 input-file)))
-              (tests-file (apply #'tests-file-pathname
+              (tests-file (apply #'tests-file-pathname ;
                                  output-file "TEX" args)))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (declare (ignore tests-file))
