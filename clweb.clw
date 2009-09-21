@@ -2330,9 +2330,9 @@ will not affect the calling environment.
   (when verbose (format t "~&; loading WEB from ~S~%" filespec))
   (if (streamp filespec)
       (load-web-from-stream filespec print)
-      (with-open-file (stream (merge-pathnames (make-pathname :type "CLW" ;
-                                                              :case :common) ;
-                                               filespec)
+      (with-open-file (stream (merge-pathnames filespec ;
+                                               (make-pathname :type "CLW" ;
+                                                              :case :common))
                        :direction :input
                        :external-format external-format
                        :if-does-not-exist (if if-does-not-exist :error nil))
