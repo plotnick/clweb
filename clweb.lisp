@@ -1168,11 +1168,26 @@
              (STRING (WRITE-STRING ESCAPE STREAM))) ELSE
         DO (WRITE-CHAR CHAR STREAM)))
 (DEFUN PRINT-STRING (STREAM STRING)
-  (WRITE-STRING "\\.{\"" STREAM)
-  (WRITE-STRING-ESCAPED STRING STREAM
-   (LIST* '("{*}" . #\\) '("\\" . "\\\\\\\\") '("\"" . "\\\\\"")
-          *TEX-ESCAPE-ALIST*))
-  (WRITE-STRING "\"}" STREAM))
+  (LOOP FOR LAST = 0 THEN (1+ NEWLINE)
+        FOR NEWLINE = (POSITION #\Newline STRING :START LAST) AS LINE = (SUBSEQ
+                                                                         STRING
+                                                                         LAST
+                                                                         NEWLINE)
+        DO (FORMAT STREAM "\\.{~:[~;\"~]" (ZEROP LAST)) (WRITE-STRING-ESCAPED
+                                                         LINE STREAM
+                                                         (LIST* '("{*}" . #\\)
+                                                                '("\\"
+                                                                  . "\\\\\\\\")
+                                                                '("\""
+                                                                  . "\\\\\"")
+                                                                *TEX-ESCAPE-ALIST*)) (FORMAT
+                                                                                      STREAM
+                                                                                      "~:[~;\"~]}"
+                                                                                      (NULL
+                                                                                       NEWLINE))
+        WHEN NEWLINE
+        DO (FORMAT STREAM "\\cr~:@_") ELSE
+        DO (LOOP-FINISH)))
 (SET-WEAVE-DISPATCH 'STRING #'PRINT-STRING)
 (DEFUN PRINT-CHAR (STREAM CHAR)
   (LET ((GRAPHICP (AND (GRAPHIC-CHAR-P CHAR) (STANDARD-CHAR-P CHAR)))

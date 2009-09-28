@@ -2726,15 +2726,21 @@ in the input. Otherwise, $c$ will be output without escaping.
     (write-string-escaped "foo#{bar}*baz" s))
   "foo\\#$\\{$bar$\\}$*baz")
 
-@ @l
+@ We need to be careful about embedded newlines in string literals.
+
+@l
 (defun print-string (stream string)
-  (write-string "\\.{\"" stream)
-  (write-string-escaped string stream
-                        (list* '("{*}" . #\\)
-                               '("\\" . "\\\\\\\\")
-                               '("\"" . "\\\\\"")
-                               *tex-escape-alist*))
-  (write-string "\"}" stream))
+  (loop for last = 0 then (1+ newline)
+        for newline = (position #\Newline string :start last)
+        as line = (subseq string last newline)
+        do (format stream "\\.{~:[~;\"~]" (zerop last))
+           (write-string-escaped line stream
+                                 (list* '("{*}" . #\\)
+                                        '("\\" . "\\\\\\\\")
+                                        '("\"" . "\\\\\"")
+                                        *tex-escape-alist*))
+           (format stream "~:[~;\"~]}" (null newline))
+        when newline do (format stream "\\cr~:@_") else do (loop-finish)))
 
 (set-weave-dispatch 'string #'print-string)
 

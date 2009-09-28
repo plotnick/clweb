@@ -2,6 +2,8 @@
 @*Foo. The function |foo| adds twice its argument's value to thrice it.
 @l
 (defun foo (x)
+  "The function FOO takes an integer X, and returns the sum of X doubled
+and X trebled."
   (+ @<Twice |x|@> @<Thrice |x|@>))
 
 @ @<The only even prime@>=2
