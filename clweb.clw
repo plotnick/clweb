@@ -3019,10 +3019,8 @@ which see.
 @ @l
 (set-weave-dispatch 'radix-marker
   (lambda (stream obj)
-    (let ((*print-radix* nil)
-          (*print-base* (radix-marker-base obj)))
-      (princ (marker-value obj) stream)
-      (format stream "_{~D}" *print-base*))))
+    (format stream "$~VR_{~2:*~D}$"
+            (radix-marker-base obj) (marker-value obj))))
 
 @ @l
 (set-weave-dispatch 'structure-marker

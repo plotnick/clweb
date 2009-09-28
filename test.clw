@@ -50,6 +50,8 @@ copacetic.
 (defparameter *cons* '(a . b))
 (defparameter *vector* #5(a b c))
 (defparameter *bit-vector* #8*1011 "An octet")
+(defparameter *bit-string* #B1011)
+(defparameter *deadbeef* #Xdeadbeef)
 (defparameter *list* '#.(list 1 2 3))
 (defparameter *impl* #+sbcl "SBCL" #+(not sbcl) "Not SBCL")
 
