@@ -107,6 +107,8 @@ errors and warnings that may be generated while processing a web.
 
 @l
 @e
+(provide "CLWEB")
+@e
 (defpackage "CLWEB"
   (:use "COMMON-LISP")
   (:export "TANGLE-FILE"
@@ -134,6 +136,7 @@ changes, which would occur if the |defpackage| form above were evaluated
 after the tests have been loaded.
 
 @l
+@e
 (in-package "CLWEB")
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -2160,7 +2163,8 @@ is detected, we also set the name of the current section, which may be |nil|.
       (t (push form commentary)))))
 
 @ The code part of a section consists of zero or more Lisp forms and is
-terminated by either \EOF\ or the start of a new section.
+terminated by either \EOF\ or the start of a new section. This is also
+where we evaluate \.{@@e} forms.
 
 @<Accumulate Lisp-mode material in |code|@>=
 (check-type form start-code-marker)
@@ -2173,7 +2177,8 @@ terminated by either \EOF\ or the start of a new section.
       (start-code-marker @<Complain about starting a section...@>)
       (newline-marker @<Maybe push the newline marker@>)
       (evaluated-form-marker (let ((form (marker-value form)))
-                               (eval (tangle form))
+                               (with-standard-io-syntax
+                                 (eval (tangle form)))
                                (push form code)))
       (t (push form code)))))
 
@@ -2421,35 +2426,37 @@ sections' code should be written.
                                        output-file "LISP" args)))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (declare (ignore output-file tests-file))
-  (when verbose (format t "~&; tangling web from ~A:~%" input-file))
-  @<Initialize global variables@>
-  (with-open-file (input input-file
-                   :direction :input
-                   :external-format external-format)
-    (read-sections input))
-  @<Complain about any unused named sections@>
-  (flet ((write-forms (sections output-file)
-           (with-open-file (output output-file
-                            :direction :output
-                            :if-exists :supersede
-                            :external-format external-format)
-             (format output ";;;; TANGLED OUTPUT FROM WEB \"~A\". DO NOT EDIT."
-                     input-file)
-             (let ((*evaluating* nil)
-                   (*print-marker* t))
-               (dolist (form (tangle (unnamed-section-code-parts sections)))
-                 (pprint form output))))))
-    (when (and tests-file
-               (> (length *test-sections*) 1)) ; there's always a limbo section
-      (when verbose (format t "~&; writing tests to ~A~%" tests-file))
-      (write-forms *test-sections* tests-file)
-      (compile-file tests-file ; use default output file
-                    :verbose verbose
-                    :print print
-                    :external-format external-format))
-    (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
-    (write-forms *sections* lisp-file)
-    (apply #'compile-file lisp-file :allow-other-keys t args)))
+  (let ((*readtable* *readtable*)
+        (*package* *package*))
+    (when verbose (format t "~&; tangling web from ~A:~%" input-file))
+    @<Initialize global variables@>
+    (with-open-file (input input-file
+                     :direction :input
+                     :external-format external-format)
+      (read-sections input))
+    @<Complain about any unused named sections@>
+    (flet ((write-forms (sections output-file)
+             (with-open-file (output output-file
+                              :direction :output
+                              :if-exists :supersede
+                              :external-format external-format)
+               (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT." ;
+                       input-file)
+               (let ((*evaluating* nil)
+                     (*print-marker* t))
+                 (dolist (form (tangle (unnamed-section-code-parts sections)))
+                   (pprint form output))))))
+      (when (and tests-file
+                 (> (length *test-sections*) 1)) ; there's always a limbo section
+        (when verbose (format t "~&; writing tests to ~A~%" tests-file))
+        (write-forms *test-sections* tests-file)
+        (compile-file tests-file ; use default output file
+                      :verbose verbose
+                      :print print
+                      :external-format external-format))
+      (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
+      (write-forms *sections* lisp-file)
+      (apply #'compile-file lisp-file :allow-other-keys t args))))
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
@@ -2518,23 +2525,25 @@ If successful, |weave| returns the truename of the output file.
                                  output-file "TEX" args)))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (declare (ignore tests-file))
-  (when verbose (format t "~&; weaving web from ~A:~%" input-file))
-  @<Initialize global variables@>
-  (with-open-file (input input-file
-                   :direction :input
-                   :external-format external-format
-                   :if-does-not-exist (if if-does-not-exist :error nil))
-    (read-sections input))
-  (when (and tests-file
-             (> (length *test-sections*) 1)) ; there's always a limbo section
-    (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
-    (weave-sections *test-sections* tests-file
+  (let ((*readtable* *readtable*)
+        (*package* *package*))
+    (when verbose (format t "~&; weaving web from ~A:~%" input-file))
+    @<Initialize global variables@>
+    (with-open-file (input input-file
+                     :direction :input
+                     :external-format external-format
+                     :if-does-not-exist (if if-does-not-exist :error nil))
+      (read-sections input))
+    (when (and tests-file
+               (> (length *test-sections*) 1)) ; there's always a limbo section
+      (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
+      (weave-sections *test-sections* tests-file
+                      :print print
+                      :external-format external-format))
+    (when verbose (format t "~&; weaving sections to ~A~%" output-file))
+    (weave-sections *sections* output-file
                     :print print
-                    :external-format external-format))
-  (when verbose (format t "~&; weaving sections to ~A~%" output-file))
-  (weave-sections *sections* output-file
-                  :print print
-                  :external-format external-format))
+                    :external-format external-format)))
 
 @ The following routine does the actual writing of the sections to the output
 file. The individual sections and their contents are printed using the pretty
