@@ -51,6 +51,23 @@
    (LAMBDA (CONDITION STREAM)
      (FORMAT STREAM "Can't use a section name in TeX mode: ~A"
              (SECTION-NAME CONDITION)))))
+(DEFINE-CONDITION SECTION-LACKS-COMMENTARY
+    (PARSE-ERROR)
+    ((STREAM :INITARG :STREAM :READER SECTION-LACKS-COMMENTARY-STREAM))
+  (:REPORT
+   (LAMBDA (ERROR STREAM)
+     (LET* ((INPUT-STREAM
+             (DO ((STREAM (SECTION-LACKS-COMMENTARY-STREAM ERROR)))
+                 (NIL)
+               (TYPECASE STREAM
+                 (ECHO-STREAM (SETQ STREAM (ECHO-STREAM-INPUT-STREAM STREAM)))
+                 (T (RETURN STREAM)))))
+            (POSITION (FILE-POSITION INPUT-STREAM))
+            (PATHNAME
+             (WHEN (TYPEP INPUT-STREAM 'FILE-STREAM) (PATHNAME INPUT-STREAM))))
+       (FORMAT STREAM "~@<Can't start a section with a code part ~
+                        ~:[~;~:*at position ~D in file ~A.~]~:@>"
+               POSITION (OR PATHNAME INPUT-STREAM))))))
 (DEFINE-CONDITION UNUSED-NAMED-SECTION-WARNING
     (SIMPLE-WARNING)
     NIL)
@@ -864,7 +881,7 @@
                 (SECTION (GO COMMENTARY))
                 (START-CODE-MARKER
                  (CERROR "Start a new unnamed section with no commentary."
-                         "Can't start a section with a code part.")
+                         'SECTION-LACKS-COMMENTARY :STREAM STREAM)
                  (SETQ FORM (MAKE-INSTANCE 'SECTION))
                  (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
                  (CHECK-TYPE FORM SECTION)

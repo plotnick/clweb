@@ -2184,9 +2184,28 @@ where we evaluate \.{@@e} forms.
                                (push form code)))
       (t (push form code)))))
 
+@ @<Define condition classes@>=
+(define-condition section-lacks-commentary (parse-error)
+  ((stream :initarg :stream :reader section-lacks-commentary-stream))
+  (:report (lambda (error stream)
+             (let* ((input-stream
+                     (do ((stream (section-lacks-commentary-stream error)))
+                         (())
+                       (typecase stream
+                         (echo-stream
+                          (setq stream (echo-stream-input-stream stream)))
+                         (t (return stream)))))
+                    (position (file-position input-stream))
+                    (pathname (when (typep input-stream 'file-stream)
+                                (pathname input-stream))))
+               (format stream
+                       "~@<Can't start a section with a code part ~
+                        ~:[~;~:*at position ~D in file ~A.~]~:@>"
+                       position (or pathname input-stream))))))
+
 @ @<Complain about starting a section without a commentary part@>=
 (cerror "Start a new unnamed section with no commentary."
-        "Can't start a section with a code part.")
+        'section-lacks-commentary :stream stream)
 (setq form (make-instance 'section))
 @<Finish the last section...@>
 
