@@ -599,13 +599,15 @@
 (DEFVAR *RADIX-PREFIX-ALIST* '((#\B . 2) (#\O . 8) (#\X . 16) (#\R)))
 (DEFUN RADIX-READER (STREAM SUB-CHAR ARG)
   (MAKE-INSTANCE 'RADIX-MARKER :BASE
-                 (OR (CDR (ASSOC SUB-CHAR *RADIX-PREFIX-ALIST*)) ARG) :VALUE
+                 (OR (CDR (ASSOC (CHAR-UPCASE SUB-CHAR) *RADIX-PREFIX-ALIST*))
+                     ARG)
+                 :VALUE
                  (FUNCALL
                   (GET-DISPATCH-MACRO-CHARACTER #\# SUB-CHAR
                                                 (READTABLE-FOR-MODE NIL))
                   STREAM SUB-CHAR ARG)))
 (DOLIST (MODE '(:LISP :INNER-LISP))
-  (DOLIST (SUB-CHAR '(#\B #\O #\X #\R))
+  (DOLIST (SUB-CHAR '(#\B #\b #\O #\o #\X #\x #\R #\r))
     (SET-DISPATCH-MACRO-CHARACTER #\# SUB-CHAR #'RADIX-READER
                                   (READTABLE-FOR-MODE MODE))))
 (DEFCLASS STRUCTURE-MARKER (MARKER)

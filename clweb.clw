@@ -1591,11 +1591,13 @@ the actual value, and store the radix in our marker.
 
 (defun radix-reader (stream sub-char arg)
   (make-instance 'radix-marker
-                 :base (or (cdr (assoc sub-char *radix-prefix-alist*)) arg) 
+                 :base (or (cdr (assoc (char-upcase sub-char) ;
+                                       *radix-prefix-alist*)) ;
+                           arg)
                  :value @<Call the standard reader macro fun...@>))
 
 (dolist (mode '(:lisp :inner-lisp))
-  (dolist (sub-char '(#\B #\O #\X #\R))
+  (dolist (sub-char '(#\B #\b #\O #\o #\X #\x #\R #\r))
     (set-dispatch-macro-character #\# sub-char #'radix-reader ;
                                   (readtable-for-mode mode))))
 
