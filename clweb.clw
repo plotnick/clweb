@@ -2685,10 +2685,10 @@ re-reads such strings and picks up any inner-Lisp material.
 
 (set-weave-dispatch 'section #'print-section)
 
-@ The cross-references lists use the macros \.{\\A} (for `also'), \.{\\U}
-(for `use'), \.{\\Q} (for `quote'), and their pluralized variants, along
-with the conjunction macros \.{\\ET} (for two section numbers) and~\.{\\ETs}
-(for between the last of three or more).
+@ The cross-references lists use the macros \.{\\A} (for `also'),
+\.{\\U} (for `use'), \.{\\Q} (for `quote'), and their pluralized variants,
+along with the conjunction macros \.{\\ET} (for two section numbers)
+and~\.{\\ETs} (for between the last of three or more).
 
 @l
 (defun print-xrefs (stream kind xrefs)
