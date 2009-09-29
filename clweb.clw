@@ -2200,7 +2200,7 @@ where we evaluate \.{@@e} forms.
                                 (pathname input-stream))))
                (format stream
                        "~@<Can't start a section with a code part ~
-                        ~:[~;~:*at position ~D in file ~A.~]~:@>"
+~:[~;~:*at position ~D in file ~A.~]~:@>"
                        position (or pathname input-stream))))))
 
 @ @<Complain about starting a section without a commentary part@>=

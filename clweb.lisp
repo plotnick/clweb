@@ -66,7 +66,7 @@
             (PATHNAME
              (WHEN (TYPEP INPUT-STREAM 'FILE-STREAM) (PATHNAME INPUT-STREAM))))
        (FORMAT STREAM "~@<Can't start a section with a code part ~
-                        ~:[~;~:*at position ~D in file ~A.~]~:@>"
+~:[~;~:*at position ~D in file ~A.~]~:@>"
                POSITION (OR PATHNAME INPUT-STREAM))))))
 (DEFINE-CONDITION UNUSED-NAMED-SECTION-WARNING
     (SIMPLE-WARNING)
