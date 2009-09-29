@@ -2179,7 +2179,7 @@ where we evaluate \.{@@e} forms.
       (start-code-marker @<Complain about starting a section...@>)
       (newline-marker @<Maybe push the newline marker@>)
       (evaluated-form-marker (let ((form (marker-value form)))
-                               (with-standard-io-syntax
+                               (let ((*readtable* (readtable-for-mode nil)))
                                  (eval (tangle form)))
                                (push form code)))
       (t (push form code)))))

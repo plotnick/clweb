@@ -439,19 +439,20 @@
                                     T) AS CHARPOS = (STREAM-CHARPOS STREAM)
         UNTIL (CHAR= FIRST-CHAR #\))
         IF (CHAR= FIRST-CHAR #\.)
-        DO (WITH-REWIND-STREAM (STREAM STREAM) (READ-CHAR STREAM T)
-            (LET ((NEXT-CHAR (READ-CHAR STREAM T)))
-              (COND
-               ((TOKEN-DELIMITER-P NEXT-CHAR)
-                (UNLESS (OR LIST *READ-SUPPRESS*)
-                  (SIMPLE-READER-ERROR STREAM
-                   "Nothing appears before . in list."))
-                (PUSH *CONSING-DOT* LIST) (PUSH CHARPOS CHARPOS-LIST))
-               (T (REWIND)
-                (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
-                  (WHEN VALUES
-                    (PUSH (CAR VALUES) LIST)
-                    (PUSH CHARPOS CHARPOS-LIST))))))) ELSE
+        DO (WITH-REWIND-STREAM (STREAM STREAM)
+             (READ-CHAR STREAM T)
+             (LET ((NEXT-CHAR (READ-CHAR STREAM T)))
+               (COND
+                ((TOKEN-DELIMITER-P NEXT-CHAR)
+                 (UNLESS (OR LIST *READ-SUPPRESS*)
+                   (SIMPLE-READER-ERROR STREAM
+                                        "Nothing appears before . in list."))
+                 (PUSH *CONSING-DOT* LIST) (PUSH CHARPOS CHARPOS-LIST))
+                (T (REWIND)
+                 (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
+                   (WHEN VALUES
+                     (PUSH (CAR VALUES) LIST)
+                     (PUSH CHARPOS CHARPOS-LIST))))))) ELSE
         DO (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
              (WHEN VALUES
                (PUSH (CAR VALUES) LIST)
@@ -557,12 +558,13 @@
           (HANDLER-CASE (LENGTH LIST)
                         (TYPE-ERROR (ERROR) (DECLARE (IGNORE ERROR))
                          (SIMPLE-READER-ERROR STREAM "improper list in #(): ~S"
-                          LIST)))))
+                                              LIST)))))
     (UNLESS *READ-SUPPRESS*
       (IF ARG
           (IF (> LENGTH ARG)
               (SIMPLE-READER-ERROR STREAM
-               "vector longer than specified length: #~S~S" ARG LIST)
+                                   "vector longer than specified length: #~S~S"
+                                   ARG LIST)
               (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :LENGTH ARG :ELEMENTS LIST))
           (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :ELEMENTS LIST)))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
@@ -574,13 +576,15 @@
   (DECLARE (IGNORE SUB-CHAR))
   (LET ((*READTABLE* (READTABLE-FOR-MODE NIL)))
     (READ-WITH-ECHO (STREAM VALUES BITS :PREFIX (FORMAT NIL "#~@[~D~]*" ARG))
-     (APPLY #'MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS
-            (MAP 'BIT-VECTOR (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
-                 (SUBSEQ BITS 0
-                         (LET ((N (LENGTH BITS)))
-                           (CASE (ELT BITS (1- N)) ((#\0 #\1) N) (T (1- N))))))
-            (IF ARG
-                (LIST :LENGTH ARG))))))
+      (APPLY #'MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS
+             (MAP 'BIT-VECTOR (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
+                  (SUBSEQ BITS 0
+                          (LET ((N (LENGTH BITS)))
+                            (CASE (ELT BITS (1- N))
+                              ((#\0 #\1) N)
+                              (T (1- N))))))
+             (IF ARG
+                 (LIST :LENGTH ARG))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\* #'SIMPLE-BIT-VECTOR-READER
                                 (READTABLE-FOR-MODE MODE)))
@@ -697,9 +701,9 @@
               (FEATUREP TEST))))
     (PEEK-CHAR T STREAM T NIL T)
     (READ-WITH-ECHO (STREAM VALUES FORM)
-     (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP PLUSP :TEST
-            TEST :FORM FORM
-            (AND (NOT *READ-SUPPRESS*) VALUES (LIST :VALUE (CAR VALUES)))))))
+      (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP PLUSP :TEST
+             TEST :FORM FORM
+             (AND (NOT *READ-SUPPRESS*) VALUES (LIST :VALUE (CAR VALUES)))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\+ #'READ-TIME-CONDITIONAL-READER
                                 (READTABLE-FOR-MODE MODE))
@@ -717,7 +721,8 @@
           UNTIL (OR (EOF-P CHAR) (MEMBER CHAR CONTROL-CHARS))
           DO (WRITE-CHAR (READ-CHAR STREAM) STRING))))
 (DEFUN READ-INNER-LISP (STREAM CHAR)
-  (WITH-MODE :INNER-LISP (READ-DELIMITED-LIST CHAR STREAM T)))
+  (WITH-MODE :INNER-LISP
+    (READ-DELIMITED-LIST CHAR STREAM T)))
 (DOLIST (MODE '(:TEX :RESTRICTED))
   (SET-MACRO-CHARACTER #\| #'READ-INNER-LISP NIL (READTABLE-FOR-MODE MODE)))
 (SET-MACRO-CHARACTER #\| (GET-MACRO-CHARACTER #\) NIL) NIL
@@ -736,9 +741,9 @@
     (SET-DISPATCH-MACRO-CHARACTER #\@ SUB-CHAR FUNCTION
                                   (READTABLE-FOR-MODE MODE))))
 (SET-CONTROL-CODE #\@
- (LAMBDA (STREAM SUB-CHAR ARG)
-   (DECLARE (IGNORE SUB-CHAR STREAM ARG))
-   (STRING "@")))
+                  (LAMBDA (STREAM SUB-CHAR ARG)
+                    (DECLARE (IGNORE SUB-CHAR STREAM ARG))
+                    (STRING "@")))
 (DEFUN START-SECTION-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE STREAM ARG))
   (MAKE-INSTANCE (ECASE SUB-CHAR (#\  'SECTION) (#\* 'STARRED-SECTION))))
@@ -774,16 +779,17 @@
 (DEFUN READ-CONTROL-TEXT
        (STREAM &OPTIONAL (EOF-ERROR-P T) (EOF-VALUE NIL) (RECURSIVE-P NIL))
   (WITH-MODE :RESTRICTED
-   (APPLY #'CONCATENATE 'STRING
-          (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM
-                            #\@) AS X = (READ-PRESERVING-WHITESPACE STREAM
-                                                                    EOF-ERROR-P
-                                                                    EOF-VALUE
-                                                                    RECURSIVE-P)
-                COLLECT TEXT
-                IF (EQ X *END-CONTROL-TEXT*)
-                DO (LOOP-FINISH) ELSE
-                COLLECT X))))
+    (APPLY #'CONCATENATE 'STRING
+           (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM
+                                                      #\@) AS X = (READ-PRESERVING-WHITESPACE
+                                                                   STREAM
+                                                                   EOF-ERROR-P
+                                                                   EOF-VALUE
+                                                                   RECURSIVE-P)
+                 COLLECT TEXT
+                 IF (EQ X *END-CONTROL-TEXT*)
+                 DO (LOOP-FINISH) ELSE
+                 COLLECT X))))
 (DEFUN MAKE-SECTION-NAME-READER (DEFINITION-ALLOWED-P)
   (LAMBDA (STREAM SUB-CHAR ARG)
     (DECLARE (IGNORE SUB-CHAR ARG))
@@ -822,84 +828,85 @@
        (PUSH ,G ,PLACE))))
 (DEFUN READ-SECTIONS (INPUT-STREAM &KEY (APPENDP T))
   (WITH-CHARPOS-INPUT-STREAM (STREAM INPUT-STREAM)
-   (FLET ((FINISH-SECTION (SECTION COMMENTARY CODE)
-            (WHEN (STRINGP (CAR COMMENTARY))
-              (RPLACA COMMENTARY
-                      (STRING-RIGHT-TRIM *WHITESPACE* (CAR COMMENTARY))))
-            (SETQ COMMENTARY (NREVERSE COMMENTARY))
-            (WHEN (STRINGP (CAR COMMENTARY))
-              (RPLACA COMMENTARY
-                      (STRING-LEFT-TRIM *WHITESPACE* (CAR COMMENTARY))))
-            (SETQ CODE (NREVERSE (MEMBER-IF-NOT #'NEWLINEP CODE)))
-            (SETF (SECTION-COMMENTARY SECTION) COMMENTARY)
-            (SETF (SECTION-CODE SECTION) CODE)
-            (WHEN (SECTION-NAME SECTION)
-              (LET ((NAMED-SECTION (FIND-SECTION (SECTION-NAME SECTION)))
-                    (NUMBER (SECTION-NUMBER SECTION))
-                    (CODE (SECTION-CODE SECTION)))
-                (SETF (SECTION-CODE NAMED-SECTION :APPENDP APPENDP) CODE)
-                (WHEN
-                    (OR (NOT (SLOT-BOUNDP NAMED-SECTION 'NUMBER))
-                        (NOT APPENDP))
-                  (SETF (SECTION-NUMBER NAMED-SECTION) NUMBER))
-                (IF APPENDP
-                    (PUSHNEW SECTION (SEE-ALSO NAMED-SECTION))
-                    (SETF (SEE-ALSO NAMED-SECTION) (LIST SECTION)))))
-            SECTION))
-     (PROG (FORM COMMENTARY CODE SECTION SECTIONS)
-       (SETQ SECTION (MAKE-INSTANCE 'LIMBO-SECTION))
-       (WITH-MODE :LIMBO
-        (LOOP (MAYBE-PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM #\@) COMMENTARY)
-              (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
-              (TYPECASE FORM
-                (EOF (GO EOF))
-                (SECTION (GO COMMENTARY))
-                (T (PUSH FORM COMMENTARY)))))
-      COMMENTARY
-       (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
-       (CHECK-TYPE FORM SECTION)
-       (SETQ SECTION FORM
-             COMMENTARY 'NIL
-             CODE 'NIL)
-       (WITH-MODE :TEX
-        (LOOP
-         (MAYBE-PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM '(#\@ #\|)) COMMENTARY)
-         (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
-         (TYPECASE FORM
-           (EOF (GO EOF))
-           (SECTION (GO COMMENTARY))
-           (START-CODE-MARKER
-            (SETF (SECTION-NAME SECTION) (SECTION-NAME FORM))
-            (GO LISP))
-           (T (PUSH FORM COMMENTARY)))))
-      LISP
-       (CHECK-TYPE FORM START-CODE-MARKER)
-       (WITH-MODE :LISP
-        (LOOP (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
-              (TYPECASE FORM
-                (EOF (GO EOF))
-                (SECTION (GO COMMENTARY))
-                (START-CODE-MARKER
-                 (CERROR "Start a new unnamed section with no commentary."
-                         'SECTION-LACKS-COMMENTARY :STREAM STREAM)
-                 (SETQ FORM (MAKE-INSTANCE 'SECTION))
-                 (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
-                 (CHECK-TYPE FORM SECTION)
-                 (SETQ SECTION FORM
-                       COMMENTARY 'NIL
-                       CODE 'NIL))
-                (NEWLINE-MARKER
-                 (UNLESS (NULL CODE)
-                   (COND ((NEWLINEP (CAR CODE)) (POP CODE) (PUSH *PAR* CODE))
-                         (T (PUSH FORM CODE)))))
-                (EVALUATED-FORM-MARKER
-                 (LET ((FORM (MARKER-VALUE FORM)))
-                   (WITH-STANDARD-IO-SYNTAX (EVAL (TANGLE FORM)))
-                   (PUSH FORM CODE)))
-                (T (PUSH FORM CODE)))))
-      EOF
-       (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
-       (RETURN (NREVERSE SECTIONS))))))
+    (FLET ((FINISH-SECTION (SECTION COMMENTARY CODE)
+             (WHEN (STRINGP (CAR COMMENTARY))
+               (RPLACA COMMENTARY
+                       (STRING-RIGHT-TRIM *WHITESPACE* (CAR COMMENTARY))))
+             (SETQ COMMENTARY (NREVERSE COMMENTARY))
+             (WHEN (STRINGP (CAR COMMENTARY))
+               (RPLACA COMMENTARY
+                       (STRING-LEFT-TRIM *WHITESPACE* (CAR COMMENTARY))))
+             (SETQ CODE (NREVERSE (MEMBER-IF-NOT #'NEWLINEP CODE)))
+             (SETF (SECTION-COMMENTARY SECTION) COMMENTARY)
+             (SETF (SECTION-CODE SECTION) CODE)
+             (WHEN (SECTION-NAME SECTION)
+               (LET ((NAMED-SECTION (FIND-SECTION (SECTION-NAME SECTION)))
+                     (NUMBER (SECTION-NUMBER SECTION))
+                     (CODE (SECTION-CODE SECTION)))
+                 (SETF (SECTION-CODE NAMED-SECTION :APPENDP APPENDP) CODE)
+                 (WHEN
+                     (OR (NOT (SLOT-BOUNDP NAMED-SECTION 'NUMBER))
+                         (NOT APPENDP))
+                   (SETF (SECTION-NUMBER NAMED-SECTION) NUMBER))
+                 (IF APPENDP
+                     (PUSHNEW SECTION (SEE-ALSO NAMED-SECTION))
+                     (SETF (SEE-ALSO NAMED-SECTION) (LIST SECTION)))))
+             SECTION))
+      (PROG (FORM COMMENTARY CODE SECTION SECTIONS)
+        (SETQ SECTION (MAKE-INSTANCE 'LIMBO-SECTION))
+        (WITH-MODE :LIMBO
+          (LOOP (MAYBE-PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM #\@) COMMENTARY)
+                (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
+                (TYPECASE FORM
+                  (EOF (GO EOF))
+                  (SECTION (GO COMMENTARY))
+                  (T (PUSH FORM COMMENTARY)))))
+       COMMENTARY
+        (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
+        (CHECK-TYPE FORM SECTION)
+        (SETQ SECTION FORM
+              COMMENTARY 'NIL
+              CODE 'NIL)
+        (WITH-MODE :TEX
+          (LOOP
+           (MAYBE-PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM '(#\@ #\|)) COMMENTARY)
+           (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
+           (TYPECASE FORM
+             (EOF (GO EOF))
+             (SECTION (GO COMMENTARY))
+             (START-CODE-MARKER
+              (SETF (SECTION-NAME SECTION) (SECTION-NAME FORM))
+              (GO LISP))
+             (T (PUSH FORM COMMENTARY)))))
+       LISP
+        (CHECK-TYPE FORM START-CODE-MARKER)
+        (WITH-MODE :LISP
+          (LOOP (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
+                (TYPECASE FORM
+                  (EOF (GO EOF))
+                  (SECTION (GO COMMENTARY))
+                  (START-CODE-MARKER
+                   (CERROR "Start a new unnamed section with no commentary."
+                           'SECTION-LACKS-COMMENTARY :STREAM STREAM)
+                   (SETQ FORM (MAKE-INSTANCE 'SECTION))
+                   (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
+                   (CHECK-TYPE FORM SECTION)
+                   (SETQ SECTION FORM
+                         COMMENTARY 'NIL
+                         CODE 'NIL))
+                  (NEWLINE-MARKER
+                   (UNLESS (NULL CODE)
+                     (COND ((NEWLINEP (CAR CODE)) (POP CODE) (PUSH *PAR* CODE))
+                           (T (PUSH FORM CODE)))))
+                  (EVALUATED-FORM-MARKER
+                   (LET ((FORM (MARKER-VALUE FORM)))
+                     (LET ((*READTABLE* (READTABLE-FOR-MODE NIL)))
+                       (EVAL (TANGLE FORM)))
+                     (PUSH FORM CODE)))
+                  (T (PUSH FORM CODE)))))
+       EOF
+        (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
+        (RETURN (NREVERSE SECTIONS))))))
 (DEFUN TANGLE-1 (FORM)
   (TYPECASE FORM
     (LIST-MARKER (VALUES (MARKER-VALUE FORM) T))
@@ -1076,10 +1083,10 @@
   (WHEN (AND TESTS-FILE (> (LENGTH *TEST-SECTIONS*) 1))
     (WHEN VERBOSE (FORMAT T "~&; weaving tests to ~A~%" TESTS-FILE))
     (WEAVE-SECTIONS *TEST-SECTIONS* TESTS-FILE :PRINT PRINT :EXTERNAL-FORMAT
-     EXTERNAL-FORMAT))
+                    EXTERNAL-FORMAT))
   (WHEN VERBOSE (FORMAT T "~&; weaving sections to ~A~%" OUTPUT-FILE))
   (WEAVE-SECTIONS *SECTIONS* OUTPUT-FILE :PRINT PRINT :EXTERNAL-FORMAT
-   EXTERNAL-FORMAT))
+                  EXTERNAL-FORMAT))
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
 (DEFUN WEAVE-SECTIONS
        (SECTIONS OUTPUT-FILE
@@ -1117,14 +1124,14 @@
          (DOLIST (FORM X) (FORMAT STREAM "\\(~W\\)" FORM)))))))
 (DEFUN READ-TEX-FROM-STRING (INPUT-STRING)
   (WITH-MODE :RESTRICTED
-   (WITH-INPUT-FROM-STRING (STREAM INPUT-STRING)
-     (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM #\|)
-           FOR FORMS = (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL)
-           IF (PLUSP (LENGTH TEXT))
-           COLLECT TEXT
-           IF (EOF-P FORMS)
-           DO (LOOP-FINISH) ELSE
-           COLLECT FORMS))))
+    (WITH-INPUT-FROM-STRING (STREAM INPUT-STRING)
+      (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM #\|)
+            FOR FORMS = (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL)
+            IF (PLUSP (LENGTH TEXT))
+            COLLECT TEXT
+            IF (EOF-P FORMS)
+            DO (LOOP-FINISH) ELSE
+            COLLECT FORMS))))
 (DEFUN PRINT-LIMBO (STREAM SECTION)
   (LET ((COMMENTARY (SECTION-COMMENTARY SECTION)))
     (WHEN COMMENTARY (PRINT-TEX STREAM COMMENTARY) (TERPRI STREAM))))
@@ -1228,11 +1235,14 @@
           ((MEMBER SYMBOL LAMBDA-LIST-KEYWORDS) (WRITE-STRING "\\K{" STREAM))
           ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM)))))
     (WRITE-STRING-ESCAPED (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL)
-     STREAM)
+                          STREAM)
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
 (SET-WEAVE-DISPATCH '(EQL LAMBDA)
- (LAMBDA (STREAM OBJ) (DECLARE (IGNORE OBJ)) (WRITE-STRING "\\L" STREAM)) 1)
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (WRITE-STRING "\\L" STREAM))
+                    1)
 (DEFSTRUCT (LOGICAL-BLOCK (:CONSTRUCTOR MAKE-LOGICAL-BLOCK (LIST))) LIST)
 (DEFUN ANALYZE-INDENTATION (LIST-MARKER)
   (DECLARE (TYPE LIST-MARKER LIST-MARKER))
@@ -1298,49 +1308,72 @@
         (UNLESS (NEWLINEP NEXT) (WRITE-CHAR #\  STREAM)))))))
 (SET-WEAVE-DISPATCH 'LOGICAL-BLOCK #'PRINT-LOGICAL-BLOCK)
 (SET-WEAVE-DISPATCH 'NEWLINE-MARKER
- (LAMBDA (STREAM OBJ) (DECLARE (IGNORE OBJ)) (TERPRI STREAM)))
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (TERPRI STREAM)))
 (SET-WEAVE-DISPATCH 'PAR-MARKER
- (LAMBDA (STREAM OBJ) (DECLARE (IGNORE OBJ)) (FORMAT STREAM "~&\\Y~%")) 1)
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (FORMAT STREAM "~&\\Y~%"))
+                    1)
 (SET-WEAVE-DISPATCH 'EMPTY-LIST-MARKER
- (LAMBDA (STREAM OBJ) (DECLARE (IGNORE OBJ)) (WRITE-STRING "()" STREAM)))
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (WRITE-STRING "()" STREAM)))
 (SET-WEAVE-DISPATCH 'CONSING-DOT-MARKER
- (LAMBDA (STREAM OBJ) (DECLARE (IGNORE OBJ)) (WRITE-CHAR #\. STREAM)))
+                    (LAMBDA (STREAM OBJ)
+                      (DECLARE (IGNORE OBJ))
+                      (WRITE-CHAR #\. STREAM)))
 (SET-WEAVE-DISPATCH 'QUOTE-MARKER
- (LAMBDA (STREAM OBJ) (FORMAT STREAM "\\'~W" (QUOTED-FORM OBJ))))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\'~W" (QUOTED-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'COMMENT-MARKER
- (LAMBDA (STREAM OBJ)
-   (WRITE-STRING "\\C{" STREAM)
-   (PRINT-TEX STREAM (READ-TEX-FROM-STRING (COMMENT-TEXT OBJ)))
-   (WRITE-STRING "}" STREAM)))
+                    (LAMBDA (STREAM OBJ)
+                      (WRITE-STRING "\\C{" STREAM)
+                      (PRINT-TEX STREAM
+                                 (READ-TEX-FROM-STRING (COMMENT-TEXT OBJ)))
+                      (WRITE-STRING "}" STREAM)))
 (SET-WEAVE-DISPATCH 'BACKQUOTE-MARKER
- (LAMBDA (STREAM OBJ) (FORMAT STREAM "\\`~W" (BACKQ-FORM OBJ))))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\`~W" (BACKQ-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'COMMA-MARKER
- (LAMBDA (STREAM OBJ)
-   (FORMAT STREAM "\\CO{~@[~C~]}~W" (COMMA-MODIFIER OBJ) (COMMA-FORM OBJ))))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\CO{~@[~C~]}~W" (COMMA-MODIFIER OBJ)
+                              (COMMA-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'FUNCTION-MARKER
- (LAMBDA (STREAM OBJ) (FORMAT STREAM "\\#\\'~S" (QUOTED-FORM OBJ))) 1)
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\#\\'~S" (QUOTED-FORM OBJ)))
+                    1)
 (SET-WEAVE-DISPATCH 'SIMPLE-VECTOR-MARKER
- (LAMBDA (STREAM OBJ)
-   (FORMAT STREAM "\\#~@[~D~]~S"
-           (AND (SLOT-BOUNDP OBJ 'LENGTH) (SLOT-VALUE OBJ 'LENGTH))
-           (SLOT-VALUE OBJ 'ELEMENTS))))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\#~@[~D~]~S"
+                              (AND (SLOT-BOUNDP OBJ 'LENGTH)
+                                   (SLOT-VALUE OBJ 'LENGTH))
+                              (SLOT-VALUE OBJ 'ELEMENTS))))
 (SET-WEAVE-DISPATCH 'BIT-VECTOR-MARKER
- (LAMBDA (STREAM OBJ)
-   (FORMAT STREAM "\\#~@[~D~]*~{~[0~;1~]~}"
-           (AND (SLOT-BOUNDP OBJ 'LENGTH) (SLOT-VALUE OBJ 'LENGTH))
-           (MAP 'LIST #'IDENTITY (SLOT-VALUE OBJ 'ELEMENTS))))
- 1)
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\#~@[~D~]*~{~[0~;1~]~}"
+                              (AND (SLOT-BOUNDP OBJ 'LENGTH)
+                                   (SLOT-VALUE OBJ 'LENGTH))
+                              (MAP 'LIST #'IDENTITY
+                                   (SLOT-VALUE OBJ 'ELEMENTS))))
+                    1)
 (SET-WEAVE-DISPATCH 'READ-TIME-EVAL-MARKER
- (LAMBDA (STREAM OBJ) (FORMAT STREAM "\\#.~W" (READ-TIME-EVAL-FORM OBJ))))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\#.~W" (READ-TIME-EVAL-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'RADIX-MARKER
- (LAMBDA (STREAM OBJ)
-   (FORMAT STREAM "$~VR_{~2:*~D}$" (RADIX-MARKER-BASE OBJ) (MARKER-VALUE OBJ))))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "$~VR_{~2:*~D}$" (RADIX-MARKER-BASE OBJ)
+                              (MARKER-VALUE OBJ))))
 (SET-WEAVE-DISPATCH 'STRUCTURE-MARKER
- (LAMBDA (STREAM OBJ) (FORMAT STREAM "\\#S~W" (STRUCTURE-MARKER-FORM OBJ))))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\#S~W" (STRUCTURE-MARKER-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'READ-TIME-CONDITIONAL-MARKER
- (LAMBDA (STREAM OBJ)
-   (FORMAT STREAM "\\#~:[--~;+~]\\RC{~S" (READ-TIME-CONDITIONAL-PLUSP OBJ)
-           (READ-TIME-CONDITIONAL-TEST OBJ))
-   (WRITE-CHAR #\  STREAM)
-   (WRITE-STRING-ESCAPED (READ-TIME-CONDITIONAL-FORM OBJ) STREAM)
-   (WRITE-CHAR #\} STREAM)))
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\#~:[--~;+~]\\RC{~S"
+                              (READ-TIME-CONDITIONAL-PLUSP OBJ)
+                              (READ-TIME-CONDITIONAL-TEST OBJ))
+                      (WRITE-CHAR #\  STREAM)
+                      (WRITE-STRING-ESCAPED (READ-TIME-CONDITIONAL-FORM OBJ)
+                                            STREAM)
+                      (WRITE-CHAR #\} STREAM)))
