@@ -1311,10 +1311,6 @@ newline reader to pick up.
   "; foo"
   nil)
 
-(deftest soft-newline
-  (read-form-from-string (format nil ";~%:foo"))
-  :foo)
-
 @ {\it Backquote\/} is hairy, and so we use a kludge to avoid implementing
 the whole thing. Our reader macro functions for |#\`| and |#\,| do the
 absolute minimum amount of processing necessary to be able to reconstruct
@@ -1851,6 +1847,12 @@ so is only recognized in Lisp mode.
   (values))
 
 (set-control-code #\+ #'suppress-line-break-reader :lisp)
+
+@t@l
+(deftest suppress-line-break
+  (with-mode :lisp
+    (values (read-from-string (format nil "@+~%:foo"))))
+  :foo)
 
 @ Non-test sections are introduced by \.{@@\ } or~\.{@@*}, which differ only
 in the way they are output during weaving. The reader macro functions that
