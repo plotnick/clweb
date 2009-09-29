@@ -1147,7 +1147,7 @@
       (DOLIST (FORM CODE)
         (IF (LIST-MARKER-P FORM)
             (FORMAT STREAM "~@<\\+~@;~W~;\\cr~:>" FORM)
-            (FORMAT STREAM "~W" FORM)))
+            (FORMAT STREAM "~W~:[\\par~;~]" FORM (NEWLINEP FORM))))
       (FORMAT STREAM "~&\\egroup~%"))
     (WHEN (AND (TYPEP SECTION 'TEST-SECTION) (SECTION-CODE SECTION))
       (FORMAT STREAM "\\T~P~D.~%" (LENGTH (SECTION-CODE SECTION))

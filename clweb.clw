@@ -2672,7 +2672,7 @@ re-reads such strings and picks up any inner-Lisp material.
       (dolist (form code)
         (if (list-marker-p form)
             (format stream "~@<\\+~@;~W~;\\cr~:>" form)
-            (format stream "~W" form)))
+            (format stream "~W~:[\\par~;~]" form (newlinep form))))
       (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}
     (when (and (typep section 'test-section) (section-code section))
       (format stream "\\T~P~D.~%"

@@ -67,18 +67,25 @@ newlines and such are ignored:
     (loop for x = (read stream nil nil nil) ; |x| is a loop-local variable
           while x collect x)))
 
+;;; The next function doesn't really do anything very interesting, it
+;;; just contains some examples of how various Common Lisp forms are
+;;; usually indented. And this long, pointless comment is just here to
+;;; span multiple lines at the top-level.
 (defun body-forms ()
   (flet ((lessp (x y)
            (< x
               y))
          (three-values ()
            (values 1 2 3)))
-   (multiple-value-bind (a
-                         b
-                         c)
-       (three-values)
-     (foo a)
-     (lessp b c))))
+    ;; This multi-line comment is here only to span multiple lines,
+    ;; like the one just before the start of this |defun|, only not
+    ;; at the top-level.
+    (multiple-value-bind (a
+                          b
+                          c)
+        (three-values)
+      (foo a)
+      (lessp b c))))
 
 (defmacro backq-forms (foo bar list &aux (var (gensym)))
   `(dolist (,var ,list ,list)
