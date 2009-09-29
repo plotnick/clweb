@@ -48,9 +48,10 @@ copacetic.
 @l
 @<The next section@>
 
-@ And this section is just to be used by the previous one.
+@ And this section is just to be used by the previous one. The |defun| should
+be all on one line.
 @<The next...@>=
-(defun do-some-stuff ()
+(defun do-some-stuff () @+
   (list 'some 'stuff))
 
 @ And this one gets used by no one at all.
