@@ -1,4 +1,20 @@
 % Some limbo text.
+@*Initialization.
+@l
+@e
+(defpackage "TEST" (:use "COMMON-LISP"))
+@e
+(in-package "TEST")
+
+@t*Initialize test harness.
+@l
+(in-package "TEST")
+@e
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (require 'rt)
+  (loop for symbol being each external-symbol of (find-package "RT")
+        do (import symbol)))
+
 @*Foo. The function |foo| adds twice its argument's value to thrice it.
 @l
 (defun foo (x)
