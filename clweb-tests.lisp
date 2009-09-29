@@ -77,41 +77,43 @@
          (EQL (READTABLE-FOR-MODE :TEX) (READTABLE-FOR-MODE :LISP)) NIL)
 (DEFTEST WITH-MODE
          (LOOP FOR (MODE . READTABLE) IN *READTABLES*
-               ALWAYS (WITH-MODE MODE (EQL *READTABLE* READTABLE)))
+               ALWAYS (WITH-MODE MODE
+                        (EQL *READTABLE* READTABLE)))
          T)
 (DEFTEST EOF-P (EOF-P (READ-FROM-STRING "" NIL *EOF*)) T)
 (DEFTEST EOF-TYPE (TYPEP (READ-FROM-STRING "" NIL *EOF*) 'EOF) T)
 (DEFTEST (TOKEN-DELIMITER-P 1) (NOT (TOKEN-DELIMITER-P #\ )) NIL)
 (DEFTEST (TOKEN-DELIMITER-P 2) (NOT (TOKEN-DELIMITER-P #\))) NIL)
 (DEFTEST CHARPOS-INPUT-STREAM
-         (WITH-CHARPOS-INPUT-STREAM
-          (S (MAKE-STRING-INPUT-STREAM (FORMAT NIL "012~%abc")))
-          (VALUES (STREAM-CHARPOS S) (READ-LINE S) (STREAM-CHARPOS S)
-                  (READ-CHAR S) (READ-CHAR S) (READ-CHAR S)
-                  (STREAM-CHARPOS S)))
+         (WITH-CHARPOS-INPUT-STREAM (S
+                                     (MAKE-STRING-INPUT-STREAM
+                                      (FORMAT NIL "012~%abc")))
+           (VALUES (STREAM-CHARPOS S) (READ-LINE S) (STREAM-CHARPOS S)
+                   (READ-CHAR S) (READ-CHAR S) (READ-CHAR S)
+                   (STREAM-CHARPOS S)))
          0 "012" 0 #\a #\b #\c 3)
 (DEFTEST CHARPOS-OUTPUT-STREAM
          (LET ((STRING-STREAM (MAKE-STRING-OUTPUT-STREAM)))
            (WITH-CHARPOS-OUTPUT-STREAM (S STRING-STREAM)
-            (VALUES (STREAM-CHARPOS S)
-                    (PROGN (WRITE-STRING "012" S) (STREAM-CHARPOS S))
-                    (PROGN (WRITE-CHAR #\Newline S) (STREAM-CHARPOS S))
-                    (PROGN (WRITE-STRING "abc" S) (STREAM-CHARPOS S))
-                    (GET-OUTPUT-STREAM-STRING STRING-STREAM))))
+             (VALUES (STREAM-CHARPOS S)
+                     (PROGN (WRITE-STRING "012" S) (STREAM-CHARPOS S))
+                     (PROGN (WRITE-CHAR #\Newline S) (STREAM-CHARPOS S))
+                     (PROGN (WRITE-STRING "abc" S) (STREAM-CHARPOS S))
+                     (GET-OUTPUT-STREAM-STRING STRING-STREAM))))
          0 3 0 3 #.(FORMAT NIL "012~%abc"))
 (DEFTEST REWIND-STREAM
          (WITH-REWIND-STREAM (S (MAKE-STRING-INPUT-STREAM "abcdef"))
-          (VALUES (READ-CHAR S) (READ-CHAR S) (READ-CHAR S)
-                  (PROGN (REWIND) (READ-CHAR S))
-                  (PROGN (REWIND) (READ-LINE S))))
+           (VALUES (READ-CHAR S) (READ-CHAR S) (READ-CHAR S)
+                   (PROGN (REWIND) (READ-CHAR S))
+                   (PROGN (REWIND) (READ-LINE S))))
          #\a #\b #\c #\a "bcdef")
 (DEFTEST READ-WITH-ECHO
          (READ-WITH-ECHO ((MAKE-STRING-INPUT-STREAM ":foo :bar") VALUES CHARS)
-          (VALUES VALUES CHARS))
+           (VALUES VALUES CHARS))
          (:FOO) ":foo ")
 (DEFTEST READ-WITH-ECHO-TO-EOF
          (READ-WITH-ECHO ((MAKE-STRING-INPUT-STREAM ":foo") VALUES CHARS)
-          (VALUES VALUES CHARS))
+           (VALUES VALUES CHARS))
          (:FOO) ":foo")
 (DEFTEST PRINT-MARKER
          (LET ((*PRINT-MARKER* T))
@@ -127,7 +129,8 @@
 (DEFTEST READ-NEWLINE
          (NEWLINEP
           (WITH-INPUT-FROM-STRING (S (FORMAT NIL "~%"))
-            (WITH-MODE :LISP (READ S))))
+            (WITH-MODE :LISP
+              (READ S))))
          T)
 (DEFMACRO READ-FROM-STRING-WITH-CHARPOS
           (STRING
@@ -136,11 +139,12 @@
            &AUX (STRING-STREAM (GENSYM)) (CHARPOS-STREAM (GENSYM)))
   `(WITH-OPEN-STREAM (,STRING-STREAM (MAKE-STRING-INPUT-STREAM ,STRING))
      (WITH-CHARPOS-INPUT-STREAM (,CHARPOS-STREAM ,STRING-STREAM)
-      (IF ,PRESERVE-WHITESPACE
-          (READ-PRESERVING-WHITESPACE ,CHARPOS-STREAM ,EOF-ERROR-P ,EOF-VALUE)
-          (READ ,CHARPOS-STREAM ,EOF-ERROR-P ,EOF-VALUE)))))
+       (IF ,PRESERVE-WHITESPACE
+           (READ-PRESERVING-WHITESPACE ,CHARPOS-STREAM ,EOF-ERROR-P ,EOF-VALUE)
+           (READ ,CHARPOS-STREAM ,EOF-ERROR-P ,EOF-VALUE)))))
 (DEFUN READ-FORM-FROM-STRING (STRING &KEY (MODE :LISP))
-  (WITH-MODE MODE (READ-FROM-STRING-WITH-CHARPOS STRING)))
+  (WITH-MODE MODE
+    (READ-FROM-STRING-WITH-CHARPOS STRING)))
 (DEFTEST READ-EMPTY-LIST-INNER-LISP
          (TYPEP (READ-FORM-FROM-STRING "()" :MODE :INNER-LISP)
                 'EMPTY-LIST-MARKER)
@@ -220,20 +224,25 @@
                    (SNARF-UNTIL-CONTROL-CHAR S '(#\a #\3))))
          "abc" "*12")
 (DEFTEST READ-INNER-LISP
-         (WITH-MODE :TEX (VALUES (READ-FROM-STRING "|:foo :bar|"))) (:FOO :BAR))
-(DEFTEST LITERAL-@ (WITH-MODE :TEX (VALUES (READ-FROM-STRING "@@"))) "@")
+         (WITH-MODE :TEX
+           (VALUES (READ-FROM-STRING "|:foo :bar|")))
+         (:FOO :BAR))
+(DEFTEST LITERAL-@
+         (WITH-MODE :TEX
+           (VALUES (READ-FROM-STRING "@@")))
+         "@")
 (DEFTEST START-TEST-SECTION-READER
          (LET ((*TEST-SECTIONS* (MAKE-ARRAY 2 :FILL-POINTER 0)))
            (WITH-INPUT-FROM-STRING (S (FORMAT NIL "@t~%:foo @t* :bar"))
              (WITH-MODE :LISP
-              (VALUES (TYPEP (READ S) 'TEST-SECTION) (READ S)
-                      (TYPEP (READ S) 'STARRED-TEST-SECTION) (READ S)))))
+               (VALUES (TYPEP (READ S) 'TEST-SECTION) (READ S)
+                       (TYPEP (READ S) 'STARRED-TEST-SECTION) (READ S)))))
          T :FOO T :BAR)
 (DEFTEST START-CODE-MARKER
          (WITH-MODE :TEX
-          (VALUES-LIST
-           (MAPCAR (LAMBDA (MARKER) (TYPEP MARKER 'START-CODE-MARKER))
-                   (LIST (READ-FROM-STRING "@l") (READ-FROM-STRING "@p")))))
+           (VALUES-LIST
+            (MAPCAR (LAMBDA (MARKER) (TYPEP MARKER 'START-CODE-MARKER))
+                    (LIST (READ-FROM-STRING "@l") (READ-FROM-STRING "@p")))))
          T T)
 (DEFTEST (READ-EVALUATED-FORM 1)
          (LET ((MARKER (READ-FORM-FROM-STRING (FORMAT NIL "@e t"))))
@@ -247,10 +256,13 @@
          (WITH-INPUT-FROM-STRING (S "frob |foo|@>") (READ-CONTROL-TEXT S))
          "frob |foo|")
 (DEFTEST (READ-SECTION-NAME :TEX)
-         (WITH-MODE :TEX (SECTION-NAME (READ-FROM-STRING "@<foo@>="))) "foo")
+         (WITH-MODE :TEX
+           (SECTION-NAME (READ-FROM-STRING "@<foo@>=")))
+         "foo")
 (DEFTEST (READ-SECTION-NAME :LISP)
          (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
-           (WITH-MODE :LISP (SECTION-NAME (READ-FROM-STRING "@<foo@>"))))
+           (WITH-MODE :LISP
+             (SECTION-NAME (READ-FROM-STRING "@<foo@>"))))
          "foo")
 (DEFTEST SECTION-NAME-DEFINITION-ERROR
          (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
@@ -259,7 +271,8 @@
                             (LAMBDA (CONDITION)
                               (DECLARE (IGNORE CONDITION))
                               (INVOKE-RESTART 'USE-SECTION))))
-              (WITH-MODE :LISP (READ-FROM-STRING "@<foo@>=")))))
+              (WITH-MODE :LISP
+                (READ-FROM-STRING "@<foo@>=")))))
          "foo")
 (DEFTEST SECTION-NAME-USE-ERROR
          (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
@@ -268,7 +281,8 @@
                             (LAMBDA (CONDITION)
                               (DECLARE (IGNORE CONDITION))
                               (INVOKE-RESTART 'CITE-SECTION))))
-              (WITH-MODE :TEX (READ-FROM-STRING "@<foo@>")))))
+              (WITH-MODE :TEX
+                (READ-FROM-STRING "@<foo@>")))))
          "foo")
 (DEFTEST MAYBE-PUSH
          (LET ((LIST 'NIL))
@@ -293,7 +307,8 @@
 (DEFTEST (TESTS-FILE-PATHNAME 1)
          (EQUAL
           (TESTS-FILE-PATHNAME (MAKE-PATHNAME :NAME "FOO" :CASE :COMMON) "LISP"
-           :TESTS-FILE (MAKE-PATHNAME :NAME "BAR" :CASE :COMMON))
+                               :TESTS-FILE
+                               (MAKE-PATHNAME :NAME "BAR" :CASE :COMMON))
           (MAKE-PATHNAME :NAME "BAR" :TYPE "LISP" :CASE :COMMON))
          T)
 (DEFTEST (TESTS-FILE-PATHNAME 2)
@@ -303,7 +318,7 @@
          T)
 (DEFTEST (TESTS-FILE-PATHNAME 3)
          (TESTS-FILE-PATHNAME (MAKE-PATHNAME :NAME "FOO" :CASE :COMMON) "LISP"
-          :TESTS-FILE NIL)
+                              :TESTS-FILE NIL)
          NIL)
 (DEFTEST WRITE-STRING-ESCAPED
          (WITH-OUTPUT-TO-STRING (S) (WRITE-STRING-ESCAPED "foo#{bar}*baz" S))
