@@ -571,7 +571,7 @@ exists.
 @l
 (defun find-section (name &aux (name (squeeze name)))
   (if (null *named-sections*)
-      (values (setq *named-sections* (make-instance 'named-section :name name));
+      (values (setq *named-sections* (make-instance 'named-section :name name))@+
               nil)
       (multiple-value-bind (section present-p)
           (find-or-insert name *named-sections*)
@@ -814,7 +814,7 @@ maintain a mapping between them and their associated instances of
 @l
 (defvar *charpos-streams* (make-hash-table :test #'eq))
 
-(defmethod initialize-instance :after ((instance charpos-stream) ;
+(defmethod initialize-instance :after ((instance charpos-stream) @+
                                        &rest initargs &key)
   (declare (ignore initargs))
   (setf (gethash (charpos-proxy-stream instance) *charpos-streams*) instance))
@@ -864,13 +864,13 @@ is bound to a proxy stream the tracks the character position for |stream|.
 
 @l
 (defmacro with-charpos-input-stream ((var stream &key (charpos 0)) &body body)
-  `(let ((,var (charpos-proxy-stream ;
+  `(let ((,var (charpos-proxy-stream @+
                 (make-charpos-input-stream ,stream :charpos ,charpos))))
      (unwind-protect (progn ,@body)
        (release-charpos-stream ,var))))
 
 (defmacro with-charpos-output-stream ((var stream &key (charpos 0)) &body body)
-  `(let ((,var (charpos-proxy-stream ;
+  `(let ((,var (charpos-proxy-stream @+
                 (make-charpos-output-stream ,stream :charpos ,charpos))))
      (unwind-protect (progn ,@body)
        (release-charpos-stream ,var))))
@@ -911,7 +911,7 @@ state prior to any reads executed in the body.
      (with-open-stream (,var (make-echo-stream ,stream ,out))
        (flet ((,rewind ()
                 (setq ,var (make-concatenated-stream
-                            (make-string-input-stream ;
+                            (make-string-input-stream @+
                              (get-output-stream-string ,out))
                             ,var))))
          ,@body))))
@@ -943,15 +943,15 @@ will be concatenated onto the front of |stream| prior to reading.
                                    ,@(when prefix
                                        `((make-string-input-stream ,prefix)))
                                    ,echo))
-         (let* ((,values (multiple-value-list ;
+         (let* ((,values (multiple-value-list @+
                           (read-preserving-whitespace ,rewind)))
                 (,raw-output (get-output-stream-string ,out))
                 (,length (length ,raw-output))
                 (,echoed (subseq ,raw-output
                                  0
-                                 (if (or (eof-p ;
+                                 (if (or (eof-p @+
                                           (peek-char nil ,rewind nil *eof*))
-                                         (token-delimiter-p ;
+                                         (token-delimiter-p @+
                                           (elt ,raw-output (1- ,length))))
                                      ,length
                                      (1- ,length)))))
@@ -1284,24 +1284,19 @@ therefore stripped during tangling.
 (defclass comment-marker (marker)
   ((text :reader comment-text :initarg :text)))
 
-@ Usually, to read a comment we accumulate all of the characters starting
-with the semicolon and ending just before the next newline, which we leave
-for the newline reader to pick up. But as a special exception, if the
-comment is empty (that is, consists solely of a single semicolon), the
-newline is consumed, and we return zero values. This provides for
-`soft newlines'---that is, newlines in the source file that will not
-appear in the output.
+@ To read a comment, we accumulate all of the characters starting with the
+semicolon and ending just before the next newline, which we leave for the
+newline reader to pick up.
 
 @l
 (defun comment-reader (stream char)
-  (if (eql (peek-char nil stream nil nil t) #\Newline)
-      (progn (read-char stream t nil t) (values))
-      (make-instance 'comment-marker
-                     :text @<Read characters up to...@>)))
+  (make-instance 'comment-marker
+                 :text @<Read characters up to, but not including,
+                         the next newline@>))
 
 (set-macro-character #\; #'comment-reader nil (readtable-for-mode :lisp))
 
-@ @<Read characters up to, but not including, the next newline@>=
+@ @<Read characters up to...@>=
 (with-output-to-string (s)
   (write-char char s) ; include the opening |#\;|
   (do ()
@@ -1419,7 +1414,7 @@ of the CL standard.
   (make-instance 'function-marker :quote 'function :form (read stream t nil t)))
 
 (dolist (mode '(:lisp :inner-lisp))
-  (set-dispatch-macro-character #\# #\' #'sharpsign-quote-reader ;
+  (set-dispatch-macro-character #\# #\' #'sharpsign-quote-reader @+
                                 (readtable-for-mode mode)))
 
 @t@l
@@ -1447,7 +1442,7 @@ abbreviation.
     (if (slot-boundp marker 'length)
         (with-slots (length) marker
           (let ((supplied-length (length elements)))
-            (fill (replace (make-array length :element-type element-type) ;
+            (fill (replace (make-array length :element-type element-type) @+
                            elements)
                   (elt elements (1- supplied-length))
                   :start supplied-length)))
@@ -1460,18 +1455,18 @@ abbreviation.
          (length (handler-case (length list)
                    (type-error (error)
                      (declare (ignore error))
-                     (simple-reader-error ;
+                     (simple-reader-error @+
                       stream "improper list in #(): ~S" list)))))
     (unless *read-suppress*
       (if arg
           (if (> length arg)
-              (simple-reader-error ;
+              (simple-reader-error @+
                stream "vector longer than specified length: #~S~S" arg list)
               (make-instance 'simple-vector-marker :length arg :elements list))
           (make-instance 'simple-vector-marker :elements list)))))
 
 (dolist (mode '(:lisp :inner-lisp))
-  (set-dispatch-macro-character #\# #\( #'simple-vector-reader ;
+  (set-dispatch-macro-character #\# #\( #'simple-vector-reader @+
                                 (readtable-for-mode mode)))
 
 @t@l
@@ -1505,7 +1500,7 @@ the echoed characters.
              (if arg (list :length arg))))))
 
 (dolist (mode '(:lisp :inner-lisp))
-  (set-dispatch-macro-character #\# #\* #'simple-bit-vector-reader ;
+  (set-dispatch-macro-character #\# #\* #'simple-bit-vector-reader @+
                                 (readtable-for-mode mode)))
 
 
@@ -1561,7 +1556,7 @@ value; and in a tangled source file, we get a \.{\#.} form.
       (make-instance 'read-time-eval-marker :form form :value (eval form)))))
 
 (dolist (mode '(:lisp :inner-lisp))
-  (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader ;
+  (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader @+
                                 (readtable-for-mode mode)))
 
 @t@l
@@ -1591,14 +1586,14 @@ the actual value, and store the radix in our marker.
 
 (defun radix-reader (stream sub-char arg)
   (make-instance 'radix-marker
-                 :base (or (cdr (assoc (char-upcase sub-char) ;
-                                       *radix-prefix-alist*)) ;
+                 :base (or (cdr (assoc (char-upcase sub-char) @+
+                                       *radix-prefix-alist*)) @+
                            arg)
                  :value @<Call the standard reader macro fun...@>))
 
 (dolist (mode '(:lisp :inner-lisp))
   (dolist (sub-char '(#\B #\b #\O #\o #\X #\x #\R #\r))
-    (set-dispatch-macro-character #\# sub-char #'radix-reader ;
+    (set-dispatch-macro-character #\# sub-char #'radix-reader @+
                                   (readtable-for-mode mode))))
 
 @ @<Call the standard reader macro function for \.{\#\metasyn{|sub-char|}}@>=
@@ -1647,7 +1642,7 @@ out to a string and let the standard reader parse it when we need the value.
   (make-instance 'structure-marker :form (read stream t nil t)))
 
 (dolist (mode '(:lisp :inner-lisp))
-  (set-dispatch-macro-character #\# #\S #'structure-reader ;
+  (set-dispatch-macro-character #\# #\S #'structure-reader @+
                                 (readtable-for-mode mode)))
 
 @ Sharpsign + and~-- provide read-time conditionalization based on
@@ -1661,9 +1656,9 @@ This routine, adapted from SBCL, interprets such an expression.
      (case (car x)
        ((:not not)
         (cond
-          ((cddr x) ;
+          ((cddr x) @+
            (error "too many subexpressions in feature expression: ~S" x))
-          ((null (cdr x)) ;
+          ((null (cdr x)) @+
            (error "too few subexpressions in feature expression: ~S" x))
           (t (not (featurep (cadr x))))))
        ((:and and) (every #'featurep (cdr x)))
@@ -1732,9 +1727,9 @@ characters that the reader scans, and use that to reconstruct the form.
              (and (not *read-suppress*) values (list :value (car values)))))))
 
 (dolist (mode '(:lisp :inner-lisp))
-  (set-dispatch-macro-character #\# #\+ #'read-time-conditional-reader ;
+  (set-dispatch-macro-character #\# #\+ #'read-time-conditional-reader @+
                                 (readtable-for-mode mode))
-  (set-dispatch-macro-character #\# #\- #'read-time-conditional-reader ;
+  (set-dispatch-macro-character #\# #\- #'read-time-conditional-reader @+
                                 (readtable-for-mode mode)))
 
 @t@l
@@ -1806,7 +1801,7 @@ the closing \v\ if we make it a terminating macro character, overriding its
 usual Lisp meaning as an escape character.
 
 @l
-(set-macro-character #\| (get-macro-character #\) nil) ;
+(set-macro-character #\| (get-macro-character #\) nil) @+
                      nil (readtable-for-mode :inner-lisp))
 
 @ We make |#\@| a non-terminating dispatching macro character in every
@@ -1826,7 +1821,7 @@ reader macro functions that implement the control codes.
 
 (defun set-control-code (sub-char function &optional (modes *modes*))
   (dolist (mode (if (listp modes) modes (list modes)))
-    (set-dispatch-macro-character #\@ sub-char function ;
+    (set-dispatch-macro-character #\@ sub-char function @+
                                   (readtable-for-mode mode))))
 
 @ The control code \.{@@@@} yields the string \.{"@@"} in all modes, but
@@ -1842,6 +1837,20 @@ it should really only be used in \TeX\ text.
   (with-mode :TeX
     (values (read-from-string "@@")))
   "@")
+
+@ The control code \.{@@+} prevents an immediately-following newline from
+being read, and therefore suppresses the line break that would ordinarily
+occur there. It's generally used to give lines of code a bit more room, and
+so is only recognized in Lisp mode.
+
+@l
+(defun suppress-line-break-reader (stream sub-char arg)
+  (declare (ignore sub-char))
+  (when (eql (peek-char nil stream nil nil t) #\Newline)
+    (read-char stream t nil t))
+  (values))
+
+(set-control-code #\+ #'suppress-line-break-reader :lisp)
 
 @ Non-test sections are introduced by \.{@@\ } or~\.{@@*}, which differ only
 in the way they are output during weaving. The reader macro functions that
@@ -2321,7 +2330,7 @@ of the complete program; if you tangle it, you get the whole thing.
 
 @l
 (defun unnamed-section-code-parts (sections)
-  (apply #'append ;
+  (apply #'append @+
          (map 'list #'section-code (remove-if #'section-name sections))))
 
 @ We're now ready for the high-level tangler interface. We begin with
@@ -2356,8 +2365,8 @@ will not affect the calling environment.
   (when verbose (format t "~&; loading WEB from ~S~%" filespec))
   (if (streamp filespec)
       (load-web-from-stream filespec print)
-      (with-open-file (stream (merge-pathnames filespec ;
-                                               (make-pathname :type "CLW" ;
+      (with-open-file (stream (merge-pathnames filespec @+
+                                               (make-pathname :type "CLW" @+
                                                               :case :common))
                        :direction :input
                        :external-format external-format
@@ -2397,7 +2406,7 @@ all.
       (merge-pathnames tests-file (make-pathname :type type :case :common))
       (unless tests-file-supplied-p
         (make-pathname :name (concatenate 'string
-                                          (pathname-name output-file ;
+                                          (pathname-name output-file @+
                                                          :case :common)
                                           "-TESTS")
                        :type type
@@ -2407,7 +2416,7 @@ all.
 @t@l
 (deftest (tests-file-pathname 1)
   (equal (tests-file-pathname (make-pathname :name "FOO" :case :common) "LISP"
-                              :tests-file (make-pathname :name "BAR" ;
+                              :tests-file (make-pathname :name "BAR" @+
                                                          :case :common))
          (make-pathname :name "BAR" :type "LISP" :case :common))
   t)
@@ -2435,15 +2444,15 @@ sections' code should be written.
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
-                    (input-file (merge-pathnames ;
-                                 input-file ;
+                    (input-file (merge-pathnames @+
+                                 input-file @+
                                  (make-pathname :type "CLW" :case :common)))
-                    (output-file (apply #'compile-file-pathname ;
+                    (output-file (apply #'compile-file-pathname @+
                                         input-file :allow-other-keys t args))
-                    (lisp-file (merge-pathnames ;
-                                (make-pathname :type "LISP" :case :common) ;
+                    (lisp-file (merge-pathnames @+
+                                (make-pathname :type "LISP" :case :common) @+
                                 output-file))
-                    (tests-file (apply #'tests-file-pathname ;
+                    (tests-file (apply #'tests-file-pathname @+
                                        output-file "LISP" args))
                     (*readtable* *readtable*)
                     (*package* *package*))
@@ -2461,7 +2470,7 @@ sections' code should be written.
                             :direction :output
                             :if-exists :supersede
                             :external-format external-format)
-             (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT." ;
+             (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT." @+
                      input-file)
              (let ((*evaluating* nil)
                    (*print-marker* t))
@@ -2533,16 +2542,16 @@ If successful, |weave| returns the truename of the output file.
               (if-does-not-exist t)
               (external-format :default) &aux
               (input-file (merge-pathnames input-file
-                                           (make-pathname :type "CLW" ;
+                                           (make-pathname :type "CLW" @+
                                                           :case :common)))
               (output-file (if output-file
                                (merge-pathnames output-file
-                                                (make-pathname :type "TEX" ;
+                                                (make-pathname :type "TEX" @+
                                                                :case :common))
-                               (merge-pathnames (make-pathname :type "TEX" ;
+                               (merge-pathnames (make-pathname :type "TEX" @+
                                                                :case :common)
                                                 input-file)))
-              (tests-file (apply #'tests-file-pathname ;
+              (tests-file (apply #'tests-file-pathname @+
                                  output-file "TEX" args))
               (*readtable* *readtable*)
               (*package* *package*))
@@ -2607,7 +2616,7 @@ are installed in |*weave-pprint-dispatch*|.
 
 @l
 (defun set-weave-dispatch (type-specifier function &optional (priority 0))
-  (set-pprint-dispatch type-specifier function priority ;
+  (set-pprint-dispatch type-specifier function priority @+
                        *weave-pprint-dispatch*))
 
 @ \TeX-mode material is represented as a list of strings containing pure
@@ -2726,7 +2735,7 @@ in the input. Otherwise, $c$ will be output without escaping.
 (defparameter *tex-escape-alist*
   '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 
-(defun write-string-escaped (string &optional stream ;
+(defun write-string-escaped (string &optional stream @+
                              (escape-chars *tex-escape-alist*) &aux
                              (stream (case stream
                                        ((t) *terminal-io*)
@@ -2795,7 +2804,7 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
                         (write-string "\\K{" stream))
                        ((keywordp symbol)
                         (write-string "\\:{" stream)))))
-    (write-string-escaped (write-to-string symbol :escape nil :pretty nil) ;
+    (write-string-escaped (write-to-string symbol :escape nil :pretty nil) @+
                           stream)
     (when group-p (write-string "}" stream))))
 
