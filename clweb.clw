@@ -136,7 +136,6 @@ changes, which would occur if the |defpackage| form above were evaluated
 after the tests have been loaded.
 
 @l
-@e
 (in-package "CLWEB")
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
