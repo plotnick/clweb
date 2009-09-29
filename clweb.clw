@@ -2705,9 +2705,10 @@ and~\.{\\ETs} (for between the last of three or more).
 
 (set-weave-dispatch 'named-section #'print-section-name)
 
-@ Because we're outputting \TeX, we need to carefully escape characters that
-\TeX\ treats as special. Unfortunately, because \TeX's syntax is so malleable
-(not unlike Lisp's), it's nontrivial to decide what to escape, how, and when.
+@ Because we're outputting \TeX, we need to carefully escape characters
+that \TeX\ treats as special. Unfortunately, because \TeX's syntax is so
+malleable (not unlike Lisp's), it's nontrivial to decide what to escape,
+how, and when.
 
 The following routine is the basis for most of the escaping. It writes
 |string| to the output stream designated by |stream|, escaping the
