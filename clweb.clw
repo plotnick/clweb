@@ -1840,7 +1840,7 @@ so is only recognized in Lisp mode.
 
 @l
 (defun suppress-line-break-reader (stream sub-char arg)
-  (declare (ignore sub-char))
+  (declare (ignore sub-char arg))
   (when (eql (peek-char nil stream nil nil t) #\Newline)
     (read-char stream t nil t))
   (values))
