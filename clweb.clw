@@ -1840,7 +1840,7 @@ so is only recognized in Lisp mode.
 
 @l
 (defun suppress-line-break-reader (stream sub-char arg)
-  (declare (ignore sub-char))
+  (declare (ignore sub-char arg))
   (when (eql (peek-char nil stream nil nil t) #\Newline)
     (read-char stream t nil t))
   (values))
@@ -2325,14 +2325,22 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
   (:a :foo :b)
   t)
 
+@ |mapappend| is like |mapcar| except that the results are appended together.
+
+@l
+(defun mapappend (fun &rest args)
+  (if (some #'null args)
+      ()
+      (append (apply fun (mapcar #'car args))
+              (apply #'mapappend fun (mapcar #'cdr args)))))
+
 @ This little utility function returns a list of all of the forms in all
 of the unnamed sections' code parts. This is our first-order approximation
 of the complete program; if you tangle it, you get the whole thing.
 
 @l
 (defun unnamed-section-code-parts (sections)
-  (apply #'append @+
-         (map 'list #'section-code (remove-if #'section-name sections))))
+  (mapappend #'section-code (coerce (remove-if #'section-name sections) 'list)))
 
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so that
