@@ -245,10 +245,7 @@ around allows incremental redefinition of a web, which is important for
 interactive development.
 
 @<Global variables@>=
-(defvar *sections* (make-array 128
-                               :element-type 'section
-                               :adjustable t
-                               :fill-pointer 0))
+(defvar *sections* (make-array 128 :adjustable t :fill-pointer 0))
 
 @ @<Initialize global variables@>=
 (setf (fill-pointer *sections*) 0)
@@ -272,7 +269,7 @@ vector.
 
 @l
 (deftest current-section
-  (let ((*sections* (make-array 1 :element-type 'section :fill-pointer 0)))
+  (let ((*sections* (make-array 1 :fill-pointer 0)))
     (eql (make-instance 'section) (current-section)))
   t)
 
@@ -281,10 +278,7 @@ separate so that they won't interfere with the numbering of the other
 sections.
 
 @<Global variables@>=
-(defvar *test-sections* (make-array 128
-                                    :element-type 'test-section
-                                    :adjustable t
-                                    :fill-pointer 0))
+(defvar *test-sections* (make-array 128 :adjustable t :fill-pointer 0))
 
 @ @<Initialize global variables@>=
 (setf (fill-pointer *test-sections*) 0)
@@ -2199,7 +2193,8 @@ where we evaluate \.{@@e} forms.
       (start-code-marker @<Complain about starting a section...@>)
       (newline-marker @<Maybe push the newline marker@>)
       (evaluated-form-marker (let ((form (marker-value form)))
-                               (let ((*readtable* (readtable-for-mode nil)))
+                               (let ((*evaluating* t)
+                                     (*readtable* (readtable-for-mode nil)))
                                  (eval (tangle form)))
                                (push form code)))
       (t (push form code)))))
