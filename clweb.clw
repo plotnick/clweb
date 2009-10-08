@@ -147,8 +147,8 @@ after the tests have been loaded.
 but we'd like them to appear near the top of the tangled output.
 
 @l
-@<Define global variables@>
-@<Define condition classes@>
+@<Global variables@>
+@<Condition classes@>
 
 @*Sections. The fundamental unit of a web is the {\it section}, which may
 be either {\it named\/} or~{\it unnamed\/}. Named sections are conceptually
@@ -244,7 +244,7 @@ tangling or weaving has completed, but there's a good reason: keeping them
 around allows incremental redefinition of a web, which is important for
 interactive development.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defvar *sections* (make-array 128
                                :element-type 'section
                                :adjustable t
@@ -280,7 +280,7 @@ vector.
 separate so that they won't interfere with the numbering of the other
 sections.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defvar *test-sections* (make-array 128
                                     :element-type 'test-section
                                     :adjustable t
@@ -493,7 +493,7 @@ of the full section name.
             (values node t))
         (values node nil))))
 
-@ @<Define condition classes@>=
+@ @<Condition classes@>=
 (define-condition ambiguous-prefix-error (error)
   ((prefix :reader ambiguous-prefix :initarg :prefix)
    (first-match :reader ambiguous-prefix-first-match :initarg :first-match)
@@ -533,7 +533,7 @@ that it will occur in the sub-tree rooted at |node|.
 which is reset before each tangling or weaving. The reason this is global is
 the same as the reason |*sections*| was: to allow incremental redefinition.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defvar *named-sections* nil)
 
 @ @<Initialize global variables@>=
@@ -646,7 +646,7 @@ We use seperate readtables for each mode, which are stored in |*readtables*|
 and accessed via |readtable-for-mode|. We add an extra readtable with key
 |nil| that stores a virgin copy of the standard readtable.
 
-@<Define global variables@>=
+@<Global variables@>=
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *modes* '(:limbo :TeX :lisp :inner-lisp :restricted)))
 (deftype mode () `(member ,@*modes*))
@@ -685,7 +685,7 @@ given forms with |*readtable*| bound appropriately for the given mode.
 condition class and associated signaling function allow |format|-style
 error reporting.
 
-@<Define condition classes@>=
+@<Condition classes@>=
 (define-condition simple-reader-error (reader-error simple-condition) ()
   (:report (lambda (condition stream)
              (format stream "~S on ~S:~%~?"
@@ -702,7 +702,7 @@ error reporting.
 @ We frequently need an object to use as the |eof-value| argument to
 |read|. It need not be a symbol; it need not even be an atom.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defvar *eof* (make-symbol "EOF"))
 
 @ @l
@@ -816,7 +816,7 @@ given stream and a fresh string stream, again used as a buffer.
 maintain a mapping between them and their associated instances of
 |charpos-stream|.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defvar *charpos-streams* (make-hash-table :test #'eq))
 
 @ @l
@@ -1020,7 +1020,7 @@ printed using the unreadable `\.\#\<' notation. This can be useful for
 debugging some of the reader routines, but might break others, so be
 careful. Routines that depend on this being set should explicitly bind it.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defvar *print-marker* t)
 
 @ The simple method defined here suffices for many marker types: it simply
@@ -1055,7 +1055,7 @@ of evaluation (e.g., within a call to |load-web|) than when writing out a
 tangled Lisp source file. We need this distinction only for read-time
 evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defvar *evaluating* nil)
 
 @ Our first marker is for newlines, which we preserve for the purposes of
@@ -2026,7 +2026,7 @@ citations, and so are not expanded.
 (set-control-code #\< (make-section-name-reader t) :TeX)
 (set-control-code #\< (make-section-name-reader nil) '(:lisp :inner-lisp))
 
-@ @<Define condition classes@>=
+@ @<Condition classes@>=
 (define-condition section-name-context-error (error)
   ((name :reader section-name :initarg :name)))
 
@@ -2204,7 +2204,7 @@ where we evaluate \.{@@e} forms.
                                (push form code)))
       (t (push form code)))))
 
-@ @<Define condition classes@>=
+@ @<Condition classes@>=
 (define-condition section-lacks-commentary (parse-error)
   ((stream :initarg :stream :reader section-lacks-commentary-stream))
   (:report (lambda (error stream)
@@ -2510,7 +2510,7 @@ sections' code should be written.
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
 
-@<Define condition classes@>=
+@<Condition classes@>=
 (define-condition unused-named-section-warning (simple-warning) ())
 
 @ @<Complain about any unused...@>=
@@ -2591,14 +2591,14 @@ If successful, |weave| returns the truename of the output file.
                     :print print
                     :external-format external-format))
 
-@ @<Define global variables@>=
+@ @<Global variables@>=
 (defvar *weave-verbose* t)
 (defvar *weave-print* t)
 
 @ The individual sections and their contents are printed using the pretty
 printer with a customized dispatch table.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
 
 @ The following routine does the actual writing of the sections to the output
@@ -2647,7 +2647,7 @@ are installed in |*weave-pprint-dispatch*|.
 when we're printing inner-Lisp-mode material so that we can adjust our
 pretty-printing.
 
-@<Define global variables@>=
+@<Global variables@>=
 (defvar *inner-lisp* nil)
 
 @ @l
