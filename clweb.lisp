@@ -908,7 +908,8 @@
                            (T (PUSH FORM CODE)))))
                   (EVALUATED-FORM-MARKER
                    (LET ((FORM (MARKER-VALUE FORM)))
-                     (LET ((*READTABLE* (READTABLE-FOR-MODE NIL)))
+                     (LET ((*EVALUATING* T)
+                           (*READTABLE* (READTABLE-FOR-MODE NIL)))
                        (EVAL (TANGLE FORM)))
                      (PUSH FORM CODE)))
                   (T (PUSH FORM CODE)))))
