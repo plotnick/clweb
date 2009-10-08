@@ -143,9 +143,11 @@ after the tests have been loaded.
   (loop for symbol being each external-symbol of (find-package "RT")
         do (import symbol)))
 
-@ We'll define our condition classes as we need them.
+@ We'll define our global variables and condition classes as we need them,
+but we'd like them to appear near the top of the tangled output.
 
 @l
+@<Define global variables@>
 @<Define condition classes@>
 
 @*Sections. The fundamental unit of a web is the {\it section}, which may
@@ -242,12 +244,16 @@ tangling or weaving has completed, but there's a good reason: keeping them
 around allows incremental redefinition of a web, which is important for
 interactive development.
 
-@l
+@<Define global variables@>=
 (defvar *sections* (make-array 128
                                :element-type 'section
                                :adjustable t
                                :fill-pointer 0))
 
+@ @<Initialize global variables@>=
+(setf (fill-pointer *sections*) 0)
+
+@ @l
 (defgeneric push-section (section))
 (defmethod push-section ((section section))
   (setf (section-number section) (vector-push-extend section *sections*)))
@@ -260,9 +266,6 @@ interactive development.
   (let ((i (fill-pointer *sections*)))
     (and (plusp i)
          (elt *sections* (1- i)))))
-
-@ @<Initialize global variables@>=
-(setf (fill-pointer *sections*) 0)
 
 @t We bind |*sections*| in this test to avoid polluting the global sections
 vector.
@@ -277,18 +280,19 @@ vector.
 separate so that they won't interfere with the numbering of the other
 sections.
 
-@l
+@<Define global variables@>=
 (defvar *test-sections* (make-array 128
                                     :element-type 'test-section
                                     :adjustable t
                                     :fill-pointer 0))
 
+@ @<Initialize global variables@>=
+(setf (fill-pointer *test-sections*) 0)
+
+@ @l
 (defmethod push-section ((section test-section))
   (let ((*sections* *test-sections*))
     (call-next-method)))
-
-@ @<Initialize global variables@>=
-(setf (fill-pointer *test-sections*) 0)
 
 @ The test sections all get woven to a seperate output file, and we'll
 need a copy of the limbo text there, too.
@@ -529,7 +533,7 @@ that it will occur in the sub-tree rooted at |node|.
 which is reset before each tangling or weaving. The reason this is global is
 the same as the reason |*sections*| was: to allow incremental redefinition.
 
-@l
+@<Define global variables@>=
 (defvar *named-sections* nil)
 
 @ @<Initialize global variables@>=
@@ -638,20 +642,20 @@ reading Lisp forms that are embedded within \TeX\ material. And finally,
 restricted mode is used for reading material in section names and a few
 other places.
 
-@l
+We use seperate readtables for each mode, which are stored in |*readtables*|
+and accessed via |readtable-for-mode|. We add an extra readtable with key
+|nil| that stores a virgin copy of the standard readtable.
+
+@<Define global variables@>=
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *modes* '(:limbo :TeX :lisp :inner-lisp :restricted)))
 (deftype mode () `(member ,@*modes*))
 
-@ We use seperate readtables for each mode, which are accessed via
-|readtable-for-mode|. We add an extra readtable with key |nil| that
-stores a virgin copy of the standard readtable.
-
-@l
 (defvar *readtables*
   (loop for mode in (cons nil *modes*)
         collect (cons mode (copy-readtable nil))))
 
+@ @l
 (defun readtable-for-mode (mode)
   (declare (type (or mode null) mode))
   (cdr (assoc mode *readtables*)))
@@ -698,8 +702,10 @@ error reporting.
 @ We frequently need an object to use as the |eof-value| argument to
 |read|. It need not be a symbol; it need not even be an atom.
 
-@l
+@<Define global variables@>=
 (defvar *eof* (make-symbol "EOF"))
+
+@ @l
 (defun eof-p (x) (eq x *eof*))
 (deftype eof () '(satisfies eof-p))
 
@@ -810,9 +816,10 @@ given stream and a fresh string stream, again used as a buffer.
 maintain a mapping between them and their associated instances of
 |charpos-stream|.
 
-@l
+@<Define global variables@>=
 (defvar *charpos-streams* (make-hash-table :test #'eq))
 
+@ @l
 (defmethod initialize-instance :after ((instance charpos-stream) @+
                                        &rest initargs &key)
   (declare (ignore initargs))
@@ -1000,25 +1007,27 @@ stored in the |value| slot, but often is.
 (defmethod marker-boundp ((marker marker))
   (slot-boundp marker 'value))
 
-@ We also define |print-object| methods for all marker classes. These
+@ We'll provide |print-object| methods for all of our marker classes. These
 methods are distinct from the pretty-printing routines used by the weaver,
 and usually less precise, in that they don't try to approximate the original
 source form. The idea of these methods is to produce a printed representation
 of an object that is semantically equivalent to the one originally specified.
 
-The simple method defined here suffices for many marker types: it simply
+We'll also define also a global variable, |*print-marker*|, that controls
+the way markers are printed. If it is true (as it is by default), then
+markers will be printed as just described. If it is false, markers are
+printed using the unreadable `\.\#\<' notation. This can be useful for
+debugging some of the reader routines, but might break others, so be
+careful. Routines that depend on this being set should explicitly bind it.
+
+@<Define global variables@>=
+(defvar *print-marker* t)
+
+@ The simple method defined here suffices for many marker types: it simply
 prints the marker's value if it is bound. Markers that require specialized
 printing will override this method.
 
-We also define a global variable, |*print-marker*|, that controls the way
-markers are printed. If it is true (as it is by default), then markers will
-be printed as just described. If it is false, markers are printed using the
-unreadable `\.\#\<' notation. This can be useful for debugging some of the
-reader routines, but will break others, so be careful.
-
 @l
-(defvar *print-marker* t)
-
 (defmethod print-object ((obj marker) stream)
   (if *print-marker*
       (when (marker-boundp obj)
@@ -1046,7 +1055,7 @@ of evaluation (e.g., within a call to |load-web|) than when writing out a
 tangled Lisp source file. We need this distinction only for read-time
 evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}.
 
-@l
+@<Define global variables@>=
 (defvar *evaluating* nil)
 
 @ Our first marker is for newlines, which we preserve for the purposes of
@@ -1577,7 +1586,8 @@ the actual value, and store the radix in our marker.
 (defclass radix-marker (marker)
   ((base :reader radix-marker-base :initarg :base)))
 
-(defvar *radix-prefix-alist* '((#\B . 2) (#\O . 8) (#\X . 16) (#\R . nil)))
+(defparameter *radix-prefix-alist* @+
+  '((#\B . 2) (#\O . 8) (#\X . 16) (#\R . nil)))
 
 (defun radix-reader (stream sub-char arg)
   (make-instance 'radix-marker
@@ -2541,9 +2551,6 @@ for non-printable-\csc{ascii} characters vary widely.
 If successful, |weave| returns the truename of the output file. 
 
 @l
-(defvar *weave-verbose* t)
-(defvar *weave-print* t)
-
 (defun weave (input-file &rest args &key
               output-file tests-file
               (verbose *weave-verbose*)
@@ -2584,13 +2591,20 @@ If successful, |weave| returns the truename of the output file.
                     :print print
                     :external-format external-format))
 
-@ The following routine does the actual writing of the sections to the output
-file. The individual sections and their contents are printed using the pretty
+@ @<Define global variables@>=
+(defvar *weave-verbose* t)
+(defvar *weave-print* t)
+
+@ The individual sections and their contents are printed using the pretty
 printer with a customized dispatch table.
 
-@l
+@<Define global variables@>=
 (defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
 
+@ The following routine does the actual writing of the sections to the output
+file.
+
+@l
 (defun weave-sections (sections output-file &key
                        (print *weave-print*)
                        (external-format :default))
@@ -2633,9 +2647,10 @@ are installed in |*weave-pprint-dispatch*|.
 when we're printing inner-Lisp-mode material so that we can adjust our
 pretty-printing.
 
-@l
+@<Define global variables@>=
 (defvar *inner-lisp* nil)
 
+@ @l
 (defun print-TeX (stream tex-mode-material)
   (dolist (x tex-mode-material)
     (etypecase x
