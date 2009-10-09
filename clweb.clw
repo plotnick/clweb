@@ -228,7 +228,7 @@ code they're designed to exercise.
 
 @l
 (defclass test-section (section)
-  ((test-for :accessor test-for-section :initform (current-section))))
+  ((test-for :accessor test-for-section :initform *current-section*)))
 
 (defclass starred-test-section (test-section starred-section) ())
 
@@ -252,25 +252,29 @@ tangling or weaving has completed, but there's a good reason: keeping them
 around allows incremental redefinition of a web, which is important for
 interactive development.
 
+We'll also keep the global variable |*current-section*| pointing to the
+last section (test or not) created.
+
 @<Global variables@>=
 (defvar *sections* (make-array 128 :adjustable t :fill-pointer 0))
+(defvar *current-section* nil)
 
 @ @<Initialize global variables@>=
 (setf (fill-pointer *sections*) 0)
+(setf *current-section* nil)
 
-@ @l
+@ Here's where section numbers are assigned. We use a generic function
+for |push-section| so that we can override it for test sections.
+
+@l
 (defgeneric push-section (section))
 (defmethod push-section ((section section))
-  (setf (section-number section) (vector-push-extend section *sections*)))
+  (setf (section-number section) (vector-push-extend section *sections*))
+  section)
 
 (defmethod initialize-instance :after ((section section) &rest initargs &key)
   (declare (ignore initargs))
-  (push-section section))
-
-(defun current-section ()
-  (let ((i (fill-pointer *sections*)))
-    (and (plusp i)
-         (elt *sections* (1- i)))))
+  (setq *current-section* (push-section section)))
 
 @t We bind |*sections*| in this test to avoid polluting the global sections
 vector.
@@ -278,7 +282,7 @@ vector.
 @l
 (deftest current-section
   (let ((*sections* (make-array 1 :fill-pointer 0)))
-    (eql (make-instance 'section) (current-section)))
+    (eql (make-instance 'section) *current-section*))
   t)
 
 @ Test sections aren't stored in the |*sections*| vector; we keep them
@@ -2016,7 +2020,7 @@ citations, and so are not expanded.
           (if definition-allowed-p
                @<Signal an error about section name use in \TeX\ mode@>
                (let ((named-section (find-section name)))
-                 (pushnew (current-section) (used-by named-section))
+                 (pushnew *current-section* (used-by named-section))
                  named-section))))))
 
 (set-control-code #\< (make-section-name-reader t) :TeX)
