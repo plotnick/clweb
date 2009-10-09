@@ -422,14 +422,14 @@
                (RPLACD TAIL
                        (DOLIST
                            (X MARKER-LIST (ERROR "Nothing after . in list"))
-                         (COND
-                          ((AND (MARKERP X) (MARKER-BOUNDP X))
-                           (RETURN (MARKER-VALUE X)))
-                          ((NOT (MARKERP X)) (RETURN X)))))
+                         (WHEN
+                             (OR (NOT (MARKERP X))
+                                 (AND (MARKERP X) (MARKER-BOUNDP X)))
+                           (RETURN X))))
                (RETURN (CDR LIST)))
               ((MARKERP X)
                (WHEN (MARKER-BOUNDP X)
-                 (LET ((OBJ (LIST (MARKER-VALUE X))))
+                 (LET ((OBJ (LIST X)))
                    (RPLACD TAIL OBJ)
                    (SETQ TAIL OBJ))))
               (T
@@ -921,7 +921,7 @@
         (RETURN (NREVERSE SECTIONS))))))
 (DEFUN TANGLE-1 (FORM)
   (TYPECASE FORM
-    (LIST-MARKER (VALUES (MARKER-VALUE FORM) T))
+    (MARKER (VALUES (MARKER-VALUE FORM) T))
     (ATOM (VALUES FORM NIL))
     ((CONS NAMED-SECTION *)
      (VALUES (APPEND (SECTION-CODE (CAR FORM)) (TANGLE-1 (CDR FORM))) T))

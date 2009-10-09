@@ -1130,7 +1130,7 @@ preserved during tangling.
            (return (cdr list)))
           ((markerp x)
            (when (marker-boundp x)
-             (let ((obj (list (marker-value x))))
+             (let ((obj (list x)))
                (rplacd tail obj)
                (setq tail obj))))
           (t (let ((obj (list x)))
@@ -1143,10 +1143,10 @@ use the first bound marker or non-marker object that we find.
 
 @<Find the tail of the list marker@>=
 (dolist (x marker-list (error "Nothing after . in list"))
-  (cond ((and (markerp x) (marker-boundp x))
-         (return (marker-value x)))
-        ((not (markerp x))
-         (return x))))
+  (when (or (not (markerp x))
+            (and (markerp x)
+                 (marker-boundp x)))
+    (return x)))
 
 @ We don't use |list-marker|s at all in inner-Lisp mode (since we don't do
 indentation tracking there), but we still want markers for the empty list.
@@ -2282,7 +2282,7 @@ removes unbound markers.
 @l
 (defun tangle-1 (form)
   (typecase form
-    (list-marker (values (marker-value form) t))
+    (marker (values (marker-value form) t))
     (atom (values form nil))
     ((cons named-section *)
      (values (append (section-code (car form)) (tangle-1 (cdr form))) t))
