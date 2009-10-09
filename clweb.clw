@@ -1167,8 +1167,10 @@ consing dot.
         for first-char = (peek-char t stream t nil t)
         as charpos = (stream-charpos stream)
         until (char= first-char #\) )
-        if (char= first-char #\.) do @<Read the next token from |stream|...@>
-        else do @<Read the next object from |stream|...@>
+        if (char= first-char #\.)
+          do @<Read the next token from |stream|, which might be a consing dot@>
+        else do (push (read stream t nil t) list)
+                (push charpos charpos-list)
         finally (read-char stream t nil t)
                 (return (make-instance 'list-marker
                                        :length n
@@ -1178,7 +1180,7 @@ consing dot.
 (set-macro-character #\( (make-list-reader #'list-reader)
                      nil (readtable-for-mode :lisp))
 
-@ @<Read the next token from |stream|, which might be a consing dot@>=
+@ @<Read the next token from |stream|...@>=
 (with-rewind-stream (stream stream)
   (read-char stream t) ; consume dot
   (let ((next-char (read-char stream t)))
@@ -1188,7 +1190,8 @@ consing dot.
            (push *consing-dot* list)
            (push charpos charpos-list))
           (t (rewind)
-             @<Read the next object from |stream|...@>))))
+             (push (read stream t nil t) list)
+             (push charpos charpos-list)))))
 
 @ We have to be careful here, because |read| might not return any values,
 in which case we don't want to push anything.

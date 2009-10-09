@@ -450,15 +450,9 @@
                    (SIMPLE-READER-ERROR STREAM
                                         "Nothing appears before . in list."))
                  (PUSH *CONSING-DOT* LIST) (PUSH CHARPOS CHARPOS-LIST))
-                (T (REWIND)
-                 (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
-                   (WHEN VALUES
-                     (PUSH (CAR VALUES) LIST)
-                     (PUSH CHARPOS CHARPOS-LIST))))))) ELSE
-        DO (LET ((VALUES (MULTIPLE-VALUE-LIST (READ STREAM T NIL T))))
-             (WHEN VALUES
-               (PUSH (CAR VALUES) LIST)
-               (PUSH CHARPOS CHARPOS-LIST)))
+                (T (REWIND) (PUSH (READ STREAM T NIL T) LIST)
+                 (PUSH CHARPOS CHARPOS-LIST))))) ELSE
+        DO (PUSH (READ STREAM T NIL T) LIST) (PUSH CHARPOS CHARPOS-LIST)
         FINALLY (READ-CHAR STREAM T NIL T) (RETURN
                                             (MAKE-INSTANCE 'LIST-MARKER :LENGTH
                                                            N :LIST
