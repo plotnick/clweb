@@ -58,7 +58,7 @@ otherwise, it will be replaced."
 	  (font-lock-syntactic-face-function
 	   . lisp-font-lock-syntactic-face-function)
           (font-lock-syntactic-keywords
-           . (("\\(@\\)[ *t]" 1 "< b")
+           . (("\\(^\\|\\s-\\)\\(@\\)[ *t]" 2 "< b")
               ("@\\([LlPp]\\)" 1 "> b")
               ("\\(@\\)<" 1 "< b")
               ("@\\(>\\)[^=]" 1 "> b")
