@@ -2198,7 +2198,8 @@ where we evaluate \.{@@e} forms.
     (typecase form
       (eof (go eof))
       (section (go commentary))
-      (start-code-marker @<Complain about starting a section...@>)
+      (start-code-marker @+
+       @<Complain about starting a section without a commentary part@>)
       (newline-marker @<Maybe push the newline marker@>)
       (evaluated-form-marker (let ((form (marker-value form)))
                                (let ((*evaluating* t)
@@ -2206,6 +2207,12 @@ where we evaluate \.{@@e} forms.
                                  (eval (tangle form)))
                                (push form code)))
       (t (push form code)))))
+
+@ @<Complain about starting a section without a commentary part@>=
+(cerror "Start a new unnamed section with no commentary."
+        'section-lacks-commentary :stream stream)
+(setq form (make-instance 'section))
+@<Finish the last section...@>
 
 @ @<Condition classes@>=
 (define-condition section-lacks-commentary (parse-error)
@@ -2225,12 +2232,6 @@ where we evaluate \.{@@e} forms.
                        "~@<Can't start a section with a code part ~
 ~:[~;~:*at position ~D in file ~A.~]~:@>"
                        position (or pathname input-stream))))))
-
-@ @<Complain about starting a section without a commentary part@>=
-(cerror "Start a new unnamed section with no commentary."
-        'section-lacks-commentary :stream stream)
-(setq form (make-instance 'section))
-@<Finish the last section...@>
 
 @ We won't push a newline marker if no code has been accumulated yet, and
 we'll push a paragraph marker instead if there are two newlines in a row.
