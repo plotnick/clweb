@@ -1193,16 +1193,7 @@ consing dot.
              (push (read stream t nil t) list)
              (push charpos charpos-list)))))
 
-@ We have to be careful here, because |read| might not return any values,
-in which case we don't want to push anything.
-
-@<Read the next object from |stream| and push it onto |list|@>=
-(let ((values (multiple-value-list (read stream t nil t))))
-  (when values
-    (push (car values) list)
-    (push charpos charpos-list)))
-
-@t  When we're testing the reader functions, we'll often want to read from
+@t When we're testing the reader functions, we'll often want to read from
 a string-stream that tracks character positions.
 
 @l
