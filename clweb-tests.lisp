@@ -325,3 +325,182 @@
 (DEFTEST WRITE-STRING-ESCAPED
          (WITH-OUTPUT-TO-STRING (S) (WRITE-STRING-ESCAPED "foo#{bar}*baz" S))
          "foo\\#$\\{$bar$\\}$*baz")
+(DEFTEST (PARSE-BODY 1)
+         (PARSE-BODY '("doc" (DECLARE (OPTIMIZE SPEED)) :FOO :BAR)
+                     :DOC-STRING-ALLOWED T)
+         (:FOO :BAR) ((OPTIMIZE SPEED)) "doc")
+(DEFTEST (PARSE-BODY 2)
+         (PARSE-BODY
+          '((DECLARE (OPTIMIZE SPEED)) "doc" (DECLARE (OPTIMIZE SPACE)) :FOO
+            :BAR)
+          :DOC-STRING-ALLOWED T)
+         (:FOO :BAR) ((OPTIMIZE SPEED) (OPTIMIZE SPACE)) "doc")
+(DEFTEST (PARSE-BODY 3) (PARSE-BODY '("doc" "string") :DOC-STRING-ALLOWED T)
+         ("string") NIL "doc")
+(DEFTEST (PARSE-BODY 4)
+         (PARSE-BODY '((DECLARE (OPTIMIZE DEBUG)) "string") :DOC-STRING-ALLOWED
+                     T)
+         ("string") ((OPTIMIZE DEBUG)) NIL)
+(DEFTEST (PARSE-BODY 5)
+         (PARSE-BODY '((DECLARE (OPTIMIZE DEBUG)) "string") :DOC-STRING-ALLOWED
+                     NIL)
+         ("string") ((OPTIMIZE DEBUG)) NIL)
+(DEFTEST WALK-ORDINARY-LAMBDA-LIST
+         (LET ((WALKER (MAKE-INSTANCE 'WALKER))
+               (LAMBDA-LIST
+                '(X Y &OPTIONAL (O (+ X Y)) &KEY ((:K K) 2 K-SUPPLIED-P) &REST
+                  ARGS &AUX W
+                  (Z
+                   (IF K-SUPPLIED-P
+                       O
+                       X))))
+               (DECLS '((SPECIAL X)))
+               (ENV (ENSURE-PORTABLE-WALKING-ENVIRONMENT NIL)))
+           (MULTIPLE-VALUE-BIND (NEW-LAMBDA-LIST NEW-ENV)
+               (WALK-LAMBDA-LIST WALKER LAMBDA-LIST DECLS ENV)
+             (VALUES (TREE-EQUAL LAMBDA-LIST NEW-LAMBDA-LIST)
+                     (VARIABLE-INFORMATION 'X NEW-ENV)
+                     (EVERY (LAMBDA (X) (EQL X ':LEXICAL))
+                            (MAPCAR
+                             (LAMBDA (SYM) (VARIABLE-INFORMATION SYM NEW-ENV))
+                             '(Y Z O K K-SUPPLIED-P ARGS W Z))))))
+         T :SPECIAL T)
+(DEFTEST WALK-MACRO-LAMBDA-LIST
+         (LET ((WALKER (MAKE-INSTANCE 'WALKER))
+               (LAMBDA-LIST
+                '(&WHOLE W (X Y) &OPTIONAL ((O) (+ X Y)) &KEY
+                  ((:K (K1 K2)) (2 3) K-SUPPLIED-P) &ENVIRONMENT ENV))
+               (ENV (ENSURE-PORTABLE-WALKING-ENVIRONMENT NIL)))
+           (MULTIPLE-VALUE-BIND (NEW-LAMBDA-LIST NEW-ENV)
+               (WALK-LAMBDA-LIST WALKER LAMBDA-LIST NIL ENV)
+             (VALUES (TREE-EQUAL LAMBDA-LIST NEW-LAMBDA-LIST)
+                     (EVERY (LAMBDA (X) (EQL X ':LEXICAL))
+                            (MAPCAR
+                             (LAMBDA (SYM) (VARIABLE-INFORMATION SYM NEW-ENV))
+                             '(W X Y O K1 K2 K-SUPPLIED-P ENV))))))
+         T T)
+(DEFTEST WALK-DOTTED-MACRO-LAMBDA-LIST
+         (LET ((WALKER (MAKE-INSTANCE 'WALKER))
+               (LAMBDA-LIST '(A B . C))
+               (ENV (ENSURE-PORTABLE-WALKING-ENVIRONMENT NIL)))
+           (MULTIPLE-VALUE-BIND (NEW-LAMBDA-LIST NEW-ENV)
+               (WALK-LAMBDA-LIST WALKER LAMBDA-LIST NIL ENV)
+             (VALUES
+              (TREE-EQUAL (SUBST '(&REST C) 'C LAMBDA-LIST) NEW-LAMBDA-LIST)
+              (EVERY (LAMBDA (X) (EQL X ':LEXICAL))
+                     (MAPCAR (LAMBDA (SYM) (VARIABLE-INFORMATION SYM NEW-ENV))
+                             '(A B C))))))
+         T T)
+(DEFINE-CONDITION BINDING
+    (CONDITION)
+    ((SYMBOL :INITARG :SYMBOL :READER BINDING-SYMBOL)
+     (NAMESPACE :INITARG :NAMESPACE :READER BINDING-NAMESPACE)
+     (ENVIRONMENT :INITARG :ENVIRONMENT :READER BINDING-ENVIRONMENT)))
+(DEFCLASS TEST-WALKER (WALKER) NIL)
+(DEFINE-SPECIAL-FORM-WALKER BINDING
+    ((WALKER TEST-WALKER) FORM ENV)
+  (DESTRUCTURING-BIND
+      (SYMBOL NAMESPACE)
+      (CDR FORM)
+    (SIGNAL 'BINDING :SYMBOL SYMBOL :NAMESPACE NAMESPACE :ENVIRONMENT ENV)
+    (WALK-FORM WALKER SYMBOL ENV)))
+(DEFMACRO DEFINE-WALK-BINDING-TEST (NAME FORM WALKED-FORM BINDING-INFO)
+  `(DEFTEST ,NAME
+            (LET (BINDINGS)
+              (FLET ((NOTE-BINDING
+                         (BINDING
+                          &AUX (SYMBOL (BINDING-SYMBOL BINDING))
+                          (ENV (BINDING-ENVIRONMENT BINDING)))
+                       (PUSH
+                        (CASE (BINDING-NAMESPACE BINDING)
+                          (:FUNCTION (FUNCTION-INFORMATION SYMBOL ENV))
+                          (:VARIABLE (VARIABLE-INFORMATION SYMBOL ENV)))
+                        BINDINGS)))
+                (HANDLER-BIND ((BINDING #'NOTE-BINDING))
+                  (VALUES
+                   (TREE-EQUAL (WALK-FORM (MAKE-INSTANCE 'TEST-WALKER) ',FORM)
+                               ',WALKED-FORM)
+                   (NREVERSE BINDINGS)))))
+            T ,BINDING-INFO))
+(DEFINE-WALK-BINDING-TEST WALK-LET
+ (LET ((X 1) (Y (BINDING X :VARIABLE)))
+   (DECLARE (SPECIAL X))
+   (BINDING Y :VARIABLE))
+ (LET ((X 1) (Y X))
+   (DECLARE (SPECIAL X))
+   Y)
+ (NIL :LEXICAL))
+(DEFINE-WALK-BINDING-TEST WALK-FLET
+ (FLET ((FOO (X)
+          (BINDING X :VARIABLE))
+        (BAR (Y)
+          (BINDING FOO :FUNCTION)))
+   (DECLARE (SPECIAL X))
+   (BINDING FOO :FUNCTION))
+ (FLET ((FOO (X)
+          X)
+        (BAR (Y)
+          FOO))
+   (DECLARE (SPECIAL X))
+   FOO)
+ (:LEXICAL NIL :FUNCTION))
+(DEFINE-WALK-BINDING-TEST WALK-MACROLET
+ (MACROLET ((FOO (X)
+              X)
+            (BAR (Y)
+              Y))
+   (BINDING FOO :FUNCTION)
+   (FOO :FOO))
+ (MACROLET ((FOO (X)
+              X)
+            (BAR (Y)
+              Y))
+   FOO
+   :FOO)
+ (:MACRO))
+(DEFINE-WALK-BINDING-TEST WALK-SYMBOL-MACROLET
+ (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
+   (BINDING FOO :VARIABLE)
+   (BINDING BAR :VARIABLE)
+   (BINDING FOO :FUNCTION))
+ (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
+   :FOO
+   :BAR
+   :FOO)
+ (:SYMBOL-MACRO :SYMBOL-MACRO NIL))
+(DEFINE-WALK-BINDING-TEST WALK-LET*
+ (LET* ((X 1) (Y (BINDING X :VARIABLE)))
+   (DECLARE (SPECIAL X))
+   (BINDING Y :VARIABLE))
+ (LET* ((X 1) (Y X))
+   (DECLARE (SPECIAL X))
+   Y)
+ (:SPECIAL :LEXICAL))
+(DEFINE-WALK-BINDING-TEST WALK-LABELS
+ (LABELS ((FOO (X)
+            (BINDING X :VARIABLE))
+          (BAR (Y)
+            (BINDING FOO :FUNCTION)))
+   (DECLARE (SPECIAL X))
+   (BINDING FOO :FUNCTION))
+ (LABELS ((FOO (X)
+            X)
+          (BAR (Y)
+            FOO))
+   (DECLARE (SPECIAL X))
+   FOO)
+ (:LEXICAL :FUNCTION :FUNCTION))
+(DEFINE-WALK-BINDING-TEST WALK-LOCALLY
+ (LET ((Y T))
+   (LIST (BINDING Y :VARIABLE)
+         (LOCALLY (DECLARE (SPECIAL Y)) (BINDING Y :VARIABLE))))
+ (LET ((Y T))
+   (LIST Y (LOCALLY (DECLARE (SPECIAL Y)) Y)))
+ (:LEXICAL :SPECIAL))
+(DEFCLASS TRACING-WALKER (WALKER) NIL)
+(DEFMETHOD WALK-ATOMIC-FORM :BEFORE ((WALKER TRACING-WALKER) FORM ENV)
+           (FORMAT T "; walking atomic form ~S~@[ (~(~A~) variable)~]~%" FORM
+                   (AND (SYMBOLP FORM) (VARIABLE-INFORMATION FORM ENV))))
+(DEFMETHOD WALK-COMPOUND-FORM :BEFORE ((WALKER TRACING-WALKER) CAR FORM ENV)
+           (DECLARE (IGNORE CAR ENV))
+           (FORMAT T "~<; ~@;walking compound form ~W~:>~%" (LIST FORM)))

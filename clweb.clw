@@ -41,6 +41,7 @@
 \def\EOF{\csc{eof}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\metasyn#1{$\langle${\it #1\/}$\rangle$} % metasyntactic variable
+\def\cltl{\csc{cl}t\csc{l}-2} % Common Lisp, the Language (2nd ed.)
 
 @*Introduction. This is \CLWEB, a literate programming system for Common
 Lisp by Alex Plotnick \metasyn{plotnick@@cs.brandeis.edu}. It is modeled
@@ -100,17 +101,21 @@ exported function, |load-sections-from-temp-file|, that is conceptually
 part of the tangler, but is a special-purpose routine designed to be used
 in conjunction with an editor such as Emacs to provide incremental
 redefinition of sections; the user will generally never need to call it
-directly.
-
-The remainder of the exported symbols are condition classes for the various
-errors and warnings that may be generated while processing a web.
+directly. The remainder of the exported symbols are condition classes for
+the various errors and warnings that may be generated while processing a
+web.
 
 @l
-@e
 (provide "CLWEB")
+
+@e
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  #+sbcl (require 'sb-cltl2))
 @e
 (defpackage "CLWEB"
-  (:use "COMMON-LISP")
+  (:use "COMMON-LISP"
+        #+sbcl "SB-CLTL2"
+        #+allegro "SYS")
   (:export "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
@@ -119,7 +124,10 @@ errors and warnings that may be generated while processing a web.
            "SECTION-NAME-CONTEXT-ERROR"
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
-           "UNUSED-NAMED-SECTION-WARNING"))
+           "UNUSED-NAMED-SECTION-WARNING")
+  (:shadow "ENCLOSE"
+           #+allegro "FUNCTION-INFORMATION"
+           #+allegro "VARIABLE-INFORMATION"))
 @e
 (in-package "CLWEB")
 
@@ -3086,3 +3094,828 @@ which see.
     (write-char #\Space stream)
     (write-string-escaped (read-time-conditional-form obj) stream)
     (write-char #\} stream)))
+
+@*The walker. Our last major task is to produce an index of every
+interesting symbol that occurs in a web (we'll define what makes a
+symbol `interesting' later). We would like separate entries for each
+kind of object that a given symbol names: e.g., local or global function,
+lexical or special variable, \etc. And finally, we should note whether
+a given occurrence of a symbol is a definition/binding or just a use.
+
+In order to accomplish this, we need to walk the tangled code of the
+entire program, since the meaning of a symbol in Common Lisp depends,
+in general, on its lexical environment, which can only be determined
+by code walking. For reasons that will be explained later, we'll
+actually be walking a special sort of munged code that isn't exactly
+Common Lisp. And because of this, none of the available code walkers
+will quite do what we want. So we'll roll our own.
+
+@ We'll pass around instances of a |walker| class during our code walk
+to provide a hook (via subclassing) for overriding walker methods.
+
+@l
+(defclass walker () ())
+
+@ The walker protocol consists of a handful of generic functions, which
+we'll describe as we come to them.
+
+@l
+@<Walker generic functions@>
+
+@ We'll use the environments \csc{api} defined in \cltl, since even
+though it's not part of the Common Lisp standard, it's widely supported,
+and does everything we need it to do.
+
+Allegro Common Lisp has an additional function,
+|ensure-portable-walking-environment|, that needs to be called on
+any environment object that a portable walker uses; we'll provide
+a trivial definition for other Lisps.
+
+@l
+(unless (fboundp 'ensure-portable-walking-environment)
+  (defun ensure-portable-walking-environment (env) env))
+
+@ Allegro doesn't define |parse-macro| or |enclose|, so we'll need
+to provide our own definitions. In fact, we'll use our own version
+of |enclose| on all implementations (note that it's shadowed in
+the package definition at the beginning of the program). Thanks
+to Duane Rettig of Franz,~Inc.\ for the idea behind this trivial
+implementation (post to comp.lang.lisp of 18~Oct, 2004, message-id
+\metasyn{4is97u4vv.fsf@@franz.com}).
+
+@l
+(defun enclose (lambda-expression &optional env
+                (walker (make-instance 'walker)))
+  (coerce (walk-form walker lambda-expression env)
+          'function))
+
+@ The following code for |parse-macro| is obviously extremely
+implementation-specific; a portable version would be much more complex.
+
+@l
+(unless (fboundp 'parse-macro)
+  (defun parse-macro (name lambda-list body &optional env)
+    (declare (ignorable name lambda-list body env))
+    #+allegro (excl::defmacro-expander `(,name ,lambda-list ,@body) env)
+    #-allegro (error "PARSE-MACRO not implemented")))
+
+@ The good people at Franz also decided that they needed an extra value
+returned from both |variable-information| and |function-information|.
+But instead of doing the sensible thing and adding that extra value at
+the {\it end\/} of the list of returned values, they {\it changed\/}
+the order from the one specified by \cltl, so that their new value is
+the second value returned, and what should be second is now fourth.
+Thanks, Franz!
+
+@l
+(defun reorder-env-information (fn)
+  (lambda (&rest args)
+    (multiple-value-bind (type locative declarations local)
+        (apply fn args)
+      (declare (ignore locative))
+      (values type local declarations))))
+
+#+allegro
+(setf (symbol-function 'variable-information)
+      (reorder-env-information #'sys:variable-information)
+      (symbol-function 'function-information)
+      (reorder-env-information #'sys:function-information))
+
+@ The main entry point for the walker is |walk-form|. The walk stops after
+walking an atomic or special form; otherwise, we keep walking until the
+form no longer macroexpands.
+
+@l
+(defun symbol-macro-p (form env)
+  (and (symbolp form)
+       (eql (variable-information form env) ':symbol-macro)))
+
+(defmethod walk-form ((walker walker) form &optional env &aux
+                      (env (ensure-portable-walking-environment env))
+                      (expanded t))
+  (loop
+    (cond ((symbol-macro-p form env))
+          ((atom form)
+           (return (walk-atomic-form walker form env)))
+          ((not (symbolp (car form)))
+           (return (walk-list walker form env)))
+          ((or (not expanded)
+               (walk-as-special-form-p walker (car form) form env))
+           (return (walk-compound-form walker (car form) form env))))
+    (multiple-value-setq (form expanded)
+      (macroexpand-for-walk walker form env))))
+
+@ @<Walker generic functions@>=
+(defgeneric walk-form (walker form &optional env))
+
+@ We use the predicate |walk-as-special-form-p| to allow walkers to treat
+arbitrary (compound) forms as though they were special forms.
+
+@l
+(defmethod walk-as-special-form-p (walker car form env)
+  (declare (ignore walker car form env))
+  nil)
+
+@ @<Walker generic functions@>=
+(defgeneric walk-as-special-form-p (walker car form env))
+
+@ Macroexpansion and environment augmentation both get wrapped in generic
+functions to allow subclasses to override the normal behavior.
+
+@ @<Walker generic functions@>=
+(defgeneric macroexpand-for-walk (walker form env))
+(defgeneric augment-walker-environment (walker env &rest args))
+
+@ The default methods for |macroexpand-for-walk| and
+|augment-waker-environment| just call down to the usual Lisp functions.
+
+@l
+(defmethod macroexpand-for-walk ((walker walker) form env)
+  (macroexpand-1 form env))
+
+(defmethod augment-walker-environment ((walker walker) env &rest args)
+  (apply #'augment-environment env args))
+
+@ Here's a utility function we'll use often in walker methods: it walks
+each element of the supplied list and returns a new list of the results
+of those walks.
+
+@l
+(defun walk-list (walker list env)
+  (do ((form list (cdr form))
+       (newform () (cons (walk-form walker (car form) env) newform)))
+      ((atom form) (nreconc newform form))))
+
+@ The functions |walk-atomic-form| and |walk-compound-form| are the
+real work-horses of the walker. The latter takes an additional |car|
+argument so that we can use |eql|-specializers.
+
+@<Walker generic functions@>=
+(defgeneric walk-atomic-form (walker form env))
+(defgeneric walk-compound-form (walker car form env))
+
+@ The default method for |walk-atomic-form| simply returns the form.
+Note that this function won't be called for symbol macros; those are
+expanded in |walk-form|.
+
+@l
+(defmethod walk-atomic-form ((walker walker) form env)
+  (declare (ignore env))
+  form)
+
+@ The default method for |walk-compound-form| is used for all funcall-like
+forms; it leaves its |car| unevaluated and walks its |cdr|.
+
+@l
+(defmethod walk-compound-form ((walker walker) car form env)
+  (declare (ignore car))
+  `(,(car form) ,@(walk-list walker (cdr form) env)))
+
+@ Many of the special forms defined in Common Lisp can be walked using the
+default method just defined, since their syntax is the same as an ordinary
+function call. But it's important to override |walk-as-special-form-p| for
+these operators, because ``[a]n implmementation is free to implement a
+Common Lisp special operator as a macro.'' (\csc{ansi} Common Lisp,
+section~3.1.2.1.2.2)
+
+@l
+(defmacro walk-as-special-form (operator)
+  `(defmethod walk-as-special-form-p
+       ((walker walker) (car (eql ',operator)) form env)
+     (declare (ignore form env))
+     t))
+
+(walk-as-special-form catch)
+(walk-as-special-form if)
+(walk-as-special-form load-time-value)
+(walk-as-special-form multiple-value-call)
+(walk-as-special-form multiple-value-prog1)
+(walk-as-special-form progn)
+(walk-as-special-form progv)
+(walk-as-special-form setq)
+(walk-as-special-form tagbody)
+(walk-as-special-form throw)
+(walk-as-special-form unwind-protect)
+
+@ The rest of the special form walkers we define will need specialized
+methods for both |walk-as-special-form-p| and |walk-compound-form|. The
+following macro makes sure that these are consistently defined.
+
+@l
+(defmacro define-special-form-walker (operator (walker form env &rest rest) @+
+                                      &body body &aux
+                                      (car `(car (eql ',operator))))
+  (flet ((arg-name (arg) (if (consp arg) (car arg) arg)))
+    `(progn
+       (defmethod walk-as-special-form-p (,walker ,car ,form ,env)
+         (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
+         t)
+       (defmethod walk-compound-form (,walker ,car ,form ,env ,@rest)
+         (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
+         ,@body))))
+
+@ Block-like special forms have a |cdr| that begins with a single
+unevaluated form, followed by zero or more evaluated forms.
+
+@l
+(defun walk-block (walker form env)
+  `(,(car form)
+    ,(cadr form)
+    ,@(walk-list walker (cddr form) env)))
+
+(defmacro define-block-like-walker (operator)
+  `(define-special-form-walker ,operator ((walker walker) form env)
+     (walk-block walker form env)))
+
+(define-block-like-walker block)
+(define-block-like-walker eval-when)
+(define-block-like-walker return-from)
+(define-block-like-walker the)
+
+@ Quote-like special forms are entirely unevaluated.
+
+@l
+(defun walk-quote (walker form env)
+   (declare (ignore walker env))
+   form)
+
+(defmacro define-quote-like-walker (operator)
+  `(define-special-form-walker ,operator ((walker walker) form env)
+     (walk-quote walker form env)))
+
+(define-quote-like-walker quote)
+(define-quote-like-walker go)
+
+@ The |function| special form needs to check whether the given form is a
+valid function name or a lambda expression.
+
+@l
+(defun valid-function-name-p (name)
+  (typecase name
+    (cons (eql (car name) 'setf))
+    (symbol t)
+    (otherwise nil)))
+
+(define-special-form-walker function ((walker walker) form env)
+  `(,(car form)
+    ,(cond ((valid-function-name-p (cadr form))
+            (cadr form))
+           ((and (consp (cadr form)) (eql (caadr form) 'lambda))
+            (walk-lambda-expression walker (cadr form) env))
+           (t (cerror "Walk the function name anyway."
+                      'invalid-function-name :name (cadr form))
+              (walk-form walker (cadr form) env)))))
+
+@ @<Condition classes@>=
+(define-condition invalid-function-name (parse-error)
+  ((name :initarg :name :reader function-name))
+  (:report (lambda (error stream)
+             (format stream "~@<Invalid function name ~A.~:@>"
+                     (function-name error)))))
+
+@ Next, we'll work our way up to parsing \L~expressions and other
+function-defining forms.
+
+Given a sequence of declarations and possibly a documentation string
+followed by other forms (as occurs in the bodies of |defun|, |defmacro|,
+\etc.), |parse-body| returns |(values forms decls doc)|, where |decls|
+is the declaration specifiers found in each |declare| expression, |doc|
+holds a doc string (or |nil| if there is none), and |forms| holds the
+other forms. See \csc{ansi} Common Lisp section~3.4.11 for the rules on
+the syntactic interaction of doc strings and declarations.
+
+If |doc-string-allowed| is |nil| (the default), then no forms will be
+treated as documentation strings.
+
+@l
+(defun parse-body (body &key doc-string-allowed walker env &aux doc)
+  (flet ((doc-string-p (x remaining-forms)
+           (and (stringp x) doc-string-allowed remaining-forms (null doc)))
+         (declaration-p (x)
+           (and (listp x) (eql (car x) 'declare))))
+    (loop for forms = body then (cdr forms)
+          as x = (car forms)
+          while forms
+          if (doc-string-p x (cdr forms)) do (setq doc x)
+          else if (declaration-p x) append (cdr x) into decls
+               else do (loop-finish)
+          finally (return (values forms
+                                  (if walker
+                                      (walk-declaration-specifiers @+
+                                       walker decls env)
+                                      decls)
+                                  doc)))))
+
+@t@l
+(deftest (parse-body 1)
+  (parse-body '("doc" (declare (optimize speed)) :foo :bar)
+              :doc-string-allowed t)
+  (:foo :bar)
+  ((optimize speed))
+  "doc")
+
+(deftest (parse-body 2)
+  (parse-body '((declare (optimize speed))
+                "doc"
+                (declare (optimize space))
+                :foo :bar)
+              :doc-string-allowed t)
+  (:foo :bar)
+  ((optimize speed) (optimize space))
+  "doc")
+
+(deftest (parse-body 3)
+  (parse-body '("doc" "string") :doc-string-allowed t)
+  ("string")
+  nil
+  "doc")
+
+(deftest (parse-body 4)
+  (parse-body '((declare (optimize debug)) "string") :doc-string-allowed t)
+  ("string")
+  ((optimize debug))
+  nil)
+
+(deftest (parse-body 5)
+  (parse-body '((declare (optimize debug)) "string") :doc-string-allowed nil)
+  ("string")
+  ((optimize debug))
+  nil)
+
+@ Declaration forms aren't evaluated in Common Lisp, but we'll want to be
+able to walk the specifiers.
+
+@<Walker generic functions@>=
+(defgeneric walk-declaration-specifiers (walker decls env))
+
+@ @l
+(defmethod walk-declaration-specifiers ((walker walker) decls env)
+  (declare (ignore env))
+  decls)
+
+@ The syntax of \L-lists is given in section~3.4 of the \csc{ansi} standard.
+We accept the syntax of macro \L-lists, since they are the most general,
+and appear to be a superset of every other type of \L-list.
+
+This function returns two values: the walked \L-list and a new environment
+object containing bindings for all of the parameters found therein.
+
+@l
+(defun walk-lambda-list (walker lambda-list decls env &aux
+                         new-lambda-list (state :reqvars))
+  (labels ((augment-env (&rest vars &aux
+                         (vars (mapcan (lambda (x) (and x (list x))) vars)))
+             (setq env (augment-walker-environment walker env
+                                                   :variable vars
+                                                   :declare decls)))
+           (update-state (keyword)
+             (setq state (ecase keyword
+                           ((nil) state)
+                           (&optional :optvars)
+                           ((&rest &body) :restvar)
+                           (&key :keyvars)
+                           (&aux :auxvars)
+                           (&environment :envvar))))
+           (maybe-destructure (var/pattern)
+             (if (consp var/pattern)
+                 (walk-lambda-list walker var/pattern decls env)
+                 (values var/pattern (augment-env var/pattern)))))
+    @<Check for |&whole| and |&environment| vars, and augment the lexical
+      environment with them if found@>
+    (do* ((lambda-list lambda-list (cdr lambda-list))
+          (arg (car lambda-list) (car lambda-list)))
+         ((null lambda-list) (values (nreverse new-lambda-list) env))
+      (ecase state
+        (:envvar @<Process |arg| as an environment parameter@>)
+        ((:reqvars :restvar) ; required and rest parameters have the same syntax
+         @<Process |arg| as a required parameter@>)
+        (:optvars @<Process |arg| as an optional parameter@>)
+        (:keyvars @<Process |arg| as a keyword parameter@>)
+        (:auxvars @<Process |arg| as an auxiliary variable@>))
+      (when (and (cdr lambda-list) (atom (cdr lambda-list)))
+        @<Process dotted rest var@>))))
+
+@ A |&whole| variable must come first in a \L-list, and an |&environment|
+variable, although it may appear anywhere in the list, must be bound along
+with |&whole|. We'll pop a |&whole| variable off the front of |lambda-list|,
+but we'll leave any |&environment| variable to be picked up later.
+
+@<Check for |&whole| and |&environment|...@>=
+(let ((wholevar (and (consp lambda-list)
+                     (eql (car lambda-list) '&whole)
+                     (push (pop lambda-list) new-lambda-list)
+                     (car (push (pop lambda-list) new-lambda-list))))
+      (envvar (do ((lambda-list lambda-list (cdr lambda-list)))
+                  ((atom lambda-list) nil)
+                (when (eql (car lambda-list) '&environment)
+                  (return (cadr lambda-list))))))
+  (augment-env wholevar envvar))
+
+@ We've already added the environment variable to our lexical environment,
+so we just push it onto the new \L-list and prepare for the next parameter.
+
+@<Process |arg| as an environment parameter@>=
+(push (pop lambda-list) new-lambda-list)
+(update-state (car lambda-list))
+
+@ @<Process |arg| as a required parameter@>=
+(etypecase arg
+  (symbol @<Process the symbol in |arg| as a parameter@>)
+  (cons
+   (multiple-value-bind (pattern new-env)
+       (walk-lambda-list walker arg decls env)
+     (setq env new-env)
+     (push pattern new-lambda-list))))
+
+@ Watch the order here: in the non-simple-|var| case, both the init
+form and the pattern (if any) need to be walked in an environment
+{\it unaugmented} with any supplied-p-parameter.
+
+@<Process |arg| as an optional parameter@>=
+(etypecase arg
+  (symbol @<Process the symbol...@>)
+  (cons
+   (destructuring-bind (var/pattern &optional init-form supplied-p-parameter) @+
+       arg
+     (when init-form
+       (setq init-form (walk-form walker init-form env)))
+     (multiple-value-setq (var/pattern env)
+       (maybe-destructure var/pattern))
+     (when supplied-p-parameter
+       (augment-env supplied-p-parameter))
+     (push (nconc (list var/pattern)
+                  (and init-form (list init-form))
+                  (and supplied-p-parameter (list supplied-p-parameter)))
+           new-lambda-list))))
+
+@ @<Process |arg| as a keyword parameter@>=
+(cond ((eql arg '&allow-other-keys)
+       (push (pop lambda-list) new-lambda-list)
+       (update-state (car lambda-list)))
+      (t
+       (etypecase arg
+         (symbol @<Process the symbol in |arg| as a parameter@>)
+         (cons
+          (destructuring-bind (var/kv &optional init-form supplied-p-parameter) arg
+            (when init-form
+              (setq init-form (walk-form walker init-form env)))
+            (if (consp var/kv)
+                (destructuring-bind (keyword-name var/pattern) var/kv
+                  (multiple-value-setq (var/pattern env)
+                    (maybe-destructure var/pattern))
+                  (setq var/kv (list keyword-name var/pattern)))
+                (augment-env var/kv))
+            (when supplied-p-parameter
+              (augment-env supplied-p-parameter))
+            (push (nconc (list var/kv)
+                         (and init-form (list init-form))
+                         (and supplied-p-parameter (list supplied-p-parameter)))
+                  new-lambda-list))))))
+
+@ @<Process |arg| as an auxiliary variable@>=
+(etypecase arg
+  (symbol @<Process the symbol...@>)
+  (cons
+   (destructuring-bind (var &optional init-form) arg
+     (when init-form
+       (setq init-form (walk-form walker init-form env)))
+     (augment-env var)
+     (push (nconc (list var)
+                  (and init-form (list init-form)))
+           new-lambda-list))))
+
+@ @<Process the symbol in |arg| as a parameter@>=
+(cond ((member arg lambda-list-keywords)
+       (push arg new-lambda-list)
+       (update-state arg))
+      (t (augment-env arg)
+         (push arg new-lambda-list)))
+
+@ We normalize a dotted rest parameter into a proper |&rest| parameter
+to avoid having to worry about reversing an improper |new-lambda-list|.
+
+@<Process dotted rest var@>=
+(let ((var (cdr lambda-list)))
+  (augment-env var)
+  (push '&rest new-lambda-list)
+  (push (cdr lambda-list) new-lambda-list))
+(setq lambda-list nil) ; walk no more
+
+@t@l
+(deftest walk-ordinary-lambda-list
+  (let ((walker (make-instance 'walker))
+        (lambda-list '(x y &optional (o (+ x y)) &key ((:k k) 2 k-supplied-p)
+                       &rest args &aux w (z (if k-supplied-p o x))))
+        (decls '((special x)))
+        (env (ensure-portable-walking-environment nil)))
+    (multiple-value-bind (new-lambda-list new-env)
+        (walk-lambda-list walker lambda-list decls env)
+      (values (tree-equal lambda-list new-lambda-list)
+              (variable-information 'x new-env)
+              (every (lambda (x) (eql x ':lexical))
+                     (mapcar (lambda (sym) (variable-information sym new-env))
+                             '(y z o k k-supplied-p args w z))))))
+  t :special t)
+
+(deftest walk-macro-lambda-list
+  (let ((walker (make-instance 'walker))
+        (lambda-list '(&whole w (x y) &optional ((o) (+ x y))
+                       &key ((:k (k1 k2)) (2 3) k-supplied-p)
+                       &environment env))
+        (env (ensure-portable-walking-environment nil)))
+    (multiple-value-bind (new-lambda-list new-env)
+        (walk-lambda-list walker lambda-list nil env)
+      (values (tree-equal lambda-list new-lambda-list)
+              (every (lambda (x) (eql x ':lexical))
+                     (mapcar (lambda (sym) (variable-information sym new-env))
+                             '(w x y o k1 k2 k-supplied-p env))))))
+  t t)
+
+(deftest walk-dotted-macro-lambda-list
+  (let ((walker (make-instance 'walker))
+        (lambda-list '(a b . c))
+        (env (ensure-portable-walking-environment nil)))
+    (multiple-value-bind (new-lambda-list new-env)
+        (walk-lambda-list walker lambda-list nil env)
+      (values (tree-equal (subst '(&rest c) 'c lambda-list) new-lambda-list)
+              (every (lambda (x) (eql x ':lexical))
+                     (mapcar (lambda (sym) (variable-information sym new-env))
+                             '(a b c))))))
+  t t)
+
+@ Having built up the necessary machinery, walking a \L-expression is now
+straightforward. Note that \L-forms are not technically special forms, but
+we'll treat them as such.
+
+@l
+(defun walk-lambda-expression (walker form env &aux
+                               (lambda-list (cadr form)) (body (cddr form)))
+  (multiple-value-bind (forms decls doc) @+
+      (parse-body body :walker walker :env env :doc-string-allowed t)
+    (multiple-value-bind (lambda-list env) @+
+        (walk-lambda-list walker lambda-list decls env)
+      `(,(car form)
+        ,lambda-list
+        ,@(if doc `(,doc))
+        ,@(if decls `((declare ,@decls)))
+        ,@(walk-list walker forms env)))))
+
+(define-special-form-walker lambda ((walker walker) form env)
+  (walk-lambda-expression walker form env))
+
+@ We come now to the binding special forms. The six binding special
+forms in Common Lisp (|let|, |let*|, |flet|, |labels|, |macrolet|, and
+|symbol-macrolet|) all have essentially the same syntax; only the scope
+and namespace of the bindings differ.
+
+@t To test the walker on binding forms, we'll use a specialized walker
+class that recognizes a custom |binding| special form. Its syntax is
+|(binding symbol namespace)|, where |symbol| is an unevaluated symbol,
+and |namespace| is one of |:function| or |:variable|. The walker function
+signals a |binding| condition, which includes the symbol, the requested
+namespace, and the current lexical environment, which a handler can then
+extract and record. If the handler declines to handle the condition,
+the function simply returns |symbol|.
+
+@l
+(define-condition binding (condition)
+  ((symbol :initarg :symbol :reader binding-symbol)
+   (namespace :initarg :namespace :reader binding-namespace)
+   (environment :initarg :environment :reader binding-environment)))
+
+(defclass test-walker (walker) ())
+
+(define-special-form-walker binding ((walker test-walker) form env)
+  (destructuring-bind (symbol namespace) (cdr form)
+    (signal 'binding :symbol symbol :namespace namespace :environment env)
+    (walk-form walker symbol env)))
+
+(defmacro define-walk-binding-test (name form walked-form binding-info)
+  `(deftest ,name
+     (let (bindings)
+       (flet ((note-binding (binding &aux
+                             (symbol (binding-symbol binding))
+                             (env (binding-environment binding)))
+                (push (case (binding-namespace binding)
+                        (:function (function-information symbol env))
+                        (:variable (variable-information symbol env)))
+                      bindings)))
+         (handler-bind ((binding #'note-binding))
+           (values (tree-equal (walk-form (make-instance 'test-walker) ',form)
+                               ',walked-form)
+                   (nreverse bindings)))))
+     t
+     ,binding-info))
+
+@ We'll start with two little utility routines. The first walks a
+variable-like binding form (e.g., the |cadr| of a |let|/|let*| or
+|symbol-macrolet| form). The function-like binding forms will use
+|walk-lambda-expression| for this purpose.
+
+@l
+
+(defun walk-variable-binding (walker p env)
+  (if (and (consp p) (consp (cdr p)))
+      (list (walk-atomic-form walker (car p) env)
+            (walk-form walker (cadr p) env))
+      (walk-atomic-form walker p env)))
+
+@ The second helper function just builds the |macro| argument to
+|augment-walker-environment| for the |macrolet| walker.
+
+@l
+(defun make-macro-definitions (walker defs env)
+  (mapcar (lambda (def &aux (name (walk-atomic-form walker (car def) env)))
+            (list name
+                  (enclose (parse-macro name (cadr def) (cddr def) env)
+                           env walker)))
+          defs))
+
+@ |let|, |flet|, |macrolet|, and |symbol-macrolet| are all parallel binding
+forms: they walk their bindings in an unaugmented environment, then execute
+their body forms in an environment that contains all of new the bindings.
+
+@l
+(define-special-form-walker let
+    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)) @+
+     vars)
+  (multiple-value-bind (forms decls)
+      (parse-body body :walker walker :env env)
+    `(,(car form)
+      ,(mapcar (lambda (p)
+                 (push (if (consp p) (car p) p) vars)
+                 (walk-variable-binding walker p env))
+               bindings)
+      ,@(if decls `((declare ,@decls)))
+      ,@(walk-list walker forms
+                   (augment-walker-environment walker env
+                                               :variable vars
+                                               :declare decls)))))
+
+(define-special-form-walker flet
+    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
+  (multiple-value-bind (forms decls)
+      (parse-body body :walker walker :env env)
+    `(,(car form)
+      ,(mapcar (lambda (p) (walk-lambda-expression walker p env)) bindings)
+      ,@(if decls `((declare ,@decls)))
+      ,@(walk-list walker forms
+                   (augment-walker-environment walker env
+                                               :function (mapcar #'car bindings)
+                                               :declare decls)))))
+
+(define-special-form-walker macrolet
+    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form))
+     (macros (make-macro-definitions walker bindings env)))
+  (multiple-value-bind (forms decls)
+      (parse-body body :walker walker :env env)
+    `(,(car form)
+      ,(mapcar (lambda (p) (walk-lambda-expression walker p env)) bindings)
+      ,@(if decls `((declare ,@decls)))
+      ,@(walk-list walker forms
+                   (augment-walker-environment walker env
+                                               :macro macros
+                                               :declare decls)))))
+
+(define-special-form-walker symbol-macrolet
+    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
+  (multiple-value-bind (forms decls)
+      (parse-body body :walker walker :env env)
+    `(,(car form)
+      ,(mapcar (lambda (p) (walk-variable-binding walker p env)) bindings)
+      ,@(if decls `((declare ,@decls)))
+      ,@(walk-list walker forms
+                   (augment-walker-environment walker env
+                                               :symbol-macro bindings
+                                               :declare decls)))))
+
+@t@l
+(define-walk-binding-test walk-let
+  (let ((x 1)
+        (y (binding x :variable)))
+    (declare (special x))
+    (binding y :variable))
+  (let ((x 1) (y x)) (declare (special x)) y)
+  (nil :lexical))
+
+(define-walk-binding-test walk-flet
+  (flet ((foo (x) (binding x :variable))
+         (bar (y) (binding foo :function)))
+    (declare (special x))
+    (binding foo :function))
+  (flet ((foo (x) x)
+         (bar (y) foo))
+    (declare (special x))
+    foo)
+  (:lexical nil :function))
+
+(define-walk-binding-test walk-macrolet
+  (macrolet ((foo (x) `,x)
+             (bar (y) `,y))
+    (binding foo :function)
+    (foo :foo))
+  (macrolet ((foo (x) x)
+             (bar (y) y))
+    foo
+    :foo)
+  (:macro))
+
+(define-walk-binding-test walk-symbol-macrolet
+  (symbol-macrolet ((foo :foo)
+                    (bar :bar))
+    (binding foo :variable)
+    (binding bar :variable)
+    (binding foo :function))
+  (symbol-macrolet ((foo :foo)
+                    (bar :bar))
+    :foo :bar :foo)
+  (:symbol-macro :symbol-macro nil))
+
+@ The two outliers are |let*|, which augments its environment sequentially,
+and |labels|, which does so before walking any of its bindings.
+
+@l
+(define-special-form-walker let*
+    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
+  (multiple-value-bind (forms decls)
+      (parse-body body :walker walker :env env)
+    `(,(car form)
+      ,(mapcar (lambda (p &aux (vars (list (if (consp p) (car p) p))))
+                 (prog1 (walk-variable-binding walker p env)
+                   (setq env (augment-walker-environment walker env
+                                                         :variable vars
+                                                         :declare decls))))
+               bindings)
+      ,@(if decls `((declare ,@decls)))
+      ,@(walk-list walker forms env))))
+
+(define-special-form-walker labels
+    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
+  (multiple-value-bind (forms decls)
+      (parse-body body :walker walker :env env)
+    (let ((env (augment-walker-environment walker env
+                                           :function (mapcar #'car bindings)
+                                           :declare decls)))
+      `(,(car form)
+        ,(mapcar (lambda (p) (walk-lambda-expression walker p env)) bindings)
+        ,@(if decls `((declare ,@decls)))
+        ,@(walk-list walker forms env)))))
+
+@t@l
+(define-walk-binding-test walk-let*
+  (let* ((x 1)
+         (y (binding x :variable)))
+    (declare (special x))
+    (binding y :variable))
+  (let* ((x 1) (y x)) (declare (special x)) y)
+  (:special :lexical))
+
+(define-walk-binding-test walk-labels
+  (labels ((foo (x) (binding x :variable))
+           (bar (y) (binding foo :function)))
+    (declare (special x))
+    (binding foo :function))
+  (labels ((foo (x) x)
+           (bar (y) foo))
+    (declare (special x))
+    foo)
+  (:lexical :function :function))
+
+@ The last special form we need a specialized walker for is |locally|,
+which simply executes its body in a lexical environment augmented by a
+set of declarations.
+
+@l
+(define-special-form-walker locally ((walker walker) form env)
+  (multiple-value-bind (forms decls)
+      (parse-body (cdr form) :walker walker :env env)
+    `(,(car form)
+      ,@(if decls `((declare ,@decls)))
+      ,@(walk-list walker forms
+                   (augment-walker-environment walker env :declare decls)))))
+
+@t@l
+(define-walk-binding-test walk-locally
+  (let ((y t))
+    (list (binding y :variable)
+          (locally (declare (special y))
+            (binding y :variable))))
+  (let ((y t)) (list y (locally (declare (special y)) y)))
+  (:lexical :special))
+
+@t Here's a simple walker mix-in class that allows easy tracing of a walk.
+It's only here for debugging purposes; it's not a superclass of any of
+the walker classes defined in this program.
+
+@l
+(defclass tracing-walker (walker) ())
+
+(defmethod walk-atomic-form :before ((walker tracing-walker) form env)
+  (format t "; walking atomic form ~S~@[ (~(~A~) variable)~]~%"
+          form
+          (and (symbolp form)
+               (variable-information form env))))
+
+(defmethod walk-compound-form :before ((walker tracing-walker) car form env)
+  (declare (ignore car env))
+  (format t "~<; ~@;walking compound form ~W~:>~%" (list form)))
