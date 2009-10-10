@@ -125,7 +125,11 @@ web.
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
-  (:shadow "ENCLOSE"
+  (:shadow "READ"
+           "READ-PRESERVING-WHITESPACE"
+           "READ-DELIMITED-LIST"
+           "READ-FROM-STRING"
+           "ENCLOSE"
            #+allegro "FUNCTION-INFORMATION"
            #+allegro "VARIABLE-INFORMATION"))
 @e
@@ -1064,7 +1068,61 @@ evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}.
 @<Global variables@>=
 (defvar *evaluating* nil)
 
-@ Our first marker is for newlines, which we preserve for the purposes of
+@ We'll need markers for symbols when it comes time for indexing. The
+value of a symbol marker will be the symbol for which it's a marker,
+and it will also keep a reference to the section from which that symbol
+was read.
+
+@l
+(defclass symbol-marker (marker)
+  ((section :accessor symbol-section :initarg :section)))
+
+@ The way we'll get the symbol markers is by shadowing the standard
+reader functions |read|, |read-preserving-whitespace|, |read-delimited-list|,
+and |read-from-string|. We'll call down to the versions in the |common-lisp|
+package, which saves us having to do tokenization and such ourselves. It
+does mean, however, that recursive invocations of from within the standard
+reader won't use these function, so some caution is needed.
+
+We don't produce markers for uninterned symbols or symbols in the
+|common-lisp| or |keyword| packages, as we don't care about indexing
+them.
+
+@l
+(defun make-read-wrapper (fn)
+  (lambda (&rest args)
+    (let ((object (apply fn args)))
+      (cond ((and (symbolp object)
+                  (and (not (member (symbol-package object)
+                                    `(,*common-lisp-package* @+
+                                      ,*keyword-package* @+
+                                      nil)))))
+             (make-instance 'symbol-marker
+                            :value object
+                            :section *current-section*))
+            (t object)))))
+
+(setf (symbol-function 'read) @+
+      (make-read-wrapper #'cl:read)
+      (symbol-function 'read-preserving-whitespace) @+
+      (make-read-wrapper #'cl:read-preserving-whitespace)
+      (symbol-function 'read-from-string) @+
+      (make-read-wrapper #'cl:read-from-string))
+
+(defun read-delimited-list (endchar &optional
+                            (input-stream *standard-input*)
+                            recursive-p)
+  (declare (ignore recursive-p))
+  (loop for char = (peek-char t input-stream t nil t)
+        until (char= char endchar)
+        collect (read input-stream t nil t)
+        finally (read-char input-stream t nil t)))
+
+@ @<Global variables@>=
+(defvar *common-lisp-package* (find-package "COMMON-LISP"))
+(defvar *keyword-package* (find-package "KEYWORD"))
+
+@ Our next marker is for newlines, which we preserve for the purposes of
 indentation. They are represented in code forms by an unbound marker, so
 the tangler will ignore them.
 
@@ -2998,6 +3056,11 @@ if we want a specialized pretty-printing routine.
 
 Many of these routines output \TeX\ macros defined in \.{clwebmac.tex},
 which see.
+
+@ @l
+(set-weave-dispatch 'symbol-marker
+ (lambda (stream marker)
+   (write (marker-value marker) :stream stream)))
 
 @ @l
 (set-weave-dispatch 'newline-marker
