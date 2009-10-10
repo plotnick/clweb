@@ -401,23 +401,23 @@
                  (WHEN (MARKER-BOUNDP OBJ) (PRINC (MARKER-VALUE OBJ) STREAM)))))
 (DEFCLASS SYMBOL-MARKER (MARKER)
           ((SECTION :ACCESSOR SYMBOL-SECTION :INITARG :SECTION)))
-(DEFUN MAKE-READ-WRAPPER (FN)
-  (LAMBDA (&REST ARGS)
-    (LET ((OBJECT (APPLY FN ARGS)))
-      (COND
-       ((AND (SYMBOLP OBJECT)
-             (AND
-              (NOT
-               (MEMBER (SYMBOL-PACKAGE OBJECT)
-                       `(,*COMMON-LISP-PACKAGE* ,*KEYWORD-PACKAGE* NIL)))))
-        (MAKE-INSTANCE 'SYMBOL-MARKER :VALUE OBJECT :SECTION
-                       *CURRENT-SECTION*))
-       (T OBJECT)))))
-(SETF (SYMBOL-FUNCTION 'READ) (MAKE-READ-WRAPPER #'COMMON-LISP:READ)
-      (SYMBOL-FUNCTION 'READ-PRESERVING-WHITESPACE)
-        (MAKE-READ-WRAPPER #'COMMON-LISP:READ-PRESERVING-WHITESPACE)
-      (SYMBOL-FUNCTION 'READ-FROM-STRING)
-        (MAKE-READ-WRAPPER #'COMMON-LISP:READ-FROM-STRING))
+(FLET ((WRAP-READ (FN &REST ARGS)
+         (LET ((OBJECT (APPLY FN ARGS)))
+           (COND
+            ((AND (SYMBOLP OBJECT)
+                  (AND
+                   (NOT
+                    (MEMBER (SYMBOL-PACKAGE OBJECT)
+                            `(,*COMMON-LISP-PACKAGE* ,*KEYWORD-PACKAGE*
+                              NIL)))))
+             (MAKE-INSTANCE 'SYMBOL-MARKER :VALUE OBJECT :SECTION
+                            *CURRENT-SECTION*))
+            (T OBJECT)))))
+  (DEFUN READ (&REST ARGS) (APPLY #'WRAP-READ #'COMMON-LISP:READ ARGS))
+  (DEFUN READ-PRESERVING-WHITESPACE (&REST ARGS)
+    (APPLY #'WRAP-READ #'COMMON-LISP:READ-PRESERVING-WHITESPACE ARGS))
+  (DEFUN READ-FROM-STRING (&REST ARGS)
+    (APPLY #'WRAP-READ #'COMMON-LISP:READ-FROM-STRING ARGS)))
 (DEFUN READ-DELIMITED-LIST
        (ENDCHAR &OPTIONAL (INPUT-STREAM *STANDARD-INPUT*) RECURSIVE-P)
   (DECLARE (IGNORE RECURSIVE-P))
@@ -1452,16 +1452,13 @@
     (DECLARE (IGNORABLE NAME LAMBDA-LIST BODY ENV))
     #+:ALLEGRO (excl::defmacro-expander `(,name ,lambda-list ,@body) env)
     #-:ALLEGRO (error "PARSE-MACRO not implemented")))
-(DEFUN REORDER-ENV-INFORMATION (FN)
-  (LAMBDA (&REST ARGS)
-    (MULTIPLE-VALUE-BIND (TYPE LOCATIVE DECLARATIONS LOCAL)
-        (APPLY FN ARGS)
-      (DECLARE (IGNORE LOCATIVE))
-      (VALUES TYPE LOCAL DECLARATIONS))))
-#+:ALLEGRO (setf (symbol-function 'variable-information)
-      (reorder-env-information #'sys:variable-information)
-      (symbol-function 'function-information)
-      (reorder-env-information #'sys:function-information))
+(FLET ((REORDER (FN &REST ARGS)
+         (MULTIPLE-VALUE-BIND (TYPE LOCATIVE DECLARATIONS LOCAL)
+             (APPLY FN ARGS)
+           (DECLARE (IGNORE LOCATIVE))
+           (VALUES TYPE LOCAL DECLARATIONS))))
+  #+:ALLEGRO (defun variable-information (&rest args) (apply #'reorder #'sys:variable-information))
+  #+:ALLEGRO (defun function-information (&rest args) (apply #'reorder #'sys:function-information)))
 (DEFUN SYMBOL-MACRO-P (FORM ENV)
   (AND (SYMBOLP FORM) (EQL (VARIABLE-INFORMATION FORM ENV) ':SYMBOL-MACRO)))
 (DEFMETHOD WALK-FORM

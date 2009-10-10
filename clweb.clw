@@ -1089,26 +1089,25 @@ We don't produce markers for uninterned symbols or symbols in the
 them.
 
 @l
-(defun make-read-wrapper (fn)
-  (lambda (&rest args)
-    (let ((object (apply fn args)))
-      (cond ((and (symbolp object)
-                  (and (not (member (symbol-package object)
-                                    `(,*common-lisp-package* @+
-                                      ,*keyword-package* @+
-                                      nil)))))
-             (make-instance 'symbol-marker
-                            :value object
-                            :section *current-section*))
-            (t object)))))
+(flet ((wrap-read (fn &rest args)
+         (let ((object (apply fn args)))
+           (cond ((and (symbolp object)
+                       (and (not (member (symbol-package object)
+                                         `(,*common-lisp-package* @+
+                                           ,*keyword-package* @+
+                                           nil)))))
+                  (make-instance 'symbol-marker
+                                 :value object
+                                 :section *current-section*))
+                 (t object)))))
+  (defun read (&rest args)
+    (apply #'wrap-read #'cl:read args))
+  (defun read-preserving-whitespace (&rest args)
+    (apply #'wrap-read #'cl:read-preserving-whitespace args))
+  (defun read-from-string (&rest args)
+    (apply #'wrap-read #'cl:read-from-string args)))
 
-(setf (symbol-function 'read) @+
-      (make-read-wrapper #'cl:read)
-      (symbol-function 'read-preserving-whitespace) @+
-      (make-read-wrapper #'cl:read-preserving-whitespace)
-      (symbol-function 'read-from-string) @+
-      (make-read-wrapper #'cl:read-from-string))
-
+@ @l
 (defun read-delimited-list (endchar &optional
                             (input-stream *standard-input*)
                             recursive-p)
@@ -3230,18 +3229,15 @@ the second value returned, and what should be second is now fourth.
 Thanks, Franz!
 
 @l
-(defun reorder-env-information (fn)
-  (lambda (&rest args)
-    (multiple-value-bind (type locative declarations local)
-        (apply fn args)
-      (declare (ignore locative))
-      (values type local declarations))))
-
-#+allegro
-(setf (symbol-function 'variable-information)
-      (reorder-env-information #'sys:variable-information)
-      (symbol-function 'function-information)
-      (reorder-env-information #'sys:function-information))
+(flet ((reorder (fn &rest args)
+         (multiple-value-bind (type locative declarations local)
+             (apply fn args)
+           (declare (ignore locative))
+           (values type local declarations))))
+  #+allegro
+  (defun variable-information (&rest args) (apply #'reorder #'sys:variable-information))
+  #+allegro
+  (defun function-information (&rest args) (apply #'reorder #'sys:function-information)))
 
 @ The main entry point for the walker is |walk-form|. The walk stops after
 walking an atomic or special form; otherwise, we keep walking until the
