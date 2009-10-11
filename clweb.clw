@@ -192,17 +192,8 @@ which might be named or unnamed.
   ((name :accessor section-name :initarg :name)
    (number :accessor section-number)
    (commentary :accessor section-commentary :initarg :commentary)
-   (code :reader section-code :initarg :code))
+   (code :accessor section-code :initarg :code))
   (:default-initargs :name nil :commentary nil :code nil))
-
-@ We'll see below that we need a keyword argument on the
-|(setf section-code)| method for named sections, so we need to
-define that \csc{gf} manually.
-
-@l
-(defgeneric (setf section-code) (forms section &key))
-(defmethod (setf section-code) (forms (section section) &key)
-  (setf (slot-value section 'code) forms))
 
 @ Sections introduced with \.{@@*} (`starred' sections) begin a new major
 group of sections, and get some special formatting during weaving. The
@@ -315,7 +306,6 @@ a hash table so that we can support abbreviations (see below).
 @l
 (defclass binary-search-tree ()
   ((key :accessor node-key :initarg :key)
-   (value :accessor node-value :initarg :value)
    (left-child :accessor left-child :initarg :left)
    (right-child :accessor right-child :initarg :right))
   (:default-initargs :left nil :right nil))
@@ -376,6 +366,16 @@ whether or not the node was already in the tree.
     (find-or-insert -1 tree :insert-if-not-found nil))
   nil nil)
 
+@ Here's a little utility routine taken from \csc{pcl}: |mapappend| is like
+|mapcar| except that the results are appended together.
+
+@l
+(defun mapappend (fun &rest args)
+  (if (some #'null args)
+      ()
+      (append (apply fun (mapcar #'car args))
+              (apply #'mapappend fun (mapcar #'cdr args)))))
+
 @ As mentioned above, named sections can be defined piecemeal, with the
 code spread out over several sections in the \CLWEB\ source. We might think
 of a named section as a sort of `virtual' section, which consists of a
@@ -385,51 +385,41 @@ name, and the number of the first such section.
 And that's what we store in the \csc{bst}: nodes that look like sections,
 inasmuch as they have specialized |section-name|, |section-code|, and
 |section-number| methods, but are not actually instances of the class
-|section|. We don't need to store any commentary in these nodes, since
-that's stored in the |section| instances.
+|section|. The commentary and code is stored in the |section| instances
+that comprise a given named section: references to those sections are
+stored in the |sections| slot.
 
-The two additional slots, |used-by| and |see-also|, are used by the weaver
-to generate cross-references. The former contains a list of all the
-sections that reference this named section, and the latter contains a list
-of the other sections that share this name.
+The weaver uses the last slot, |used-by|, to generate cross-references.
+It will be populated during reading with a list of all the sections that
+reference this named section.
 
 @l
 (defclass named-section (binary-search-tree)
   ((key :accessor section-name :initarg :name)
-   (value :reader section-code :initarg :code)
-   (number :accessor section-number)
-   (used-by :accessor used-by :initform '())
-   (see-also :accessor see-also :initform '())))
+   (sections :accessor named-section-sections :initform '())
+   (used-by :accessor used-by :initform '())))
 
-@ When we encounter a named section that already has some code associated
-with it, we normally append the new forms to the old: this allows piecemeal
-definition. However, sometimes we want to override that behavior and have
-the new forms replace the old, such as during interactive development.
+(defmethod named-section-sections :around ((section named-section))
+  (sort (copy-list (call-next-method)) #'< :key #'section-number))
 
-@l
-(defmethod (setf section-code) (forms (section named-section) &key (appendp t))
-  (setf (slot-value section 'value)
-        (if (and appendp (slot-boundp section 'value))
-            (append (section-code section) forms)
-            forms)))
+(defmethod section-code ((section named-section))
+  (mapappend #'section-code (named-section-sections section)))
+
+(defmethod section-number ((section named-section))
+  (section-number (first (named-section-sections section))))
 
 @t@l
-(deftest set-named-section-code
-  (let ((section (make-instance 'named-section)))
-    (setf (section-code section) '(:a :b :c)))
-  (:a :b :c))
-
-(deftest append-named-section-code
-  (let ((section (make-instance 'named-section)))
-    (setf (section-code section) '(:a))
-    (setf (section-code section) '(:b :c)))
-  (:a :b :c))
-
-(deftest replace-named-section-code
-  (let ((section (make-instance 'named-section)))
-    (setf (section-code section) '(:a :b :c))
-    (setf (section-code section :appendp nil) '(:d :e :f)))
-  (:d :e :f))
+(deftest named-section-number/code
+  (let ((*sections* (make-array 5 :fill-pointer 0))
+        (section (make-instance 'named-section)))
+    (make-instance 'section) ; `limbo' section
+    (loop for i from 1 to 3
+          do (push (make-instance 'section :name "foo" :code (list i))
+                   (named-section-sections section)))
+    (values (section-code section)
+            (section-number section)))
+  (1 2 3)
+  1)
 
 @ Section names in the input file can be abbreviated by giving a prefix of
 the full name followed by `$\ldots$': e.g., \.{@@<Frob...@@>} might refer
@@ -603,16 +593,22 @@ the shortest available prefix, since we detect ambiguous matches.)
       (setf (section-name section) name))))
 
 @t We'll use |*sample-named-sections*| whenever we need to test with some
-named sections defined. These tests don't depend on these sections having
-code parts, but later tests will.
+named sections defined. The tests below don't depend on these sections
+having code parts, but later tests will.
 
 @l
 (defvar *sample-named-sections*
-  (let ((sections (make-instance 'named-section :name "baz" :code '(baz))))
-    (setf (section-code (find-or-insert "foo" sections)) '(:foo))
-    (setf (section-code (find-or-insert "bar" sections)) '(:bar))
-    (setf (section-code (find-or-insert "qux" sections)) '(:qux))
-    sections))
+  (let ((*sections* (make-array 10 :fill-pointer 0))
+        (named-sections (make-instance 'named-section :name "baz")))
+    (flet ((push-section (name code)
+             (push (make-instance 'section :name name :code code)
+                   (named-section-sections (find-or-insert name @+
+                                                           named-sections)))))
+      (push-section "baz" '(:baz))
+      (push-section "foo" '(:foo))
+      (push-section "bar" '(:bar))
+      (push-section "qux" '(:qux)))
+    named-sections))
 
 (defun find-sample-section (name)
   (find-or-insert name *sample-named-sections* :insert-if-not-found nil))
@@ -2132,7 +2128,11 @@ explicit closing delimiters.) It returns a list of |section| objects.
              (setf (section-commentary section) commentary)
              (setf (section-code section) code)
              (when (section-name section)
-               @<Setup named section...@>)
+               (let ((named-section (find-section (section-name section))))
+                 (if appendp
+                     (push section (named-section-sections named-section))
+                     (setf (named-section-sections named-section) @+
+                           (list section)))))
              section))
       (prog (form commentary code section sections)
          (setq section (make-instance 'limbo-section))
@@ -2253,18 +2253,6 @@ whitespace from the first, and any trailing newline marker from |code|.
   (rplaca commentary (string-left-trim *whitespace* (car commentary))))
 (setq code (nreverse (member-if-not #'newlinep code)))
 
-@ @<Setup named section code, number, and cross-references@>=
-(let ((named-section (find-section (section-name section)))
-      (number (section-number section))
-      (code (section-code section)))
-  (setf (section-code named-section :appendp appendp) code)
-  (when (or (not (slot-boundp named-section 'number))
-            (not appendp))
-    (setf (section-number named-section) number))
-  (if appendp
-      (pushnew section (see-also named-section))
-      (setf (see-also named-section) (list section))))
-
 @*The tangler. Tangling involves recursively replacing each reference to a
 named section with the code accumulated for that section. The function
 |tangle-1| expands one level of such references, returning the
@@ -2336,15 +2324,6 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
     (tangle (read-form-from-string (format nil "(:a @<foo@>~% :b)"))))
   (:a :foo :b)
   t)
-
-@ |mapappend| is like |mapcar| except that the results are appended together.
-
-@l
-(defun mapappend (fun &rest args)
-  (if (some #'null args)
-      ()
-      (append (apply fun (mapcar #'car args))
-              (apply #'mapappend fun (mapcar #'cdr args)))))
 
 @ This little utility function returns a list of all of the forms in all
 of the unnamed sections' code parts. This is our first-order approximation
@@ -2714,8 +2693,10 @@ re-reads such strings and picks up any inner-Lisp material.
               (length (section-code section))
               (section-number (test-for-section section))))
     (when named-section
-      (print-xrefs stream #\A (remove section (see-also named-section)))
-      (print-xrefs stream #\U (remove section (used-by named-section)))))
+      (print-xrefs stream #\A
+                   (remove section (named-section-sections named-section)))
+      (print-xrefs stream #\U
+                   (remove section (used-by named-section)))))
   (format stream "\\fi~%"))
 
 (set-weave-dispatch 'section #'print-section)
