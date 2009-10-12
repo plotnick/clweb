@@ -3516,8 +3516,7 @@ object containing bindings for all of the parameters found therein.
 @l
 (defun walk-lambda-list (walker lambda-list decls env &aux
                          new-lambda-list (state :reqvars))
-  (labels ((augment-env (&rest vars &aux
-                         (vars (mapcan (lambda (x) (and x (list x))) vars)))
+  (labels ((augment-env (&rest vars &aux (vars (remove-if #'null vars)))
              (setq env (augment-walker-environment walker env
                                                    :variable vars
                                                    :declare decls)))
