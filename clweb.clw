@@ -3338,23 +3338,22 @@ Common Lisp special operator as a macro.'' (\csc{ansi} Common Lisp,
 section~3.1.2.1.2.2)
 
 @l
-(defmacro walk-as-special-form (operator)
-  `(defmethod walk-as-special-form-p
-       ((walker walker) (car (eql ',operator)) form env)
-     (declare (ignore form env))
-     t))
-
-(walk-as-special-form catch)
-(walk-as-special-form if)
-(walk-as-special-form load-time-value)
-(walk-as-special-form multiple-value-call)
-(walk-as-special-form multiple-value-prog1)
-(walk-as-special-form progn)
-(walk-as-special-form progv)
-(walk-as-special-form setq)
-(walk-as-special-form tagbody)
-(walk-as-special-form throw)
-(walk-as-special-form unwind-protect)
+(macrolet ((walk-as-special-form (operator)
+             `(defmethod walk-as-special-form-p
+                  ((walker walker) (car (eql ',operator)) form env)
+                (declare (ignore form env))
+                t)))
+  (walk-as-special-form catch)
+  (walk-as-special-form if)
+  (walk-as-special-form load-time-value)
+  (walk-as-special-form multiple-value-call)
+  (walk-as-special-form multiple-value-prog1)
+  (walk-as-special-form progn)
+  (walk-as-special-form progv)
+  (walk-as-special-form setq)
+  (walk-as-special-form tagbody)
+  (walk-as-special-form throw)
+  (walk-as-special-form unwind-protect))
 
 @ The rest of the special form walkers we define will need specialized
 methods for both |walk-as-special-form-p| and |walk-compound-form|. The
@@ -3382,14 +3381,13 @@ unevaluated form, followed by zero or more evaluated forms.
     ,(cadr form)
     ,@(walk-list walker (cddr form) env)))
 
-(defmacro define-block-like-walker (operator)
-  `(define-special-form-walker ,operator ((walker walker) form env)
-     (walk-block walker form env)))
-
-(define-block-like-walker block)
-(define-block-like-walker eval-when)
-(define-block-like-walker return-from)
-(define-block-like-walker the)
+(macrolet ((define-block-like-walker (operator)
+             `(define-special-form-walker ,operator ((walker walker) form env)
+                (walk-block walker form env))))
+  (define-block-like-walker block)
+  (define-block-like-walker eval-when)
+  (define-block-like-walker return-from)
+  (define-block-like-walker the))
 
 @ Quote-like special forms are entirely unevaluated.
 
@@ -3398,12 +3396,11 @@ unevaluated form, followed by zero or more evaluated forms.
    (declare (ignore walker env))
    form)
 
-(defmacro define-quote-like-walker (operator)
-  `(define-special-form-walker ,operator ((walker walker) form env)
-     (walk-quote walker form env)))
-
-(define-quote-like-walker quote)
-(define-quote-like-walker go)
+(macrolet ((define-quote-like-walker (operator)
+             `(define-special-form-walker ,operator ((walker walker) form env)
+                (walk-quote walker form env))))
+  (define-quote-like-walker quote)
+  (define-quote-like-walker go))
 
 @ The cadr of a |function| special form must be either a valid function
 name or a lambda expression.
