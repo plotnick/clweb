@@ -3376,14 +3376,11 @@ following macro makes sure that these are consistently defined.
 unevaluated form, followed by zero or more evaluated forms.
 
 @l
-(defun walk-block (walker form env)
-  `(,(car form)
-    ,(cadr form)
-    ,@(walk-list walker (cddr form) env)))
-
 (macrolet ((define-block-like-walker (operator)
              `(define-special-form-walker ,operator ((walker walker) form env)
-                (walk-block walker form env))))
+                `(,(car form)
+                  ,(cadr form)
+                  ,@(walk-list walker (cddr form) env)))))
   (define-block-like-walker block)
   (define-block-like-walker eval-when)
   (define-block-like-walker return-from)
@@ -3392,18 +3389,15 @@ unevaluated form, followed by zero or more evaluated forms.
 @ Quote-like special forms are entirely unevaluated.
 
 @l
-(defun walk-quote (walker form env)
-   (declare (ignore walker env))
-   form)
-
 (macrolet ((define-quote-like-walker (operator)
              `(define-special-form-walker ,operator ((walker walker) form env)
-                (walk-quote walker form env))))
+                (declare (ignore walker env))
+                form)))
   (define-quote-like-walker quote)
   (define-quote-like-walker go))
 
-@ The cadr of a |function| special form must be either a valid function
-name or a lambda expression.
+@ The |function| special form takes either a valid function name or a
+lambda expression.
 
 @l
 (define-special-form-walker function ((walker walker) form env)
