@@ -352,7 +352,7 @@ whether or not the node was already in the tree.
   (values node nil))
 
 @t@l
-(deftest bst
+(deftest (bst 1)
   (let ((tree (make-instance 'binary-search-tree :key 0)))
     (find-or-insert -1 tree)
     (find-or-insert 1 tree)
@@ -360,6 +360,24 @@ whether or not the node was already in the tree.
             (node-key (left-child tree))
             (node-key (right-child tree))))
   0 -1 1)
+
+(deftest (bst 2)
+  (let ((tree (make-instance 'binary-search-tree :key 0))
+        (numbers (cons 0 (loop with limit = 1000
+                               for i from 1 to limit
+                               collect (random limit)))))
+    (dolist (n numbers)
+      (find-or-insert n tree))
+    (let ((keys '()))
+      (labels ((traverse-in-order (node)
+                 (when node
+                   (traverse-in-order (left-child node))
+                   (push (node-key node) keys)
+                   (traverse-in-order (right-child node)))))
+        (traverse-in-order tree)
+        (equal (nreverse keys)
+               (remove-duplicates (sort numbers #'<))))))
+  t)
 
 (deftest bst-find-no-insert
   (let ((tree (make-instance 'binary-search-tree :key 0)))
@@ -2268,24 +2286,29 @@ Tangling also replaces bound markers with their associated values, and
 removes unbound markers.
 
 @l
-(defun tangle-1 (form)
-  (typecase form
-    (marker (values (marker-value form) t))
-    (atom (values form nil))
-    ((cons named-section *)
-     (values (append (section-code (car form)) (tangle-1 (cdr form))) t))
-    ((cons marker *)
-     (values (if (marker-boundp (car form))
-                 (cons (marker-value (car form)) (tangle-1 (cdr form)))
-                 (tangle-1 (cdr form)))
-             t))
-    (t (multiple-value-bind (a car-expanded-p) (tangle-1 (car form))
-         (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
-           (values (if (and (eql a (car form))
-                            (eql d (cdr form)))
-                       form
-                       (cons a d))
-                   (or car-expanded-p cdr-expanded-p)))))))
+(defun tangle-1 (form &key (expand-named-sections-p t))
+  (flet ((tangle-1 (form)
+           (tangle-1 form :expand-named-sections-p expand-named-sections-p)))
+    (typecase form
+      (marker (values (marker-value form) t))
+      (atom (values form nil))
+      ((cons named-section *)
+       (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
+         (if expand-named-sections-p
+            (values (append (section-code (car form)) d) t)
+            (values (cons (car form) d) cdr-expanded-p))))
+      ((cons marker *)
+       (values (if (marker-boundp (car form))
+                   (cons (marker-value (car form)) (tangle-1 (cdr form)))
+                   (tangle-1 (cdr form)))
+               t))
+      (t (multiple-value-bind (a car-expanded-p) (tangle-1 (car form))
+           (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
+             (values (if (and (eql a (car form))
+                              (eql d (cdr form)))
+                         form
+                         (cons a d))
+                     (or car-expanded-p cdr-expanded-p))))))))
 
 @t@l
 (deftest (tangle-1 1)
@@ -2309,10 +2332,11 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 `expanded' flag. This code is adapted from SBCL's |macroexpand|.
 
 @l
-(defun tangle (form)
+(defun tangle (form &key (expand-named-sections-p t))
   (labels ((expand (form expanded)
              (multiple-value-bind (new-form newly-expanded-p)
-                 (tangle-1 form)
+                 (tangle-1 form
+                           :expand-named-sections-p expand-named-sections-p)
                (if newly-expanded-p
                    (expand new-form t)
                    (values new-form expanded)))))
@@ -3227,11 +3251,14 @@ of those walks.
       ((atom form) (nreconc newform form))))
 
 @ The functions |walk-atomic-form| and |walk-compound-form| are the
-real work-horses of the walker. The latter takes an additional |car|
-argument so that we can use |eql|-specializers.
+real work-horses of the walker. The former takes a walker instance,
+the (atomic) form, an environment, and a flag indicating whether or
+not the form occurs in an evaluated position. Compound forms, being
+always evaluated, don't need such a flag, but we do provide an
+additional |car| argument so that we can use |eql|-specializers.
 
 @<Walker generic functions@>=
-(defgeneric walk-atomic-form (walker form env))
+(defgeneric walk-atomic-form (walker form env &optional evalp))
 (defgeneric walk-compound-form (walker car form env))
 
 @ The default method for |walk-atomic-form| simply returns the form.
@@ -3239,8 +3266,8 @@ Note that this function won't be called for symbol macros; those are
 expanded in |walk-form|.
 
 @l
-(defmethod walk-atomic-form ((walker walker) form env)
-  (declare (ignore env))
+(defmethod walk-atomic-form ((walker walker) form env &optional (evalp t))
+  (declare (ignore env evalp))
   form)
 
 @ The default method for |walk-compound-form| is used for all funcall-like
@@ -3249,7 +3276,59 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
 @l
 (defmethod walk-compound-form ((walker walker) car form env)
   (declare (ignore car))
-  `(,(car form) ,@(walk-list walker (cdr form) env)))
+  `(,(walk-atomic-form walker (car form) env nil)
+    ,@(walk-list walker (cdr form) env)))
+
+@ There's a special walker function just for function names, since
+they're not necessarily atomic.
+
+@<Walker generic functions@>=
+(defgeneric walk-function-name (walker function-name env))
+
+@ Common Lisp defines a {\it function name\/} as ``A symbol or a list
+|(setf symbol)|.'' We signal an continuable error in case of a malformed
+function name.
+
+@l
+(defmethod walk-function-name ((walker walker) function-name env)
+  (typecase function-name
+    (symbol
+     (walk-atomic-form walker function-name env nil))
+    ((cons (eql setf) (cons symbol null))
+     `(setf ,(walk-atomic-form walker (cadr function-name) env nil)))
+    (t (cerror "Use the function name anyway."
+               'invalid-function-name :name function-name)
+       function-name)))
+
+@ @<Condition classes@>=
+(define-condition invalid-function-name (parse-error)
+  ((name :initarg :name :reader function-name))
+  (:report (lambda (error stream)
+             (format stream "~@<Invalid function name ~A.~:@>" @+
+                     (function-name error)))))
+
+@t@l
+(deftest (walk-function-name 1)
+  (equal (walk-function-name (make-instance 'walker) 'foo nil)
+         'foo)
+  t)
+
+(deftest (walk-function-name 2)
+  (equal (walk-function-name (make-instance 'walker) '(setf foo) nil)
+         '(setf foo))
+  t)
+
+(deftest (walk-function-name 3)
+  (let ((error-handled nil))
+    (flet ((note-and-continue (condition)
+             (setq error-handled t)
+             (continue condition)))
+      (handler-bind ((invalid-function-name #'note-and-continue))
+        (values (equal (walk-function-name (make-instance 'walker) @+
+                                           '(foo bar) nil)
+                       '(foo bar))
+                error-handled))))
+  t t)
 
 @ Many of the special forms defined in Common Lisp can be walked using the
 default method just defined, since their syntax is the same as an ordinary
@@ -3326,32 +3405,35 @@ unevaluated form, followed by zero or more evaluated forms.
 (define-quote-like-walker quote)
 (define-quote-like-walker go)
 
-@ The |function| special form needs to check whether the given form is a
-valid function name or a lambda expression.
+@ The cadr of a |function| special form must be either a valid function
+name or a lambda expression.
 
 @l
-(defun valid-function-name-p (name)
-  (typecase name
-    (cons (eql (car name) 'setf))
-    (symbol t)
-    (otherwise nil)))
-
 (define-special-form-walker function ((walker walker) form env)
   `(,(car form)
-    ,(cond ((valid-function-name-p (cadr form))
-            (cadr form))
-           ((and (consp (cadr form)) (eql (caadr form) 'lambda))
-            (walk-lambda-expression walker (cadr form) env))
-           (t (cerror "Walk the function name anyway."
-                      'invalid-function-name :name (cadr form))
-              (walk-form walker (cadr form) env)))))
+    ,(if (and (consp (cadr form))
+              (eql (caadr form) 'lambda))
+         (walk-lambda-expression walker (cadr form) env)
+         (walk-function-name walker (cadr form) env))))
 
-@ @<Condition classes@>=
-(define-condition invalid-function-name (parse-error)
-  ((name :initarg :name :reader function-name))
-  (:report (lambda (error stream)
-             (format stream "~@<Invalid function name ~A.~:@>"
-                     (function-name error)))))
+@t@l
+(deftest (walk-function 1)
+  (tree-equal
+   (walk-form (make-instance 'walker) '(function foo) nil)
+   '(function foo))
+  t)
+
+(deftest (walk-function 2)
+  (tree-equal
+   (walk-form (make-instance 'walker) '(function (setf foo)) nil)
+   '(function (setf foo)))
+  t)
+
+(deftest (walk-function 3)
+  (tree-equal
+   (walk-form (make-instance 'walker) '(function (lambda (x) x)) nil)
+   '(function (lambda (x) x)))
+  t)
 
 @ Next, we'll work our way up to parsing \L~expressions and other
 function-defining forms.
@@ -3624,8 +3706,9 @@ to avoid having to worry about reversing an improper |new-lambda-list|.
   t t)
 
 @ Having built up the necessary machinery, walking a \L-expression is now
-straightforward. Note that \L-forms are not technically special forms, but
-we'll treat them as such.
+straightforward. The slight generality of walking the car of the form using
+|walk-function-name| is because this function will also be used to walk the
+bindings in |flet|, |macrolet|, and~|labels| special forms.
 
 @l
 (defun walk-lambda-expression (walker form env &aux
@@ -3634,12 +3717,16 @@ we'll treat them as such.
       (parse-body body :walker walker :env env :doc-string-allowed t)
     (multiple-value-bind (lambda-list env) @+
         (walk-lambda-list walker lambda-list decls env)
-      `(,(car form)
+      `(,(walk-function-name walker (car form) env)
         ,lambda-list
         ,@(if doc `(,doc))
         ,@(if decls `((declare ,@decls)))
         ,@(walk-list walker forms env)))))
 
+@ `lambda' is not a special operator in Common Lisp, but we'll treat
+\L-expressions as special forms.
+
+@l
 (define-special-form-walker lambda ((walker walker) form env)
   (walk-lambda-expression walker form env))
 
@@ -3651,7 +3738,7 @@ and namespace of the bindings differ.
 @t To test the walker on binding forms, we'll use a specialized walker
 class that recognizes a custom |binding| special form. Its syntax is
 |(binding symbol namespace)|, where |symbol| is an unevaluated symbol,
-and |namespace| is one of |:function| or |:variable|. The walker function
+and |namespace| is one of |:function| or~|:variable|. The walker function
 signals a |binding| condition, which includes the symbol, the requested
 namespace, and the current lexical environment, which a handler can then
 extract and record. If the handler declines to handle the condition,
@@ -3689,23 +3776,27 @@ the function simply returns |symbol|.
 
 @ We'll start with two little utility routines. The first walks a
 variable-like binding form (e.g., the |cadr| of a |let|/|let*| or
-|symbol-macrolet| form). The function-like binding forms will use
-|walk-lambda-expression| for this purpose.
+|symbol-macrolet| form). It normalizes atomic binding forms to
+conses in order to avoid needing special-cases in the actual walker
+methods.
+
+The function-like binding forms will use |walk-lambda-expression| for
+the same purpose.
 
 @l
 
-(defun walk-variable-binding (walker p env)
-  (if (and (consp p) (consp (cdr p)))
-      (list (walk-atomic-form walker (car p) env)
-            (walk-form walker (cadr p) env))
-      (walk-atomic-form walker p env)))
+(defun walk-variable-binding (walker p env &aux @+
+                              (binding (if (consp p) p (list p))))
+  (list (walk-atomic-form walker (car binding) env nil)
+        (and (cdr binding)
+             (walk-form walker (cadr binding) env))))
 
 @ The second helper function just builds the |macro| argument to
 |augment-walker-environment| for the |macrolet| walker.
 
 @l
 (defun make-macro-definitions (walker defs env)
-  (mapcar (lambda (def &aux (name (walk-atomic-form walker (car def) env)))
+  (mapcar (lambda (def &aux (name (walk-atomic-form walker (car def) env nil)))
             (list name
                   (enclose (parse-macro name (cadr def) (cddr def) env)
                            env walker)))
@@ -3717,27 +3808,29 @@ their body forms in an environment that contains all of new the bindings.
 
 @l
 (define-special-form-walker let
-    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)) @+
-     vars)
-  (multiple-value-bind (forms decls)
-      (parse-body body :walker walker :env env)
+    ((walker walker) form env &aux
+     (bindings (mapcar (lambda (p)
+                         (walk-variable-binding walker p env))
+                       (cadr form)))
+     (body (cddr form)))
+  (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     `(,(car form)
-      ,(mapcar (lambda (p)
-                 (push (if (consp p) (car p) p) vars)
-                 (walk-variable-binding walker p env))
-               bindings)
+      ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
                    (augment-walker-environment walker env
-                                               :variable vars
+                                               :variable (mapcar #'car bindings)
                                                :declare decls)))))
 
 (define-special-form-walker flet
-    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
-  (multiple-value-bind (forms decls)
-      (parse-body body :walker walker :env env)
+    ((walker walker) form env &aux
+     (bindings (mapcar (lambda (p)
+                         (walk-lambda-expression walker p env))
+                       (cadr form)))
+     (body (cddr form)))
+  (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     `(,(car form)
-      ,(mapcar (lambda (p) (walk-lambda-expression walker p env)) bindings)
+      ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
                    (augment-walker-environment walker env
@@ -3745,12 +3838,16 @@ their body forms in an environment that contains all of new the bindings.
                                                :declare decls)))))
 
 (define-special-form-walker macrolet
-    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form))
+    ((walker walker) form env &aux
+     (bindings (mapcar (lambda (p)
+                         (walk-lambda-expression walker p env))
+                       (cadr form)))
+     (body (cddr form))
      (macros (make-macro-definitions walker bindings env)))
   (multiple-value-bind (forms decls)
       (parse-body body :walker walker :env env)
     `(,(car form)
-      ,(mapcar (lambda (p) (walk-lambda-expression walker p env)) bindings)
+      ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
                    (augment-walker-environment walker env
@@ -3758,11 +3855,15 @@ their body forms in an environment that contains all of new the bindings.
                                                :declare decls)))))
 
 (define-special-form-walker symbol-macrolet
-    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
+    ((walker walker) form env &aux
+     (bindings (mapcar (lambda (p)
+                         (walk-variable-binding walker p env))
+                       (cadr form)))
+     (body (cddr form)))
   (multiple-value-bind (forms decls)
       (parse-body body :walker walker :env env)
     `(,(car form)
-      ,(mapcar (lambda (p) (walk-variable-binding walker p env)) bindings)
+      ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
                    (augment-walker-environment walker env
@@ -3820,11 +3921,13 @@ and |labels|, which does so before walking any of its bindings.
   (multiple-value-bind (forms decls)
       (parse-body body :walker walker :env env)
     `(,(car form)
-      ,(mapcar (lambda (p &aux (vars (list (if (consp p) (car p) p))))
-                 (prog1 (walk-variable-binding walker p env)
-                   (setq env (augment-walker-environment walker env
-                                                         :variable vars
-                                                         :declare decls))))
+      ,(mapcar (lambda (p)
+                 (let ((walked-binding (walk-variable-binding walker p env)))
+                   (setq env (augment-walker-environment
+                               walker env
+                               :variable (list (car walked-binding))
+                               :declare decls))
+                   walked-binding))
                bindings)
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms env))))
@@ -3833,9 +3936,12 @@ and |labels|, which does so before walking any of its bindings.
     ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
   (multiple-value-bind (forms decls)
       (parse-body body :walker walker :env env)
-    (let ((env (augment-walker-environment walker env
-                                           :function (mapcar #'car bindings)
-                                           :declare decls)))
+    (let* ((function-names (mapcar (lambda (p)
+                                     (walk-function-name walker (car p) env))
+                                   bindings))
+           (env (augment-walker-environment walker env
+                                            :function function-names
+                                            :declare decls)))
       `(,(car form)
         ,(mapcar (lambda (p) (walk-lambda-expression walker p env)) bindings)
         ,@(if decls `((declare ,@decls)))
@@ -3890,12 +3996,387 @@ the walker classes defined in this program.
 @l
 (defclass tracing-walker (walker) ())
 
-(defmethod walk-atomic-form :before ((walker tracing-walker) form env)
-  (format t "; walking atomic form ~S~@[ (~(~A~) variable)~]~%"
-          form
-          (and (symbolp form)
-               (variable-information form env))))
+(defmethod walk-atomic-form :before
+    ((walker tracing-walker) form env &optional (evalp t))
+  (format t "; walking ~:[un~;~]evaluated atomic form ~S~@[ (~(~A~) variable)~]~%"
+          evalp form (and (symbolp form) (variable-information form env))))
 
 (defmethod walk-compound-form :before ((walker tracing-walker) car form env)
   (declare (ignore car env))
   (format t "~<; ~@;walking compound form ~W~:>~%" (list form)))
+
+@*Indexing. Having built up our code walker, we can now use it to produce
+an index of the interesting symbols in a web. We'll say a symbol is
+{\it interesting\/} if it is interned in one of the packages listed in
+|*index-packages*|. The user can manually add packages to this list using
+\.{@@e} forms, but that should be unecessay in most cases, since we'll
+automatically add all packages that are defined in the web being processed.
+{\it FIXME\/}: This isn't true yet.
+
+@<Global variables@>=
+(defvar *index-packages* nil)
+
+@ @<Initialize global...@>=
+;FIXME: (setq *index-packages* nil)
+
+@ Before we proceed, let's establish some terminology. Some of these
+terms have already been used informally, but it's best to nail down
+their meanings. Formally, an {\it index\/} is an ordered collection of
+{\it entries}, each of which is a (\metasyn{heading}, \metasyn{locator})
+pair: the {\it locator} indicates where the object referred to by the
+{\it heading} may be found.
+
+Headings may in general be multi-leveled. For example, in the entries
+we generate via the code walk below, the headings will always be of the
+form (\metasyn{name}, \metasyn{kind}), where {\it kind\/} is a symbol
+representing an abstract namespace like `local function' or `special
+variable'.
+
+In this program, headings are represented by designators for lists of
+string designators, and are sorted lexicographically.
+
+@l
+(defun entry-heading-lessp (h1 h2 &aux
+                            (h1 (if (listp h1) h1 (list h1)))
+                            (h2 (if (listp h2) h2 (list h2))))
+  (or (and (null h1) h2)
+      (string-lessp (string (car h1)) (string (car h2)))
+      (and (string-equal (string (car h1)) (string (car h2)))
+           (cdr h2)
+           (entry-heading-lessp (cdr h1) (cdr h2)))))
+
+@t@l
+(deftest entry-heading-lessp
+  (notany #'not
+          (list (not (entry-heading-lessp 'a 'a))
+                (entry-heading-lessp 'a 'b)
+                (entry-heading-lessp 'a '(a x))
+                (entry-heading-lessp '(a x) '(a y))
+                (entry-heading-lessp '(a x) '(b x))
+                (entry-heading-lessp '(a y) '(b x))
+                (entry-heading-lessp '(a x) '(b y))))
+  t)
+
+@ A locator is either a section (the usual case) or a cross-reference to
+another index entry. We'll represent locators as instances of a |locator|
+class, and use a single generic function, |location|, to dereference them.
+
+Section locators have an additional slot for a definition flag, which
+when true indicates that the object referred to by the associated heading
+is defined, and not just used, in the section represented by that locator.
+Such locators will be given a bit of typographic emphasis by the weaver
+when it prints the containing entry.
+
+@l
+(defclass locator () ())
+
+(defclass section-locator (locator)
+  ((section :accessor location :initarg :section)
+   (defp :accessor locator-definition-p :initarg :defp)))
+
+(defclass xref-locator (locator)
+  ((heading :accessor location :initarg :heading)))
+(defclass see-locator (xref-locator) ())
+(defclass see-also-locator (xref-locator) ())
+
+@ @l
+(defun make-locator (&key section defp see see-also)
+  (cond (section (make-instance 'section-locator :section section :defp defp))
+        (see (make-instance 'see-locator :heading see))
+        (see-also (make-instance 'see-locator :heading see-also))))
+
+@ Since we'll eventually want the index sorted by heading, we'll store
+the entries in a binary search tree. To simplify processing, what we'll
+actually store is {\it entry lists}, which are collections of entries
+with identical headings, but we'll overload the term in what seems to be
+a fairly traditional manner and call them entries, too.
+
+@l
+(defclass index-entry (binary-search-tree)
+  ((key :accessor entry-heading)
+   (locators :accessor entry-locators :initarg :locators :initform '())))
+
+(defmethod find-or-insert (item (root index-entry) &key
+                           (predicate #'entry-heading-lessp)
+                           (test #'equalp)
+                           (insert-if-not-found t))
+  (call-next-method item root
+                    :predicate predicate
+                    :test test
+                    :insert-if-not-found insert-if-not-found))
+
+@ The entry trees get stored in |index| objects, for which we define the
+following protocol functions.
+
+@l
+(defclass index ()
+  ((entries :accessor index-entries :initform nil)))
+
+(defun make-index () (make-instance 'index))
+(defgeneric add-index-entry (index heading locator &key))
+(defgeneric find-index-entries (index heading))
+
+@ The following method adds an index entry for |heading| with location
+|section|. A new locator is constructed only when necessary, and duplicate
+locators are automatically suppressed. Definitional locators are also made
+to supersede ordinary locators.
+
+@l
+(define-modify-macro orf (&rest args) or)
+
+(defmethod add-index-entry ((index index) heading (section section) &key defp)
+  (flet ((make-locator ()
+           (make-locator :section section :defp defp)))
+    (if (null (index-entries index))
+        (setf (index-entries index)
+              (make-instance 'index-entry @+
+                             :key heading @+
+                             :locators (list (make-locator))))
+        (let* ((entry (find-or-insert heading (index-entries index)))
+               (old-locator (find section (entry-locators entry) @+
+                                  :key #'location)))
+          (if old-locator
+              (orf (locator-definition-p old-locator) defp)
+              (push (make-locator) (entry-locators entry)))))))
+
+@ |find-index-entries| returns a list of locators for all of the entries
+with the given heading.
+
+@l
+(defmethod find-index-entries ((index index) heading)
+  (let ((entries (index-entries index)))
+    (when entries
+      (multiple-value-bind (entry present-p)
+          (find-or-insert heading entries :insert-if-not-found nil)
+        (when present-p
+          (entry-locators entry))))))
+
+@t@l
+(deftest (add-index-entry 1)
+  (let ((index (make-index))
+        (*sections* (make-array 1 :fill-pointer 0)))
+    (add-index-entry index 'foo (make-instance 'section))
+    (let ((locators (find-index-entries index 'foo)))
+      (values (length locators)
+              (section-number (location (first locators))))))
+  1 0)
+
+(deftest (add-index-entry 2)
+  (let* ((index (make-index))
+         (*sections* (make-array 1 :fill-pointer 0))
+         (section (make-instance 'section)))
+    (add-index-entry index 'foo section)
+    (add-index-entry index 'foo section :defp t) ; def should replace use
+    (locator-definition-p (first (find-index-entries index 'foo))))
+  t)
+
+(deftest (add-index-entry 3)
+  (let ((index (make-index))
+        (*sections* (make-array 3 :fill-pointer 0)))
+    (add-index-entry index 'foo (make-instance 'section))
+    (let ((section (make-instance 'section)))
+      (add-index-entry index 'foo section)
+      (add-index-entry index 'foo section :defp t))
+    (add-index-entry index 'foo (make-instance 'section))
+    (sort (mapcar #'section-number
+                  (mapcar #'location (find-index-entries index 'foo)))
+          #'<))
+  (0 1 2))
+
+@ The {\it kind} field in our entry headings will be keyword symbols that
+denote the namespace into which {\it name} indexes. This little routine
+creates such keywords from symbols whose names start with \.{"DEFINE-"}
+or~\.{"DEF"}.
+
+@l
+(defun make-keyword-from-def (symbol)
+  (values (intern (loop with name = (symbol-name symbol)
+                        for prefix in '("define-" "def")
+                        as n = (min (length prefix) (length name))
+                        if (string-equal (subseq name 0 n) prefix)
+                          do (return (subseq name n))
+                        finally (warn "Non-defining symbol ~S" symbol)
+                                (return name))
+                  (find-package "KEYWORD"))))
+
+@t@l
+(deftest make-keyword-from-def
+  (values (make-keyword-from-def 'define-foo)
+          (make-keyword-from-def 'defbar)
+          (handler-bind ((warning #'muffle-warning))
+            (make-keyword-from-def 'baz)))
+  :foo
+  :bar
+  :baz)
+
+@ We'll perform the indexing by walking over the code of each section and
+noting each of the interesting symbols that we find there according to its
+semantic role. In theory, this should be a straightforward task for any
+Common Lisp code walker. What makes it tricky is that references to named
+sections can occur anywhere in a form, which might break the syntax of
+macros and special forms unless we tangle the form first. But once we
+tangle a form, we lose the provenance of the sub-forms that came from
+named sections, and so our index would be wrong.
+
+The trick that we use to overcome this problem is to tangle the forms in a
+special way where instead of just splicing the named section code into
+place, we instead make a special kind of copy of each form, and splice
+those into place. Those copies will have each symbol replaced with an
+uninterned symbol whose value cell contains the symbol it replaced and
+whose |section| property contains the section in which that symbol occured.
+We'll these uninterned symbols {\it referring symbols}.
+
+First, we'll need a routine that does the substitution just described.
+
+@l
+(defun substitute-symbols (form section &aux symbols)
+  (labels ((get-symbols (form)
+             (cond ((and (symbolp form)
+                         (member (symbol-package form) *index-packages*))
+                    (pushnew form symbols))
+                   ((atom form) nil)
+                   (t (get-symbols (car form))
+                      (get-symbols (cdr form))))))
+    (get-symbols form)
+    (sublis (map 'list
+                 (lambda (sym)
+                   (let ((refsym (make-symbol (symbol-name sym))))
+                     (setf (symbol-value refsym) sym)
+                     (setf (get refsym 'section) section)
+                     (cons sym refsym)))
+                 symbols)
+            form)))
+
+@ This next function goes the other way: given a symbol, it determines
+whether it is a referring symbol, and if so, it returns the symbol referred
+to and the section it came from. Otherwise, it just returns the given
+symbol. This interface makes it convenient to use in a |multiple-value-bind|
+form without having to apply a predicate first.
+
+@l
+(defun symbol-provenance (symbol)
+  (let ((section (get symbol 'section)))
+    (if (and (null (symbol-package symbol))
+             (boundp symbol)
+             section)
+        (values (symbol-value symbol) section)
+        symbol)))
+
+@t@l
+(deftest (symbol-provenance 1)
+  (let ((*index-packages* (list (find-package "KEYWORD"))))
+    (symbol-provenance (substitute-symbols ':foo 1)))
+  :foo 1)
+
+(deftest (symbol-provenance 2)
+  (symbol-provenance :foo)
+  :foo)
+
+@ To get referring symbols in the tangled code, we'll use an |:around|
+method on |section-code| that conditions on a special variable,
+|*indexing*|, that we'll bind to true while we're tangling for the
+purposes of indexing.
+
+We can't feed the raw section code to |substitute-symbols|, since it's
+not really Lisp code: it's full of markers and such. So we'll abuse the
+tangler infrastructure and use it to do marker replacement, but {\it not\/}
+named-section expansion.
+
+@l
+(defmethod section-code :around ((section section))
+  (let ((code (call-next-method)))
+    (if *indexing*
+        (substitute-symbols (tangle code :expand-named-sections-p nil) section)
+        code)))
+
+@ @<Global variables@>=
+(defvar *indexing* nil)
+
+@ The top-level indexing routine will use this function to obtain the
+completely tangled code with referring symbols, and {\it that}'s what
+we'll walk.
+
+@l
+(defun tangle-code-for-indexing (sections)
+  (let ((*indexing* t))
+    (tangle (unnamed-section-code-parts sections))))
+
+@ Now we'll define a specialized walker that does the actual indexing.
+
+@l
+(defclass indexing-walker (walker)
+  ((index :accessor walker-index :initform (make-index))))
+
+@ Walking general declaration expressions is difficult, mostly because of
+the shorthand notation for type declarations. Fortunately, we only care
+about |special| declarations for the purposes of indexing, so we just throw
+everything else away.
+
+@l
+(defmethod walk-declaration-specifiers ((walker indexing-walker) decls env)
+  (loop for (identifier . data) in decls
+        if (eql identifier 'special)
+          collect `(special ,@(walk-list walker data env))))
+
+@t@l
+(deftest (walk-declaration-specifiers indexing)
+  (equal (walk-declaration-specifiers (make-instance 'indexing-walker)
+                                      '((type foo x)
+                                        (special x y z)
+                                        (optmize debug))
+                                      nil)
+         '((special x y z)))
+  t)
+
+@ The only atoms we care about indexing are the symbols that referring
+symbols refer to.
+
+@l
+(defmethod walk-atomic-form ((walker indexing-walker) form env &optional @+
+                             (evalp t))
+  (if (symbolp form)
+      (multiple-value-bind (symbol section) (symbol-provenance form)
+        (when section
+          (if evalp
+              (index-variable (walker-index walker) symbol section env)
+              (index-function (walker-index walker) symbol section env)))
+        symbol)
+      form))
+
+@ We don't currently index lexical variables, as that would probably just
+bulk up the index to no particular advantage.
+
+@l
+(defun index-variable (index variable section env &optional defp)
+  (multiple-value-bind (type local) (variable-information variable env)
+    (when (member type '(:special :symbol-macro :constant))
+      (add-index-entry index
+                       (list variable
+                             (ecase type
+                               (:special ':special-variable)
+                               (:symbol-macro @+
+                                (if local ':local-symbol-macro ':symbol-macro))
+                               (:constant ':constant)))
+                       section
+                       :defp defp))))
+
+(defun index-function (index function section env &optional defp)
+  (multiple-value-bind (type local) (function-information function env)
+    (when (member type '(:function :macro))
+      (add-index-entry index
+                       (list function
+                             (ecase type
+                               (:function @+
+                                (if local ':local-function ':function))
+                               (:macro (if local ':local-macro ':macro))))
+                       section
+                       :defp defp))))
+
+@ And here, finally, is the top-level indexing routine: it walks the
+tangled, symbol-replaced code of the given sections and returns an index
+of all of the interesting symbols so encountered.
+
+@l
+(defun index-sections (sections &key (walker (make-instance 'indexing-walker)))
+  (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
+    (walk-form walker form)))
