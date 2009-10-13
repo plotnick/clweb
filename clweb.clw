@@ -4118,7 +4118,7 @@ following protocol functions.
 @ The following method adds an index entry for |heading| with location
 |section|. A new locator is constructed only when necessary, and duplicate
 locators are automatically suppressed. Definitional locators are also made
-to supersede ordinary locators.
+to supersede ordinary ones.
 
 @l
 (define-modify-macro orf (&rest args) or)
