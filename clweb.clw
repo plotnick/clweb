@@ -2139,7 +2139,7 @@ tiny state machine that models the global syntax of a \WEB\ file.
 explicit closing delimiters.) It returns a list of |section| objects.
 
 @l
-(defun read-sections (input-stream &key (appendp t))
+(defun read-sections (input-stream &key (append t))
   (with-charpos-input-stream (stream input-stream)
     (flet ((finish-section (section commentary code)
              @<Trim whitespace and reverse...@>
@@ -2147,7 +2147,7 @@ explicit closing delimiters.) It returns a list of |section| objects.
              (setf (section-code section) code)
              (when (section-name section)
                (let ((named-section (find-section (section-name section))))
-                 (if appendp
+                 (if append
                      (push section (named-section-sections named-section))
                      (setf (named-section-sections named-section) @+
                            (list section)))))
@@ -2286,15 +2286,15 @@ Tangling also replaces bound markers with their associated values, and
 removes unbound markers.
 
 @l
-(defun tangle-1 (form &key (expand-named-sections-p t))
+(defun tangle-1 (form &key (expand-named-sections t))
   (flet ((tangle-1 (form)
-           (tangle-1 form :expand-named-sections-p expand-named-sections-p)))
+           (tangle-1 form :expand-named-sections expand-named-sections)))
     (typecase form
       (marker (values (marker-value form) t))
       (atom (values form nil))
       ((cons named-section *)
        (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
-         (if expand-named-sections-p
+         (if expand-named-sections
             (values (append (section-code (car form)) d) t)
             (values (cons (car form) d) cdr-expanded-p))))
       ((cons marker *)
@@ -2332,11 +2332,11 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 `expanded' flag. This code is adapted from SBCL's |macroexpand|.
 
 @l
-(defun tangle (form &key (expand-named-sections-p t))
+(defun tangle (form &key (expand-named-sections t))
   (labels ((expand (form expanded)
              (multiple-value-bind (new-form newly-expanded-p)
                  (tangle-1 form
-                           :expand-named-sections-p expand-named-sections-p)
+                           :expand-named-sections expand-named-sections)
                (if newly-expanded-p
                    (expand new-form t)
                    (values new-form expanded)))))
@@ -2368,12 +2368,12 @@ current values, so that assignments to those variables in the \WEB\ code
 will not affect the calling environment.
 
 @l
-(defun load-web-from-stream (stream print &key (appendp t) &aux
+(defun load-web-from-stream (stream print &key (append t) &aux
                              (*readtable* *readtable*)
                              (*package* *package*)
                              (*evaluating* t))
   (dolist (form (tangle (unnamed-section-code-parts
-                         (read-sections stream :appendp appendp))) t)
+                         (read-sections stream :append append))) t)
     (if print
         (let ((results (multiple-value-list (eval form))))
           (format t "~&; ~{~S~^, ~}~%" results))
@@ -2403,13 +2403,13 @@ does {\it not\/} initialize the global variables like |*named-sections*|;
 this allows for incremental redefinition.
 
 @l
-(defun load-sections-from-temp-file (file appendp &aux
+(defun load-sections-from-temp-file (file append &aux
                                      (truename (probe-file file)))
   "Load web sections from FILE, then delete it."
   (when truename
     (unwind-protect
          (with-open-file (stream truename :direction :input)
-           (load-web-from-stream stream t :appendp appendp))
+           (load-web-from-stream stream t :append append))
       (delete-file truename))))
 
 
@@ -4287,7 +4287,7 @@ named-section expansion.
 (defmethod section-code :around ((section section))
   (let ((code (call-next-method)))
     (if *indexing*
-        (substitute-symbols (tangle code :expand-named-sections-p nil) section)
+        (substitute-symbols (tangle code :expand-named-sections nil) section)
         code)))
 
 @ @<Global variables@>=
