@@ -267,12 +267,17 @@ for |push-section| so that we can override it for test sections.
   (declare (ignore initargs))
   (setq *current-section* (push-section section)))
 
-@t We bind |*sections*| in this test to avoid polluting the global sections
-vector.
+@t To make testing with sections a little easier, we'll define a simple
+binding macro, |with-temporary-sections|, that will help ensure that we
+dont't accidentally clobber any real sections.
 
 @l
+(defmacro with-temporary-sections (&body body)
+  `(let ((*sections* (make-array 16 :fill-pointer 0)))
+     ,@body))
+
 (deftest current-section
-  (let ((*sections* (make-array 1 :fill-pointer 0)))
+  (with-temporary-sections
     (eql (make-instance 'section) *current-section*))
   t)
 
@@ -428,14 +433,14 @@ reference this named section.
 
 @t@l
 (deftest named-section-number/code
-  (let ((*sections* (make-array 5 :fill-pointer 0))
-        (section (make-instance 'named-section)))
-    (make-instance 'section) ; `limbo' section
-    (loop for i from 1 to 3
-          do (push (make-instance 'section :name "foo" :code (list i))
-                   (named-section-sections section)))
-    (values (section-code section)
-            (section-number section)))
+  (with-temporary-sections
+    (let ((section (make-instance 'named-section)))
+      (make-instance 'section) ; `limbo' section
+      (loop for i from 1 to 3
+            do (push (make-instance 'section :name "foo" :code (list i))
+                     (named-section-sections section)))
+      (values (section-code section)
+              (section-number section))))
   (1 2 3)
   1)
 
@@ -616,17 +621,17 @@ having code parts, but later tests will.
 
 @l
 (defvar *sample-named-sections*
-  (let ((*sections* (make-array 10 :fill-pointer 0))
-        (named-sections (make-instance 'named-section :name "baz")))
-    (flet ((push-section (name code)
-             (push (make-instance 'section :name name :code code)
-                   (named-section-sections (find-or-insert name @+
-                                                           named-sections)))))
-      (push-section "baz" '(:baz))
-      (push-section "foo" '(:foo))
-      (push-section "bar" '(:bar))
-      (push-section "qux" '(:qux)))
-    named-sections))
+  (with-temporary-sections
+    (let ((named-sections (make-instance 'named-section :name "baz")))
+      (flet ((push-section (name code)
+               (push (make-instance 'section :name name :code code)
+                     (named-section-sections (find-or-insert name @+
+                                                             named-sections)))))
+        (push-section "baz" '(:baz))
+        (push-section "foo" '(:foo))
+        (push-section "bar" '(:bar))
+        (push-section "qux" '(:qux)))
+      named-sections)))
 
 (defun find-sample-section (name)
   (find-or-insert name *sample-named-sections* :insert-if-not-found nil))
