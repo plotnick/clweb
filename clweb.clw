@@ -3774,7 +3774,6 @@ The function-like binding forms will use |walk-lambda-expression| for
 the same purpose.
 
 @l
-
 (defun walk-variable-binding (walker p env &aux @+
                               (binding (if (consp p) p (list p))))
   (list (walk-atomic-form walker (car binding) env nil)
