@@ -3190,24 +3190,23 @@ walking an atomic or special form; otherwise, we keep walking until the
 form no longer macroexpands.
 
 @l
-(defun symbol-macro-p (form env)
-  (and (symbolp form)
-       (eql (variable-information form env) ':symbol-macro)))
-
 (defmethod walk-form ((walker walker) form &optional env &aux
                       (env (ensure-portable-walking-environment env))
                       (expanded t))
-  (loop
-    (cond ((symbol-macro-p form env))
-          ((atom form)
-           (return (walk-atomic-form walker form env)))
-          ((not (symbolp (car form)))
-           (return (walk-list walker form env)))
-          ((or (not expanded)
-               (walk-as-special-form-p walker (car form) form env))
-           (return (walk-compound-form walker (car form) form env))))
-    (multiple-value-setq (form expanded)
-      (macroexpand-for-walk walker form env))))
+  (flet ((symbol-macro-p (form env)
+           (and (symbolp form)
+                (eql (variable-information form env) ':symbol-macro))))
+    (loop
+      (cond ((symbol-macro-p form env)) ; wait for macro expansion
+            ((atom form)
+             (return (walk-atomic-form walker form env)))
+            ((not (symbolp (car form)))
+             (return (walk-list walker form env)))
+            ((or (not expanded)
+                 (walk-as-special-form-p walker (car form) form env))
+             (return (walk-compound-form walker (car form) form env))))
+      (multiple-value-setq (form expanded)
+        (macroexpand-for-walk walker form env)))))
 
 @ @<Walker generic functions@>=
 (defgeneric walk-form (walker form &optional env))
