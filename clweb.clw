@@ -4153,12 +4153,14 @@ with the given heading.
 @t@l
 (deftest (add-index-entry 1)
   (let ((index (make-index))
-        (*sections* (make-array 1 :fill-pointer 0)))
+        (*sections* (make-array 3 :fill-pointer 0)))
     (add-index-entry index 'foo (make-instance 'section))
-    (let ((locators (find-index-entries index 'foo)))
-      (values (length locators)
-              (section-number (location (first locators))))))
-  1 0)
+    (add-index-entry index 'foo (make-instance 'section))
+    (add-index-entry index 'foo (make-instance 'section))
+    (sort (mapcar #'section-number
+                  (mapcar #'location (find-index-entries index 'foo)))
+          #'<))
+  (0 1 2))
 
 (deftest (add-index-entry 2)
   (let* ((index (make-index))
@@ -4168,19 +4170,6 @@ with the given heading.
     (add-index-entry index 'foo section :def t) ; def should replace use
     (locator-definition-p (first (find-index-entries index 'foo))))
   t)
-
-(deftest (add-index-entry 3)
-  (let ((index (make-index))
-        (*sections* (make-array 3 :fill-pointer 0)))
-    (add-index-entry index 'foo (make-instance 'section))
-    (let ((section (make-instance 'section)))
-      (add-index-entry index 'foo section)
-      (add-index-entry index 'foo section :def t))
-    (add-index-entry index 'foo (make-instance 'section))
-    (sort (mapcar #'section-number
-                  (mapcar #'location (find-index-entries index 'foo)))
-          #'<))
-  (0 1 2))
 
 @ The {\it kind} field in our entry headings will be keyword symbols that
 denote the namespace into which {\it name} indexes. This little routine
