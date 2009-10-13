@@ -3621,12 +3621,13 @@ form and the pattern (if any) need to be walked in an environment
           (destructuring-bind (var/kv &optional init-form supplied-p-parameter) arg
             (when init-form
               (setq init-form (walk-form walker init-form env)))
-            (if (consp var/kv)
-                (destructuring-bind (keyword-name var/pattern) var/kv
-                  (multiple-value-setq (var/pattern env)
-                    (maybe-destructure var/pattern))
-                  (setq var/kv (list (walk-var keyword-name) var/pattern)))
-                (augment-env var/kv))
+            (cond ((consp var/kv)
+                   (destructuring-bind (keyword-name var/pattern) var/kv
+                     (multiple-value-setq (var/pattern env)
+                       (maybe-destructure var/pattern))
+                     (setq var/kv (list (walk-var keyword-name) var/pattern))))
+                  (t (setq var/kv (walk-var var/kv))
+                     (augment-env var/kv)))
             (when supplied-p-parameter
               (setq supplied-p-parameter (walk-var supplied-p-parameter))
               (augment-env supplied-p-parameter))
@@ -4357,15 +4358,15 @@ we'll walk.
 (defclass indexing-walker (walker)
   ((index :accessor walker-index :initform (make-index))))
 
-@ The only atoms we care about indexing are referring symbols that occur
-in an evaluated context.
+@ The only atoms we care about indexing are referring symbols.
 
 @l
 (defmethod walk-atomic-form ((walker indexing-walker) form env &optional @+
                              (evalp t))
+  (declare (ignore evalp))
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
-        (when (and section evalp)
+        (when section
           (index-variable (walker-index walker) symbol section env))
         symbol)
       form))
@@ -4400,6 +4401,33 @@ everything we need with this walk.
 (define-special-form-walker defmacro ((walker indexing-walker) form env)
   `(,(car form)
     ,@(walk-lambda-expression walker (cdr form) env :def (car form))))
+
+@t Besides testing the return value of a walk over a |defmacro| form, this
+test ensures that complex \L-lists are properly indexed and have their
+referring symbols replaced, too.
+
+@l
+(deftest indexing-walk-defun
+  (with-temporary-sections
+    (let ((walker (make-instance 'indexing-walker))
+          (form '(flet ((compute-k (x y z) (+ x y z)))
+                   (defmacro foo (&whole w x y z &environemnt env &key
+                                  ((key k) (compute-k x y z) k-s-p) &body body)
+                     (declare (special k))
+                     body)))
+          (section (make-instance 'section))
+          (*index-packages* (list (find-package "CLWEB"))))
+      (values (tree-equal (walk-form walker (substitute-symbols form section))
+                          form)
+              (loop with index = (walker-index walker)
+                    for heading in '((k :special-variable)
+                                     (compute-k :local-function)
+                                     (foo :macro))
+                    always (eql (location @+
+                                 (first (find-index-entries index heading)))
+                                section)))))
+  t
+  t)
 
 @ We can also do the indexing of function names in a |:before| method,
 since the referring symbols will still get swapped out by

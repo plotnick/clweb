@@ -596,6 +596,31 @@
            (SYMBOL-PROVENANCE (SUBSTITUTE-SYMBOLS ':FOO 1)))
          :FOO 1)
 (DEFTEST (SYMBOL-PROVENANCE 2) (SYMBOL-PROVENANCE :FOO) :FOO)
+(DEFTEST INDEXING-WALK-DEFUN
+         (WITH-TEMPORARY-SECTIONS
+          (LET ((WALKER (MAKE-INSTANCE 'INDEXING-WALKER))
+                (FORM
+                 '(FLET ((COMPUTE-K (X Y Z)
+                           (+ X Y Z)))
+                    (DEFMACRO FOO
+                              (&WHOLE W X Y Z &ENVIRONEMNT ENV
+                               &KEY ((KEY K) (COMPUTE-K X Y Z) K-S-P)
+                               &BODY BODY)
+                      (DECLARE (SPECIAL K))
+                      BODY)))
+                (SECTION (MAKE-INSTANCE 'SECTION))
+                (*INDEX-PACKAGES* (LIST (FIND-PACKAGE "CLWEB"))))
+            (VALUES
+             (TREE-EQUAL (WALK-FORM WALKER (SUBSTITUTE-SYMBOLS FORM SECTION))
+                         FORM)
+             (LOOP WITH INDEX = (WALKER-INDEX WALKER)
+                   FOR HEADING IN '((K :SPECIAL-VARIABLE)
+                                    (COMPUTE-K :LOCAL-FUNCTION) (FOO :MACRO))
+                   ALWAYS (EQL
+                           (LOCATION
+                            (FIRST (FIND-INDEX-ENTRIES INDEX HEADING)))
+                           SECTION)))))
+         T T)
 (DEFTEST (WALK-DECLARATION-SPECIFIERS INDEXING)
          (EQUAL
           (WALK-DECLARATION-SPECIFIERS (MAKE-INSTANCE 'INDEXING-WALKER)

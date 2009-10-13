@@ -1639,14 +1639,15 @@
                   ARG
                 (WHEN INIT-FORM
                   (SETQ INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
-                (IF (CONSP VAR/KV)
-                    (DESTRUCTURING-BIND
-                        (KEYWORD-NAME VAR/PATTERN)
-                        VAR/KV
-                      (MULTIPLE-VALUE-SETQ (VAR/PATTERN ENV)
-                        (MAYBE-DESTRUCTURE VAR/PATTERN))
-                      (SETQ VAR/KV (LIST (WALK-VAR KEYWORD-NAME) VAR/PATTERN)))
-                    (AUGMENT-ENV VAR/KV))
+                (COND
+                 ((CONSP VAR/KV)
+                  (DESTRUCTURING-BIND
+                      (KEYWORD-NAME VAR/PATTERN)
+                      VAR/KV
+                    (MULTIPLE-VALUE-SETQ (VAR/PATTERN ENV)
+                      (MAYBE-DESTRUCTURE VAR/PATTERN))
+                    (SETQ VAR/KV (LIST (WALK-VAR KEYWORD-NAME) VAR/PATTERN))))
+                 (T (SETQ VAR/KV (WALK-VAR VAR/KV)) (AUGMENT-ENV VAR/KV)))
                 (WHEN SUPPLIED-P-PARAMETER
                   (SETQ SUPPLIED-P-PARAMETER (WALK-VAR SUPPLIED-P-PARAMETER))
                   (AUGMENT-ENV SUPPLIED-P-PARAMETER))
@@ -1958,10 +1959,11 @@
           ((INDEX :ACCESSOR WALKER-INDEX :INITFORM (MAKE-INDEX))))
 (DEFMETHOD WALK-ATOMIC-FORM
            ((WALKER INDEXING-WALKER) FORM ENV &OPTIONAL (EVALP T))
+           (DECLARE (IGNORE EVALP))
            (IF (SYMBOLP FORM)
                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                    (SYMBOL-PROVENANCE FORM)
-                 (WHEN (AND SECTION EVALP)
+                 (WHEN SECTION
                    (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV))
                  SYMBOL)
                FORM))
