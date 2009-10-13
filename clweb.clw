@@ -4063,16 +4063,24 @@ when it prints the containing entry.
 
 (defclass section-locator (locator)
   ((section :accessor location :initarg :section)
-   (defp :accessor locator-definition-p :initarg :defp)))
+   (def :accessor locator-definition-p :initarg :def)))
 
 (defclass xref-locator (locator)
   ((heading :accessor location :initarg :heading)))
 (defclass see-locator (xref-locator) ())
 (defclass see-also-locator (xref-locator) ())
 
-@ @l
-(defun make-locator (&key section defp see see-also)
-  (cond (section (make-instance 'section-locator :section section :defp defp))
+@ Here's a constructor for the various kinds of locators.
+
+@l
+(defun make-locator (&key section def see see-also)
+  (assert (if (or see see-also) (and (not section) (not def)) t)
+          (section def see see-also)
+          "Can't use :SECTION or :DEF with :SEE or :SEE-ALSO.")
+  (assert (if def section t) (section def) "Can't use :DEF without :SECTION.")
+  (assert (not (and see see-also)) (see see-also) @+
+          "Can't use both :SEE and :SEE-ALSO.")
+  (cond (section (make-instance 'section-locator :section section :def def))
         (see (make-instance 'see-locator :heading see))
         (see-also (make-instance 'see-locator :heading see-also))))
 
@@ -4115,9 +4123,9 @@ to supersede ordinary locators.
 @l
 (define-modify-macro orf (&rest args) or)
 
-(defmethod add-index-entry ((index index) heading (section section) &key defp)
+(defmethod add-index-entry ((index index) heading (section section) &key def)
   (flet ((make-locator ()
-           (make-locator :section section :defp defp)))
+           (make-locator :section section :def def)))
     (if (null (index-entries index))
         (setf (index-entries index)
               (make-instance 'index-entry @+
@@ -4127,7 +4135,7 @@ to supersede ordinary locators.
                (old-locator (find section (entry-locators entry) @+
                                   :key #'location)))
           (if old-locator
-              (orf (locator-definition-p old-locator) defp)
+              (orf (locator-definition-p old-locator) def)
               (push (make-locator) (entry-locators entry)))))))
 
 @ |find-index-entries| returns a list of locators for all of the entries
@@ -4157,7 +4165,7 @@ with the given heading.
          (*sections* (make-array 1 :fill-pointer 0))
          (section (make-instance 'section)))
     (add-index-entry index 'foo section)
-    (add-index-entry index 'foo section :defp t) ; def should replace use
+    (add-index-entry index 'foo section :def t) ; def should replace use
     (locator-definition-p (first (find-index-entries index 'foo))))
   t)
 
@@ -4167,7 +4175,7 @@ with the given heading.
     (add-index-entry index 'foo (make-instance 'section))
     (let ((section (make-instance 'section)))
       (add-index-entry index 'foo section)
-      (add-index-entry index 'foo section :defp t))
+      (add-index-entry index 'foo section :def t))
     (add-index-entry index 'foo (make-instance 'section))
     (sort (mapcar #'section-number
                   (mapcar #'location (find-index-entries index 'foo)))
@@ -4338,7 +4346,7 @@ in an evaluated context.
 bulk up the index to no particular advantage.
 
 @l
-(defun index-variable (index variable section env &optional defp)
+(defun index-variable (index variable section env &optional def)
   (multiple-value-bind (type local) (variable-information variable env)
     (when (member type '(:special :symbol-macro :constant))
       (add-index-entry index
@@ -4349,7 +4357,7 @@ bulk up the index to no particular advantage.
                                 (if local ':local-symbol-macro ':symbol-macro))
                                (:constant ':constant)))
                        section
-                       :defp defp))))
+                       :def def))))
 
 @ An indexable function call will be a compound form whose |car| is a
 referring symbol. The replacement of referring symbols with their referents
@@ -4364,7 +4372,7 @@ method here and not worry about it.
       (index-function (walker-index walker) symbol section env))))
 
 @ @l
-(defun index-function (index function section env &optional defp)
+(defun index-function (index function section env &optional def)
   (multiple-value-bind (type local) (function-information function env)
     (when (member type '(:function :macro))
       (add-index-entry index
@@ -4374,7 +4382,7 @@ method here and not worry about it.
                                 (if local ':local-function ':function))
                                (:macro (if local ':local-macro ':macro))))
                        section
-                       :defp defp))))
+                       :def def))))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index
