@@ -3527,6 +3527,8 @@ object containing bindings for all of the parameters found therein.
              (setq env (augment-walker-environment walker env
                                                    :variable vars
                                                    :declare decls)))
+           (walk-var (var)
+             (walk-atomic-form walker var env nil))
            (update-state (keyword)
              (setq state (ecase keyword
                            ((nil) state)
@@ -3538,7 +3540,8 @@ object containing bindings for all of the parameters found therein.
            (maybe-destructure (var/pattern)
              (if (consp var/pattern)
                  (walk-lambda-list walker var/pattern decls env)
-                 (values var/pattern (augment-env var/pattern)))))
+                 (values (walk-var var/pattern)
+                         (augment-env var/pattern)))))
     @<Check for |&whole| and |&environment| vars, and augment the lexical
       environment with them if found@>
     (do* ((lambda-list lambda-list (cdr lambda-list))
@@ -3563,7 +3566,7 @@ but we'll leave any |&environment| variable to be picked up later.
 (let ((wholevar (and (consp lambda-list)
                      (eql (car lambda-list) '&whole)
                      (push (pop lambda-list) new-lambda-list)
-                     (car (push (pop lambda-list) new-lambda-list))))
+                     (car (push (walk-var (pop lambda-list)) new-lambda-list))))
       (envvar (do ((lambda-list lambda-list (cdr lambda-list)))
                   ((atom lambda-list) nil)
                 (when (eql (car lambda-list) '&environment)
@@ -3574,7 +3577,7 @@ but we'll leave any |&environment| variable to be picked up later.
 so we just push it onto the new \L-list and prepare for the next parameter.
 
 @<Process |arg| as an environment parameter@>=
-(push (pop lambda-list) new-lambda-list)
+(push (walk-var (pop lambda-list)) new-lambda-list)
 (update-state (car lambda-list))
 
 @ @<Process |arg| as a required parameter@>=
@@ -3622,9 +3625,10 @@ form and the pattern (if any) need to be walked in an environment
                 (destructuring-bind (keyword-name var/pattern) var/kv
                   (multiple-value-setq (var/pattern env)
                     (maybe-destructure var/pattern))
-                  (setq var/kv (list keyword-name var/pattern)))
+                  (setq var/kv (list (walk-var keyword-name) var/pattern)))
                 (augment-env var/kv))
             (when supplied-p-parameter
+              (setq supplied-p-parameter (walk-var supplied-p-parameter))
               (augment-env supplied-p-parameter))
             (push (nconc (list var/kv)
                          (and init-form (list init-form))
@@ -3636,8 +3640,8 @@ form and the pattern (if any) need to be walked in an environment
   (symbol @<Process the symbol...@>)
   (cons
    (destructuring-bind (var &optional init-form) arg
-     (when init-form
-       (setq init-form (walk-form walker init-form env)))
+     (setq var (walk-var var)
+           init-form (and init-form (walk-form walker init-form env)))
      (augment-env var)
      (push (nconc (list var)
                   (and init-form (list init-form)))
@@ -3647,17 +3651,18 @@ form and the pattern (if any) need to be walked in an environment
 (cond ((member arg lambda-list-keywords)
        (push arg new-lambda-list)
        (update-state arg))
-      (t (augment-env arg)
+      (t (setq arg (walk-var arg))
+         (augment-env arg)
          (push arg new-lambda-list)))
 
 @ We normalize a dotted rest parameter into a proper |&rest| parameter
 to avoid having to worry about reversing an improper |new-lambda-list|.
 
 @<Process dotted rest var@>=
-(let ((var (cdr lambda-list)))
+(let ((var (walk-var (cdr lambda-list))))
   (augment-env var)
   (push '&rest new-lambda-list)
-  (push (cdr lambda-list) new-lambda-list))
+  (push var new-lambda-list))
 (setq lambda-list nil) ; walk no more
 
 @t@l

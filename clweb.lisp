@@ -1554,6 +1554,8 @@
              (SETQ ENV
                      (AUGMENT-WALKER-ENVIRONMENT WALKER ENV :VARIABLE VARS
                                                  :DECLARE DECLS)))
+           (WALK-VAR (VAR)
+             (WALK-ATOMIC-FORM WALKER VAR ENV NIL))
            (UPDATE-STATE (KEYWORD)
              (SETQ STATE
                      (ECASE KEYWORD
@@ -1566,11 +1568,11 @@
            (MAYBE-DESTRUCTURE (VAR/PATTERN)
              (IF (CONSP VAR/PATTERN)
                  (WALK-LAMBDA-LIST WALKER VAR/PATTERN DECLS ENV)
-                 (VALUES VAR/PATTERN (AUGMENT-ENV VAR/PATTERN)))))
+                 (VALUES (WALK-VAR VAR/PATTERN) (AUGMENT-ENV VAR/PATTERN)))))
     (LET ((WHOLEVAR
            (AND (CONSP LAMBDA-LIST) (EQL (CAR LAMBDA-LIST) '&WHOLE)
                 (PUSH (POP LAMBDA-LIST) NEW-LAMBDA-LIST)
-                (CAR (PUSH (POP LAMBDA-LIST) NEW-LAMBDA-LIST))))
+                (CAR (PUSH (WALK-VAR (POP LAMBDA-LIST)) NEW-LAMBDA-LIST))))
           (ENVVAR
            (DO ((LAMBDA-LIST LAMBDA-LIST (CDR LAMBDA-LIST)))
                ((ATOM LAMBDA-LIST) NIL)
@@ -1582,7 +1584,7 @@
          ((NULL LAMBDA-LIST) (VALUES (NREVERSE NEW-LAMBDA-LIST) ENV))
       (ECASE STATE
         (:ENVVAR
-         (PUSH (POP LAMBDA-LIST) NEW-LAMBDA-LIST)
+         (PUSH (WALK-VAR (POP LAMBDA-LIST)) NEW-LAMBDA-LIST)
          (UPDATE-STATE (CAR LAMBDA-LIST)))
         ((:REQVARS :RESTVAR)
          (ETYPECASE ARG
@@ -1590,7 +1592,8 @@
             (COND
              ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
               (UPDATE-STATE ARG))
-             (T (AUGMENT-ENV ARG) (PUSH ARG NEW-LAMBDA-LIST))))
+             (T (SETQ ARG (WALK-VAR ARG)) (AUGMENT-ENV ARG)
+              (PUSH ARG NEW-LAMBDA-LIST))))
            (CONS
             (MULTIPLE-VALUE-BIND (PATTERN NEW-ENV)
                 (WALK-LAMBDA-LIST WALKER ARG DECLS ENV)
@@ -1602,7 +1605,8 @@
             (COND
              ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
               (UPDATE-STATE ARG))
-             (T (AUGMENT-ENV ARG) (PUSH ARG NEW-LAMBDA-LIST))))
+             (T (SETQ ARG (WALK-VAR ARG)) (AUGMENT-ENV ARG)
+              (PUSH ARG NEW-LAMBDA-LIST))))
            (CONS
             (DESTRUCTURING-BIND
                 (VAR/PATTERN &OPTIONAL INIT-FORM SUPPLIED-P-PARAMETER)
@@ -1627,7 +1631,8 @@
               (COND
                ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
                 (UPDATE-STATE ARG))
-               (T (AUGMENT-ENV ARG) (PUSH ARG NEW-LAMBDA-LIST))))
+               (T (SETQ ARG (WALK-VAR ARG)) (AUGMENT-ENV ARG)
+                (PUSH ARG NEW-LAMBDA-LIST))))
              (CONS
               (DESTRUCTURING-BIND
                   (VAR/KV &OPTIONAL INIT-FORM SUPPLIED-P-PARAMETER)
@@ -1640,9 +1645,11 @@
                         VAR/KV
                       (MULTIPLE-VALUE-SETQ (VAR/PATTERN ENV)
                         (MAYBE-DESTRUCTURE VAR/PATTERN))
-                      (SETQ VAR/KV (LIST KEYWORD-NAME VAR/PATTERN)))
+                      (SETQ VAR/KV (LIST (WALK-VAR KEYWORD-NAME) VAR/PATTERN)))
                     (AUGMENT-ENV VAR/KV))
-                (WHEN SUPPLIED-P-PARAMETER (AUGMENT-ENV SUPPLIED-P-PARAMETER))
+                (WHEN SUPPLIED-P-PARAMETER
+                  (SETQ SUPPLIED-P-PARAMETER (WALK-VAR SUPPLIED-P-PARAMETER))
+                  (AUGMENT-ENV SUPPLIED-P-PARAMETER))
                 (PUSH
                  (NCONC (LIST VAR/KV) (AND INIT-FORM (LIST INIT-FORM))
                         (AND SUPPLIED-P-PARAMETER (LIST SUPPLIED-P-PARAMETER)))
@@ -1653,21 +1660,22 @@
             (COND
              ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
               (UPDATE-STATE ARG))
-             (T (AUGMENT-ENV ARG) (PUSH ARG NEW-LAMBDA-LIST))))
+             (T (SETQ ARG (WALK-VAR ARG)) (AUGMENT-ENV ARG)
+              (PUSH ARG NEW-LAMBDA-LIST))))
            (CONS
             (DESTRUCTURING-BIND
                 (VAR &OPTIONAL INIT-FORM)
                 ARG
-              (WHEN INIT-FORM
-                (SETQ INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
+              (SETQ VAR (WALK-VAR VAR)
+                    INIT-FORM (AND INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
               (AUGMENT-ENV VAR)
               (PUSH (NCONC (LIST VAR) (AND INIT-FORM (LIST INIT-FORM)))
                     NEW-LAMBDA-LIST))))))
       (WHEN (AND (CDR LAMBDA-LIST) (ATOM (CDR LAMBDA-LIST)))
-        (LET ((VAR (CDR LAMBDA-LIST)))
+        (LET ((VAR (WALK-VAR (CDR LAMBDA-LIST))))
           (AUGMENT-ENV VAR)
           (PUSH '&REST NEW-LAMBDA-LIST)
-          (PUSH (CDR LAMBDA-LIST) NEW-LAMBDA-LIST))
+          (PUSH VAR NEW-LAMBDA-LIST))
         (SETQ LAMBDA-LIST NIL)))))
 (DEFUN WALK-LAMBDA-EXPRESSION
        (WALKER FORM ENV
