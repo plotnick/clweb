@@ -1904,12 +1904,8 @@
            (IF (SYMBOLP FORM)
                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                    (SYMBOL-PROVENANCE FORM)
-                 (WHEN SECTION
-                   (IF EVALP
-                       (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION
-                                       ENV)
-                       (INDEX-FUNCTION (WALKER-INDEX WALKER) SYMBOL SECTION
-                                       ENV)))
+                 (WHEN (AND SECTION EVALP)
+                   (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV))
                  SYMBOL)
                FORM))
 (DEFUN INDEX-VARIABLE (INDEX VARIABLE SECTION ENV &OPTIONAL DEFP)
@@ -1926,6 +1922,12 @@
                                     ':SYMBOL-MACRO))
                                (:CONSTANT ':CONSTANT)))
                        SECTION :DEFP DEFP))))
+(DEFMETHOD WALK-COMPOUND-FORM :BEFORE ((WALKER INDEXING-WALKER) CAR FORM ENV)
+           (DECLARE (IGNORE FORM))
+           (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+               (SYMBOL-PROVENANCE CAR)
+             (WHEN SECTION
+               (INDEX-FUNCTION (WALKER-INDEX WALKER) SYMBOL SECTION ENV))))
 (DEFUN INDEX-FUNCTION (INDEX FUNCTION SECTION ENV &OPTIONAL DEFP)
   (MULTIPLE-VALUE-BIND (TYPE LOCAL)
       (FUNCTION-INFORMATION FUNCTION ENV)

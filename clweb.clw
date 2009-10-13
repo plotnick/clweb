@@ -3256,6 +3256,8 @@ an (atomic) form, an environment, and a flag indicating whether or
 not the form occurs in an evaluated position. Compound forms, being
 always evaluated, don't need such a flag, but we do provide an
 additional |car| argument so that we can use |eql|-specializers.
+The |car| of a form passed to |walk-compound-form| will always be
+a symbol.
 
 @<Walker generic functions@>=
 (defgeneric walk-atomic-form (walker form env &optional evalp))
@@ -4317,18 +4319,16 @@ everything else away.
          '((special x y z)))
   t)
 
-@ The only atoms we care about indexing are the symbols that referring
-symbols refer to.
+@ The only atoms we care about indexing are referring symbols that occur
+in an evaluated context.
 
 @l
 (defmethod walk-atomic-form ((walker indexing-walker) form env &optional @+
                              (evalp t))
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
-        (when section
-          (if evalp
-              (index-variable (walker-index walker) symbol section env)
-              (index-function (walker-index walker) symbol section env)))
+        (when (and section evalp)
+          (index-variable (walker-index walker) symbol section env))
         symbol)
       form))
 
@@ -4349,6 +4349,19 @@ bulk up the index to no particular advantage.
                        section
                        :defp defp))))
 
+@ An indexable function call will be a compound form whose |car| is a
+referring symbol. The replacement of referring symbols with their referents
+takes place in |walk-atomic-form|, above, so we can just use a |:before|
+method here and not worry about it.
+
+@l
+(defmethod walk-compound-form :before ((walker indexing-walker) car form env)
+  (declare (ignore form))
+  (multiple-value-bind (symbol section) (symbol-provenance car)
+    (when section
+      (index-function (walker-index walker) symbol section env))))
+
+@ @l
 (defun index-function (index function section env &optional defp)
   (multiple-value-bind (type local) (function-information function env)
     (when (member type '(:function :macro))
