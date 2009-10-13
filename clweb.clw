@@ -3211,8 +3211,8 @@ form no longer macroexpands.
 @ @<Walker generic functions@>=
 (defgeneric walk-form (walker form &optional env))
 
-@ We use the predicate |walk-as-special-form-p| to allow walkers to treat
-arbitrary (compound) forms as though they were special forms.
+@ The walker will treat a form as a special form if and only if
+|walk-as-special-form-p| returns true of that form.
 
 @l
 (defmethod walk-as-special-form-p (walker car form env)
@@ -3223,14 +3223,15 @@ arbitrary (compound) forms as though they were special forms.
 (defgeneric walk-as-special-form-p (walker car form env))
 
 @ Macroexpansion and environment augmentation both get wrapped in generic
-functions to allow subclasses to override the normal behavior.
+functions to allow subclasses to override the usual behavior.
 
 @ @<Walker generic functions@>=
 (defgeneric macroexpand-for-walk (walker form env))
 (defgeneric augment-walker-environment (walker env &rest args))
 
 @ The default methods for |macroexpand-for-walk| and
-|augment-waker-environment| just call down to the usual Lisp functions.
+|augment-waker-environment| just call down to the normal Lisp
+functions.
 
 @l
 (defmethod macroexpand-for-walk ((walker walker) form env)
@@ -3251,7 +3252,7 @@ of those walks.
 
 @ The functions |walk-atomic-form| and |walk-compound-form| are the
 real work-horses of the walker. The former takes a walker instance,
-the (atomic) form, an environment, and a flag indicating whether or
+an (atomic) form, an environment, and a flag indicating whether or
 not the form occurs in an evaluated position. Compound forms, being
 always evaluated, don't need such a flag, but we do provide an
 additional |car| argument so that we can use |eql|-specializers.
@@ -3330,11 +3331,11 @@ function name.
   t t)
 
 @ Many of the special forms defined in Common Lisp can be walked using the
-default method just defined, since their syntax is the same as an ordinary
-function call. But it's important to override |walk-as-special-form-p| for
-these operators, because ``[a]n implmementation is free to implement a
-Common Lisp special operator as a macro.'' (\csc{ansi} Common Lisp,
-section~3.1.2.1.2.2)
+default method for |walk-compound-form| just defined, since their syntax is
+the same as an ordinary function call. But it's important to override
+|walk-as-special-form-p| for these operators, because ``[a]n
+implmementation is free to implement a Common Lisp special operator as a
+macro.'' (\csc{ansi} Common Lisp, section~3.1.2.1.2.2)
 
 @l
 (macrolet ((walk-as-special-form (operator)
@@ -3355,8 +3356,8 @@ section~3.1.2.1.2.2)
   (walk-as-special-form unwind-protect))
 
 @ The rest of the special form walkers we define will need specialized
-methods for both |walk-as-special-form-p| and |walk-compound-form|. The
-following macro makes sure that these are consistently defined.
+methods for both |walk-as-special-form-p| and |walk-compound-form|.
+The following macro makes sure that these are consistently defined.
 
 @l
 (defmacro define-special-form-walker (operator (walker form env &rest rest) @+
