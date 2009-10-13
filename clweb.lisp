@@ -1884,6 +1884,36 @@
               DO (RETURN (SUBSEQ NAME N))
               FINALLY (WARN "Non-defining symbol ~S" SYMBOL) (RETURN NAME))
         (FIND-PACKAGE "KEYWORD")))))
+(DEFUN INDEX-VARIABLE (INDEX VARIABLE SECTION ENV &OPTIONAL DEF)
+  (MULTIPLE-VALUE-BIND (TYPE LOCAL)
+      (VARIABLE-INFORMATION VARIABLE ENV)
+    (WHEN (MEMBER TYPE '(:SPECIAL :SYMBOL-MACRO :CONSTANT))
+      (ADD-INDEX-ENTRY INDEX
+                       (LIST VARIABLE
+                             (ECASE TYPE
+                               (:SPECIAL ':SPECIAL-VARIABLE)
+                               (:SYMBOL-MACRO
+                                (IF LOCAL
+                                    ':LOCAL-SYMBOL-MACRO
+                                    ':SYMBOL-MACRO))
+                               (:CONSTANT ':CONSTANT)))
+                       SECTION :DEF DEF))))
+(DEFUN INDEX-FUNCTION (INDEX FUNCTION SECTION ENV &OPTIONAL DEF)
+  (MULTIPLE-VALUE-BIND (TYPE LOCAL)
+      (FUNCTION-INFORMATION FUNCTION ENV)
+    (WHEN (MEMBER TYPE '(:FUNCTION :MACRO))
+      (ADD-INDEX-ENTRY INDEX
+                       (LIST FUNCTION
+                             (ECASE TYPE
+                               (:FUNCTION
+                                (IF LOCAL
+                                    ':LOCAL-FUNCTION
+                                    ':FUNCTION))
+                               (:MACRO
+                                (IF LOCAL
+                                    ':LOCAL-MACRO
+                                    ':MACRO))))
+                       SECTION :DEF DEF))))
 (DEFUN SUBSTITUTE-SYMBOLS (FORM SECTION &AUX SYMBOLS)
   (LABELS ((GET-SYMBOLS (FORM)
              (COND
@@ -1918,10 +1948,6 @@
     (TANGLE (UNNAMED-SECTION-CODE-PARTS SECTIONS))))
 (DEFCLASS INDEXING-WALKER (WALKER)
           ((INDEX :ACCESSOR WALKER-INDEX :INITFORM (MAKE-INDEX))))
-(DEFMETHOD WALK-DECLARATION-SPECIFIERS ((WALKER INDEXING-WALKER) DECLS ENV)
-           (LOOP FOR (IDENTIFIER . DATA) IN DECLS
-                 IF (EQL IDENTIFIER 'SPECIAL)
-                 COLLECT `(SPECIAL ,@(WALK-LIST WALKER DATA ENV))))
 (DEFMETHOD WALK-ATOMIC-FORM
            ((WALKER INDEXING-WALKER) FORM ENV &OPTIONAL (EVALP T))
            (IF (SYMBOLP FORM)
@@ -1931,48 +1957,20 @@
                    (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV))
                  SYMBOL)
                FORM))
-(DEFUN INDEX-VARIABLE (INDEX VARIABLE SECTION ENV &OPTIONAL DEF)
-  (MULTIPLE-VALUE-BIND (TYPE LOCAL)
-      (VARIABLE-INFORMATION VARIABLE ENV)
-    (WHEN (MEMBER TYPE '(:SPECIAL :SYMBOL-MACRO :CONSTANT))
-      (ADD-INDEX-ENTRY INDEX
-                       (LIST VARIABLE
-                             (ECASE TYPE
-                               (:SPECIAL ':SPECIAL-VARIABLE)
-                               (:SYMBOL-MACRO
-                                (IF LOCAL
-                                    ':LOCAL-SYMBOL-MACRO
-                                    ':SYMBOL-MACRO))
-                               (:CONSTANT ':CONSTANT)))
-                       SECTION :DEF DEF))))
 (DEFMETHOD WALK-COMPOUND-FORM :BEFORE ((WALKER INDEXING-WALKER) CAR FORM ENV)
            (DECLARE (IGNORE FORM))
            (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                (SYMBOL-PROVENANCE CAR)
              (WHEN SECTION
                (INDEX-FUNCTION (WALKER-INDEX WALKER) SYMBOL SECTION ENV))))
-(DEFUN INDEX-FUNCTION (INDEX FUNCTION SECTION ENV &OPTIONAL DEF)
-  (MULTIPLE-VALUE-BIND (TYPE LOCAL)
-      (FUNCTION-INFORMATION FUNCTION ENV)
-    (WHEN (MEMBER TYPE '(:FUNCTION :MACRO))
-      (ADD-INDEX-ENTRY INDEX
-                       (LIST FUNCTION
-                             (ECASE TYPE
-                               (:FUNCTION
-                                (IF LOCAL
-                                    ':LOCAL-FUNCTION
-                                    ':FUNCTION))
-                               (:MACRO
-                                (IF LOCAL
-                                    ':LOCAL-MACRO
-                                    ':MACRO))))
-                       SECTION :DEF DEF))))
 (DEFINE-SPECIAL-FORM-WALKER DEFUN
     ((WALKER INDEXING-WALKER) FORM ENV)
-  (WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :DEF (CAR FORM)))
+  `(,(CAR FORM)
+    ,@(WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :DEF (CAR FORM))))
 (DEFINE-SPECIAL-FORM-WALKER DEFMACRO
     ((WALKER INDEXING-WALKER) FORM ENV)
-  (WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :DEF (CAR FORM)))
+  `(,(CAR FORM)
+    ,@(WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :DEF (CAR FORM))))
 (DEFMETHOD WALK-FUNCTION-NAME :BEFORE
            ((WALKER INDEXING-WALKER) FUNCTION-NAME ENV &KEY DEF)
            (DECLARE (IGNORE ENV))
@@ -1993,17 +1991,24 @@
                                        (LIST (FORMAT NIL "(SETF ~A)" SYMBOL)
                                              KIND)
                                        SECTION :DEF T))))))))
-(MACROLET ((DEFINE-INDEXING-VARIABLE-WALKER (OPERATOR)
+(MACROLET ((DEFINE-INDEXING-DEFVAR-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
-                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                    (SYMBOL-PROVENANCE (CADR FORM))
-                  (WHEN SECTION
-                    (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV
-                                    T))))))
-  (DEFINE-INDEXING-VARIABLE-WALKER DEFVAR)
-  (DEFINE-INDEXING-VARIABLE-WALKER DEFPARAMETER)
-  (DEFINE-INDEXING-VARIABLE-WALKER DEFCONSTANT))
+                ,'`(,(CAR FORM)
+                    ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                         (SYMBOL-PROVENANCE (CADR FORM))
+                       (WHEN SECTION
+                         (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION
+                                         ENV T))
+                       SYMBOL)
+                    ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
+  (DEFINE-INDEXING-DEFVAR-WALKER DEFVAR)
+  (DEFINE-INDEXING-DEFVAR-WALKER DEFPARAMETER)
+  (DEFINE-INDEXING-DEFVAR-WALKER DEFCONSTANT))
+(DEFMETHOD WALK-DECLARATION-SPECIFIERS ((WALKER INDEXING-WALKER) DECLS ENV)
+           (LOOP FOR (IDENTIFIER . DATA) IN DECLS
+                 IF (EQL IDENTIFIER 'SPECIAL)
+                 COLLECT `(SPECIAL ,@(WALK-LIST WALKER DATA ENV))))
 (DEFUN INDEX-SECTIONS (SECTIONS &KEY (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
   (DOLIST (FORM (TANGLE-CODE-FOR-INDEXING SECTIONS) (WALKER-INDEX WALKER))
     (WALK-FORM WALKER FORM)))

@@ -4216,6 +4216,37 @@ doesn't pretty-print correctly, and so doesn't get tangled properly.
   :bar
   :baz)
 
+@ Here are a couple of indexing routines that we'll use in the walker
+below. They look up the given variable or function in an environment and
+add an appropriate index entry. We don't currently index lexical variables,
+as that would probably just bulk up the index to no particular advantage.
+
+@l
+(defun index-variable (index variable section env &optional def)
+  (multiple-value-bind (type local) (variable-information variable env)
+    (when (member type '(:special :symbol-macro :constant))
+      (add-index-entry index
+                       (list variable
+                             (ecase type
+                               (:special ':special-variable)
+                               (:symbol-macro @+
+                                (if local ':local-symbol-macro ':symbol-macro))
+                               (:constant ':constant)))
+                       section
+                       :def def))))
+
+(defun index-function (index function section env &optional def)
+  (multiple-value-bind (type local) (function-information function env)
+    (when (member type '(:function :macro))
+      (add-index-entry index
+                       (list function
+                             (ecase type
+                               (:function @+
+                                (if local ':local-function ':function))
+                               (:macro (if local ':local-macro ':macro))))
+                       section
+                       :def def))))
+
 @ We'll perform the indexing by walking over the code of each section and
 noting each of the interesting symbols that we find there according to its
 semantic role. In theory, this should be a straightforward task for any
@@ -4316,27 +4347,6 @@ we'll walk.
 (defclass indexing-walker (walker)
   ((index :accessor walker-index :initform (make-index))))
 
-@ Walking general declaration expressions is difficult, mostly because of
-the shorthand notation for type declarations. Fortunately, we only care
-about |special| declarations for the purposes of indexing, so we just throw
-everything else away.
-
-@l
-(defmethod walk-declaration-specifiers ((walker indexing-walker) decls env)
-  (loop for (identifier . data) in decls
-        if (eql identifier 'special)
-          collect `(special ,@(walk-list walker data env))))
-
-@t@l
-(deftest (walk-declaration-specifiers indexing)
-  (equal (walk-declaration-specifiers (make-instance 'indexing-walker)
-                                      '((type foo x)
-                                        (special x y z)
-                                        (optmize debug))
-                                      nil)
-         '((special x y z)))
-  t)
-
 @ The only atoms we care about indexing are referring symbols that occur
 in an evaluated context.
 
@@ -4350,27 +4360,10 @@ in an evaluated context.
         symbol)
       form))
 
-@ We don't currently index lexical variables, as that would probably just
-bulk up the index to no particular advantage.
-
-@l
-(defun index-variable (index variable section env &optional def)
-  (multiple-value-bind (type local) (variable-information variable env)
-    (when (member type '(:special :symbol-macro :constant))
-      (add-index-entry index
-                       (list variable
-                             (ecase type
-                               (:special ':special-variable)
-                               (:symbol-macro @+
-                                (if local ':local-symbol-macro ':symbol-macro))
-                               (:constant ':constant)))
-                       section
-                       :def def))))
-
-@ An indexable function call will be a compound form whose |car| is a
-referring symbol. The replacement of referring symbols with their referents
-takes place in |walk-atomic-form|, above, so we can just use a |:before|
-method here and not worry about it.
+@ We'll index all function calls whose |car| is a referring symbol. The
+actual replacement of referring symbols with their referents takes place in
+|walk-atomic-form|, above, so we can just use a |:before| method here and
+not worry about it.
 
 @l
 (defmethod walk-compound-form :before ((walker indexing-walker) car form env)
@@ -4379,33 +4372,28 @@ method here and not worry about it.
     (when section
       (index-function (walker-index walker) symbol section env))))
 
-@ @l
-(defun index-function (index function section env &optional def)
-  (multiple-value-bind (type local) (function-information function env)
-    (when (member type '(:function :macro))
-      (add-index-entry index
-                       (list function
-                             (ecase type
-                               (:function @+
-                                (if local ':local-function ':function))
-                               (:macro (if local ':local-macro ':macro))))
-                       section
-                       :def def))))
-
 @ We need to treat global function-defining forms like |defun| and
 |defmacro| as special forms, because otherwise they'll get macro-expanded
 before we get a chance to walk them. The indexing proper happens in
 the |walk-function-name| method defined below; remember that
 |walk-lambda-expression| passes keyword arguments down to that function.
 
+We won't bother macro-expanding these forms, because the
+implementation-specific expansion doesn't interest us, and we get
+everything we need with this walk.
+
 @l
 (define-special-form-walker defun ((walker indexing-walker) form env)
-  (walk-lambda-expression walker (cdr form) env :def (car form)))
+  `(,(car form)
+    ,@(walk-lambda-expression walker (cdr form) env :def (car form))))
 
 (define-special-form-walker defmacro ((walker indexing-walker) form env)
-  (walk-lambda-expression walker (cdr form) env :def (car form)))
+  `(,(car form)
+    ,@(walk-lambda-expression walker (cdr form) env :def (car form))))
 
-@ Again, we need to be a little careful about the syntax of function names.
+@ We can also do the indexing of function names in a |:before| method,
+since the referring symbols will still get swapped out by
+|walk-atomic-form|.
 
 @l
 (defmethod walk-function-name :before
@@ -4429,21 +4417,49 @@ the |walk-function-name| method defined below; remember that
                               section
                               :def t))))))))
 
-@ Top-level special variable-defining forms are simpler, but again must be
-walked as though they were special forms.
+@ The special variable-defining forms must also be walked as if they were
+special forms. Once again, we'll just skip the macro expansions.
 
 @l
-(macrolet ((define-indexing-variable-walker (operator)
+(macrolet ((define-indexing-defvar-walker (operator)
              `(define-special-form-walker ,operator @+
                   ((walker indexing-walker) form env)
-                (multiple-value-bind (symbol section) @+
-                    (symbol-provenance (cadr form))
-                  (when section
-                    (index-variable (walker-index walker) symbol @+
-                                    section env t))))))
-  (define-indexing-variable-walker defvar)
-  (define-indexing-variable-walker defparameter)
-  (define-indexing-variable-walker defconstant))
+                `(,(car form)
+                  ,(multiple-value-bind (symbol section) @+
+                       (symbol-provenance (cadr form))
+                     (when section
+                       (index-variable (walker-index walker) symbol @+
+                                       section env t))
+                     symbol)
+                  ,@(walk-list walker (cddr form) env)))))
+  (define-indexing-defvar-walker defvar)
+  (define-indexing-defvar-walker defparameter)
+  (define-indexing-defvar-walker defconstant))
+
+@ The default method for |walk-declaration-specifiers| just returns the
+given specifiers. That's not sufficient for our purposes here, though,
+because we need to replace referring symbols with their referents;
+otherwise, the declarations would apply to the wrong symbols.
+
+Walking general declaration expressions is difficult, mostly because of the
+shorthand notation for type declarations. Fortunately, we only need to care
+about |special| declarations, so we just throw everything else away.
+
+@l
+(defmethod walk-declaration-specifiers ((walker indexing-walker) decls env)
+  (loop for (identifier . data) in decls
+        if (eql identifier 'special)
+          collect `(special ,@(walk-list walker data env))))
+
+@t@l
+(deftest (walk-declaration-specifiers indexing)
+  (equal (walk-declaration-specifiers (make-instance 'indexing-walker)
+                                      '((type foo x)
+                                        (special x y z)
+                                        (optmize debug))
+                                      nil)
+         '((special x y z)))
+  t)
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index
