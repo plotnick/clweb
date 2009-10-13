@@ -3379,7 +3379,7 @@ unevaluated form, followed by zero or more evaluated forms.
 (macrolet ((define-block-like-walker (operator)
              `(define-special-form-walker ,operator ((walker walker) form env)
                 `(,(car form)
-                  ,(cadr form)
+                  ,(walk-atomic-form walker (cadr form) env nil)
                   ,@(walk-list walker (cddr form) env)))))
   (define-block-like-walker block)
   (define-block-like-walker eval-when)
