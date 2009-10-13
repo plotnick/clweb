@@ -3285,14 +3285,14 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
 they're not necessarily atomic.
 
 @<Walker generic functions@>=
-(defgeneric walk-function-name (walker function-name env))
+(defgeneric walk-function-name (walker function-name env &key &allow-other-keys))
 
 @ Common Lisp defines a {\it function name\/} as ``A symbol or a list
 |(setf symbol)|.'' We signal an continuable error in case of a malformed
 function name.
 
 @l
-(defmethod walk-function-name ((walker walker) function-name env)
+(defmethod walk-function-name ((walker walker) function-name env &key)
   (typecase function-name
     (symbol
      (walk-atomic-form walker function-name env nil))
@@ -3703,13 +3703,13 @@ straightforward. The slight generality of walking the car of the form using
 bindings in |flet|, |macrolet|, and~|labels| special forms.
 
 @l
-(defun walk-lambda-expression (walker form env &aux
+(defun walk-lambda-expression (walker form env &rest args &aux
                                (lambda-list (cadr form)) (body (cddr form)))
   (multiple-value-bind (forms decls doc) @+
       (parse-body body :walker walker :env env :doc-string-allowed t)
     (multiple-value-bind (lambda-list env) @+
         (walk-lambda-list walker lambda-list decls env)
-      `(,(walk-function-name walker (car form) env)
+      `(,(apply #'walk-function-name walker (car form) env args)
         ,lambda-list
         ,@(if doc `(,doc))
         ,@(if decls `((declare ,@decls)))
@@ -3816,7 +3816,7 @@ their body forms in an environment that contains all of new the bindings.
 (define-special-form-walker flet
     ((walker walker) form env &aux
      (bindings (mapcar (lambda (p)
-                         (walk-lambda-expression walker p env))
+                         (walk-lambda-expression walker p env :def 'flet))
                        (cadr form)))
      (body (cddr form)))
   (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
@@ -3831,7 +3831,7 @@ their body forms in an environment that contains all of new the bindings.
 (define-special-form-walker macrolet
     ((walker walker) form env &aux
      (bindings (mapcar (lambda (p)
-                         (walk-lambda-expression walker p env))
+                         (walk-lambda-expression walker p env :def 'macrolet))
                        (cadr form)))
      (body (cddr form))
      (macros (make-macro-definitions walker bindings env)))
@@ -3928,7 +3928,8 @@ and |labels|, which does so before walking any of its bindings.
   (multiple-value-bind (forms decls)
       (parse-body body :walker walker :env env)
     (let* ((function-names (mapcar (lambda (p)
-                                     (walk-function-name walker (car p) env))
+                                     (walk-function-name walker (car p) env @+
+                                                         :def 'labels))
                                    bindings))
            (env (augment-walker-environment walker env
                                             :function function-names
@@ -4174,25 +4175,43 @@ with the given heading.
 @ The {\it kind} field in our entry headings will be keyword symbols that
 denote the namespace into which {\it name} indexes. This little routine
 creates such keywords from symbols whose names start with \.{"DEFINE-"}
-or~\.{"DEF"}.
+or~\.{"DEF"}, plus a few hard-coded special cases.
 
 @l
-(defun make-keyword-from-def (symbol)
-  (values (intern (loop with name = (symbol-name symbol)
-                        for prefix in '("define-" "def")
-                        as n = (min (length prefix) (length name))
-                        if (string-equal (subseq name 0 n) prefix)
-                          do (return (subseq name n))
-                        finally (warn "Non-defining symbol ~S" symbol)
-                                (return name))
-                  (find-package "KEYWORD"))))
+(defun keyword-from-def (symbol)
+  (or (cdr (assoc symbol *defining-operators*))
+      (values (intern (loop with name = (symbol-name symbol)
+                            for prefix in '("define-" "def")
+                            as n = (min (length prefix) (length name))
+                            if (string-equal (subseq name 0 n) prefix)
+                              do (return (subseq name n))
+                            finally (warn "Non-defining symbol ~S" symbol)
+                                    (return name))
+                      (find-package "KEYWORD")))))
+
+@ This odd way of specifying |*defining-operators*| is just to work
+around a pretty-printing bug in Allegro~CL: the natural literal definition
+doesn't pretty-print correctly, and so doesn't get tangled properly.
+
+@<Global variables@>=
+(defvar *defining-operators*
+  (list (cons 'defun :function)
+        (cons 'flet :local-function)
+        (cons 'labels :local-function)
+        (cons 'macrolet :local-macro)
+        (cons 'defvar :special-variable)
+        (cons 'defparameter :special-variable)))
 
 @t@l
-(deftest make-keyword-from-def
-  (values (make-keyword-from-def 'define-foo)
-          (make-keyword-from-def 'defbar)
+(deftest keyword-from-def
+  (values (keyword-from-def 'defun)
+          (keyword-from-def 'flet)
+          (keyword-from-def 'define-foo)
+          (keyword-from-def 'defbar)
           (handler-bind ((warning #'muffle-warning))
-            (make-keyword-from-def 'baz)))
+            (keyword-from-def 'baz)))
+  :function
+  :local-function
   :foo
   :bar
   :baz)
@@ -4372,6 +4391,59 @@ method here and not worry about it.
                                (:macro (if local ':local-macro ':macro))))
                        section
                        :def def))))
+
+@ We need to treat global function-defining forms like |defun| and
+|defmacro| as special forms, because otherwise they'll get macro-expanded
+before we get a chance to walk them. The indexing proper happens in
+the |walk-function-name| method defined below; remember that
+|walk-lambda-expression| passes keyword arguments down to that function.
+
+@l
+(define-special-form-walker defun ((walker indexing-walker) form env)
+  (walk-lambda-expression walker (cdr form) env :def (car form)))
+
+(define-special-form-walker defmacro ((walker indexing-walker) form env)
+  (walk-lambda-expression walker (cdr form) env :def (car form)))
+
+@ Again, we need to be a little careful about the syntax of function names.
+
+@l
+(defmethod walk-function-name :before
+    ((walker indexing-walker) function-name env &key def)
+  (declare (ignore env))
+  (when def
+    (let ((kind (keyword-from-def def))
+          (index (walker-index walker)))
+      (typecase function-name
+        (symbol
+         (multiple-value-bind (symbol section) (symbol-provenance function-name)
+           (when section
+             (add-index-entry index (list symbol kind) section :def t))))
+        ((cons (eql setf) (cons symbol null))
+         (multiple-value-bind (symbol section) @+
+             (symbol-provenance (cadr function-name))
+           (when section
+             ;; Remember, index entry headings are lists of string designators.
+             (add-index-entry index
+                              (list (format nil "(SETF ~A)" symbol) kind)
+                              section
+                              :def t))))))))
+
+@ Top-level special variable-defining forms are simpler, but again must be
+walked as though they were special forms.
+
+@l
+(macrolet ((define-indexing-variable-walker (operator)
+             `(define-special-form-walker ,operator @+
+                  ((walker indexing-walker) form env)
+                (multiple-value-bind (symbol section) @+
+                    (symbol-provenance (cadr form))
+                  (when section
+                    (index-variable (walker-index walker) symbol @+
+                                    section env t))))))
+  (define-indexing-variable-walker defvar)
+  (define-indexing-variable-walker defparameter)
+  (define-indexing-variable-walker defconstant))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index
