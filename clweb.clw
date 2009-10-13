@@ -4206,13 +4206,13 @@ macros and special forms unless we tangle the form first. But once we
 tangle a form, we lose the provenance of the sub-forms that came from
 named sections, and so our index would be wrong.
 
-The trick that we use to overcome this problem is to tangle the forms in a
-special way where instead of just splicing the named section code into
-place, we instead make a special kind of copy of each form, and splice
-those into place. These copies will have each interesting symbol replaced
-with an uninterned symbol whose value cell contains the symbol it replaced
-and whose |section| property contains the section in which the original
-symbol occured. We'll these uninterned symbols {\it referring symbols}.
+The trick that we use to overcome this problem is to tangle the forms in
+a special way where instead of just splicing the named section code into
+place, we make a special kind of copy of each form, and splice that into
+place. These copies will have each interesting symbol replaced with an
+uninterned symbol whose value cell contains the symbol it replaced and
+whose |section| property contains the section in which the original symbol
+occured. We'll these uninterned symbols {\it referring symbols}.
 
 First, we'll need a routine that does the substitution just described.
 The substitution is done blindly and without regard to the syntax or
