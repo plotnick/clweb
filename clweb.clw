@@ -4212,12 +4212,14 @@ named sections, and so our index would be wrong.
 The trick that we use to overcome this problem is to tangle the forms in a
 special way where instead of just splicing the named section code into
 place, we instead make a special kind of copy of each form, and splice
-those into place. Those copies will have each symbol replaced with an
-uninterned symbol whose value cell contains the symbol it replaced and
-whose |section| property contains the section in which that symbol occured.
-We'll these uninterned symbols {\it referring symbols}.
+those into place. These copies will have each interesting symbol replaced
+with an uninterned symbol whose value cell contains the symbol it replaced
+and whose |section| property contains the section in which the original
+symbol occured. We'll these uninterned symbols {\it referring symbols}.
 
 First, we'll need a routine that does the substitution just described.
+The substitution is done blindly and without regard to the syntax or
+semantics of Common Lisp, since we can't walk pre-tangled code.
 
 @l
 (defun substitute-symbols (form section &aux symbols)
