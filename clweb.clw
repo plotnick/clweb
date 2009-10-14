@@ -3554,7 +3554,9 @@ object containing bindings for all of the parameters found therein.
         (:optvars @<Process |arg| as an optional parameter@>)
         (:keyvars @<Process |arg| as a keyword parameter@>)
         (:auxvars @<Process |arg| as an auxiliary variable@>))
-      (when (and (cdr lambda-list) (atom (cdr lambda-list)))
+      (when (or (atom lambda-list)
+                (and (cdr lambda-list)
+                     (atom (cdr lambda-list))))
         @<Process dotted rest var@>))))
 
 @ A |&whole| variable must come first in a \L-list, and an |&environment|
@@ -3578,7 +3580,8 @@ so we just push it onto the new \L-list and prepare for the next parameter.
 
 @<Process |arg| as an environment parameter@>=
 (push (walk-var (pop lambda-list)) new-lambda-list)
-(update-state (car lambda-list))
+(when (consp lambda-list)
+  (update-state (car lambda-list)))
 
 @ @<Process |arg| as a required parameter@>=
 (etypecase arg
@@ -3660,53 +3663,11 @@ form and the pattern (if any) need to be walked in an environment
 to avoid having to worry about reversing an improper |new-lambda-list|.
 
 @<Process dotted rest var@>=
-(let ((var (walk-var (cdr lambda-list))))
+(let ((var (walk-var (if (consp lambda-list) (cdr lambda-list) lambda-list))))
   (augment-env var)
   (push '&rest new-lambda-list)
   (push var new-lambda-list))
 (setq lambda-list nil) ; walk no more
-
-@t@l
-(deftest walk-ordinary-lambda-list
-  (let ((walker (make-instance 'walker))
-        (lambda-list '(x y &optional (o (+ x y)) &key ((:k k) 2 k-supplied-p)
-                       &rest args &aux w (z (if k-supplied-p o x))))
-        (decls '((special x)))
-        (env (ensure-portable-walking-environment nil)))
-    (multiple-value-bind (new-lambda-list new-env)
-        (walk-lambda-list walker lambda-list decls env)
-      (values (tree-equal lambda-list new-lambda-list)
-              (variable-information 'x new-env)
-              (every (lambda (x) (eql x ':lexical))
-                     (mapcar (lambda (sym) (variable-information sym new-env))
-                             '(y z o k k-supplied-p args w z))))))
-  t :special t)
-
-(deftest walk-macro-lambda-list
-  (let ((walker (make-instance 'walker))
-        (lambda-list '(&whole w (x y) &optional ((o) (+ x y))
-                       &key ((:k (k1 k2)) (2 3) k-supplied-p)
-                       &environment env))
-        (env (ensure-portable-walking-environment nil)))
-    (multiple-value-bind (new-lambda-list new-env)
-        (walk-lambda-list walker lambda-list nil env)
-      (values (tree-equal lambda-list new-lambda-list)
-              (every (lambda (x) (eql x ':lexical))
-                     (mapcar (lambda (sym) (variable-information sym new-env))
-                             '(w x y o k1 k2 k-supplied-p env))))))
-  t t)
-
-(deftest walk-dotted-macro-lambda-list
-  (let ((walker (make-instance 'walker))
-        (lambda-list '(a b . c))
-        (env (ensure-portable-walking-environment nil)))
-    (multiple-value-bind (new-lambda-list new-env)
-        (walk-lambda-list walker lambda-list nil env)
-      (values (tree-equal (subst '(&rest c) 'c lambda-list) new-lambda-list)
-              (every (lambda (x) (eql x ':lexical))
-                     (mapcar (lambda (sym) (variable-information sym new-env))
-                             '(a b c))))))
-  t t)
 
 @ Having built up the necessary machinery, walking a \L-expression is now
 straightforward. The slight generality of walking the car of the form using
@@ -3733,49 +3694,76 @@ bindings in |flet|, |macrolet|, and~|labels| special forms.
 (define-special-form-walker lambda ((walker walker) form env)
   (walk-lambda-expression walker form env))
 
+@t To test the walker on binding forms, including \L-expressions, we'll use
+a specialized walker class that recognizes a custom |check-binding| special
+form. Its syntax is |(check-binding symbols namespace type)|, where
+|symbols| is an unevaluated designator for a list of symbols, |namespace|
+is one of |:function| or~|:variable|, and |type| is the type of binding
+expected for each of the given symbols (e.g., |:lexical|, |:special|,
+|:function|). It checks the bindings of |symbols| in the current lexical
+environment, and simply returns |symbols| if the checks are all successful.
+
+@l
+(defclass test-walker (walker) ())
+
+(define-special-form-walker check-binding ((walker test-walker) form env)
+  (flet ((check-binding (name namespace env type)
+           (assert (eql (ecase namespace
+                          (:function (function-information name env))
+                          (:variable (variable-information name env)))
+                        type)
+                   (name namespace env type)
+                   "~@(~A~) binding of ~A not of type ~A."
+                   namespace name type)))
+   (destructuring-bind (symbols namespace type) (cdr form)
+     (loop with symbols = (if (listp symbols) symbols (list symbols))
+           for symbol in symbols
+           do (check-binding symbol namespace env type))
+     (if (listp symbols)
+         (walk-list walker symbols env)
+         (walk-form walker symbols env)))))
+
+(defmacro define-walk-binding-test (name form walked-form)
+  `(deftest ,name
+     (tree-equal (walk-form (make-instance 'test-walker) ',form)
+                 ',walked-form)
+     t))
+
+@t@l
+(define-walk-binding-test walk-ordinary-lambda-list
+  (lambda (x y
+           &optional (o (+ (check-binding o :variable nil)
+                           (check-binding x :variable :special)
+                           (check-binding y :variable :lexical)))
+           &key ((secret k) 1 k-s-p)
+                (k2 (check-binding k-s-p :variable :lexical))
+                k3
+           &rest args &aux w (z (if k-s-p o x)))
+    (declare (special x))
+    (check-binding x :variable :special)
+    (check-binding (y z o k k-s-p k2 k3 args w z) :variable :lexical)
+    (check-binding secret :variable nil))
+  (lambda (x y
+           &optional (o (+ o x y))
+           &key ((secret k) 1 k-s-p) (k2 k-s-p) k3
+           &rest args &aux w (z (if k-s-p o x)))
+    (declare (special x))
+    x (y z o k k-s-p k2 k3 args w z) secret))
+
+(define-walk-binding-test walk-macro-lambda-list
+  (lambda (&whole w (x y) &optional ((o) (+ x y))
+           &key ((:k (k1 k2)) (2 3) k-s-p)
+           &environment env . body)
+    (check-binding (w x y o k1 k2 k-s-p env body) :variable :lexical))
+  (lambda (&whole w (x y) &optional ((o) (+ x y))
+           &key ((:k (k1 k2)) (2 3) k-s-p)
+           &environment env &rest body)
+    (w x y o k1 k2 k-s-p env body)))
+
 @ We come now to the binding special forms. The six binding special
 forms in Common Lisp (|let|, |let*|, |flet|, |labels|, |macrolet|, and
 |symbol-macrolet|) all have essentially the same syntax; only the scope
 and namespace of the bindings differ.
-
-@t To test the walker on binding forms, we'll use a specialized walker
-class that recognizes a custom |binding| special form. Its syntax is
-|(binding symbol namespace)|, where |symbol| is an unevaluated symbol,
-and |namespace| is one of |:function| or~|:variable|. The walker function
-signals a |binding| condition, which includes the symbol, the requested
-namespace, and the current lexical environment, which a handler can then
-extract and record. If the handler declines to handle the condition,
-the function simply returns |symbol|.
-
-@l
-(define-condition binding (condition)
-  ((symbol :initarg :symbol :reader binding-symbol)
-   (namespace :initarg :namespace :reader binding-namespace)
-   (environment :initarg :environment :reader binding-environment)))
-
-(defclass test-walker (walker) ())
-
-(define-special-form-walker binding ((walker test-walker) form env)
-  (destructuring-bind (symbol namespace) (cdr form)
-    (signal 'binding :symbol symbol :namespace namespace :environment env)
-    (walk-form walker symbol env)))
-
-(defmacro define-walk-binding-test (name form walked-form binding-info)
-  `(deftest ,name
-     (let (bindings)
-       (flet ((note-binding (binding &aux
-                             (symbol (binding-symbol binding))
-                             (env (binding-environment binding)))
-                (push (case (binding-namespace binding)
-                        (:function (function-information symbol env))
-                        (:variable (variable-information symbol env)))
-                      bindings)))
-         (handler-bind ((binding #'note-binding))
-           (values (tree-equal (walk-form (make-instance 'test-walker) ',form)
-                               ',walked-form)
-                   (nreverse bindings)))))
-     t
-     ,binding-info))
 
 @ We'll start with two little utility routines. The first walks a
 variable-like binding form (e.g., the |cadr| of a |let|/|let*| or
@@ -3875,44 +3863,33 @@ their body forms in an environment that contains all of new the bindings.
 @t@l
 (define-walk-binding-test walk-let
   (let ((x 1)
-        (y (binding x :variable)))
+        (y (check-binding x :variable nil)))
     (declare (special x))
-    (binding y :variable))
-  (let ((x 1) (y x)) (declare (special x)) y)
-  (nil :lexical))
+    (check-binding x :variable :special)
+    (check-binding y :variable :lexical))
+  (let ((x 1) (y x)) (declare (special x)) x y))
 
 (define-walk-binding-test walk-flet
-  (flet ((foo (x) (binding x :variable))
-         (bar (y) (binding foo :function)))
+  (flet ((foo (x) (check-binding x :variable :lexical))
+         (bar (y) (check-binding foo :function nil)))
     (declare (special x))
-    (binding foo :function))
-  (flet ((foo (x) x)
-         (bar (y) foo))
-    (declare (special x))
-    foo)
-  (:lexical nil :function))
+    (check-binding x :variable :special)
+    (check-binding foo :function :function))
+  (flet ((foo (x) x) (bar (y) foo)) (declare (special x)) x foo))
 
 (define-walk-binding-test walk-macrolet
-  (macrolet ((foo (x) `,x)
+  (macrolet ((foo (x) `,(check-binding x :variable :lexical))
              (bar (y) `,y))
-    (binding foo :function)
+    (check-binding foo :function :macro)
     (foo :foo))
-  (macrolet ((foo (x) x)
-             (bar (y) y))
-    foo
-    :foo)
-  (:macro))
+  (macrolet ((foo (x) x) (bar (y) y)) foo :foo))
 
 (define-walk-binding-test walk-symbol-macrolet
   (symbol-macrolet ((foo :foo)
                     (bar :bar))
-    (binding foo :variable)
-    (binding bar :variable)
-    (binding foo :function))
-  (symbol-macrolet ((foo :foo)
-                    (bar :bar))
-    :foo :bar :foo)
-  (:symbol-macro :symbol-macro nil))
+    (check-binding (foo bar) :variable :symbol-macro)
+    (check-binding foo :function nil))
+  (symbol-macrolet ((foo :foo) (bar :bar)) (:foo :bar) :foo))
 
 @ The two outliers are |let*|, which augments its environment sequentially,
 and |labels|, which does so before walking any of its bindings.
@@ -3953,22 +3930,18 @@ and |labels|, which does so before walking any of its bindings.
 @t@l
 (define-walk-binding-test walk-let*
   (let* ((x 1)
-         (y (binding x :variable)))
+         (y (check-binding x :variable :special)))
     (declare (special x))
-    (binding y :variable))
-  (let* ((x 1) (y x)) (declare (special x)) y)
-  (:special :lexical))
+    (check-binding y :variable :lexical))
+  (let* ((x 1) (y x)) (declare (special x)) y))
 
 (define-walk-binding-test walk-labels
-  (labels ((foo (x) (binding x :variable))
-           (bar (y) (binding foo :function)))
+  (labels ((foo (x) (check-binding x :variable :lexical))
+           (bar (y) (check-binding foo :function :function)))
     (declare (special x))
-    (binding foo :function))
-  (labels ((foo (x) x)
-           (bar (y) foo))
-    (declare (special x))
-    foo)
-  (:lexical :function :function))
+    (check-binding x :variable :special)
+    (check-binding foo :function :function))
+  (labels ((foo (x) x) (bar (y) foo)) (declare (special x)) x foo))
 
 @ The last special form we need a specialized walker for is |locally|,
 which simply executes its body in a lexical environment augmented by a
@@ -3986,11 +3959,10 @@ set of declarations.
 @t@l
 (define-walk-binding-test walk-locally
   (let ((y t))
-    (list (binding y :variable)
-          (locally (declare (special y))
-            (binding y :variable))))
-  (let ((y t)) (list y (locally (declare (special y)) y)))
-  (:lexical :special))
+    (check-binding y :variable :lexical)
+    (locally (declare (special y))
+      (check-binding y :variable :special)))
+  (let ((y t)) y (locally (declare (special y)) y)))
 
 @t Here's a simple walker mix-in class that allows easy tracing of a walk.
 It's only here for debugging purposes; it's not a superclass of any of

@@ -1585,7 +1585,7 @@
       (ECASE STATE
         (:ENVVAR
          (PUSH (WALK-VAR (POP LAMBDA-LIST)) NEW-LAMBDA-LIST)
-         (UPDATE-STATE (CAR LAMBDA-LIST)))
+         (WHEN (CONSP LAMBDA-LIST) (UPDATE-STATE (CAR LAMBDA-LIST))))
         ((:REQVARS :RESTVAR)
          (ETYPECASE ARG
            (SYMBOL
@@ -1672,8 +1672,14 @@
               (AUGMENT-ENV VAR)
               (PUSH (NCONC (LIST VAR) (AND INIT-FORM (LIST INIT-FORM)))
                     NEW-LAMBDA-LIST))))))
-      (WHEN (AND (CDR LAMBDA-LIST) (ATOM (CDR LAMBDA-LIST)))
-        (LET ((VAR (WALK-VAR (CDR LAMBDA-LIST))))
+      (WHEN
+          (OR (ATOM LAMBDA-LIST)
+              (AND (CDR LAMBDA-LIST) (ATOM (CDR LAMBDA-LIST))))
+        (LET ((VAR
+               (WALK-VAR
+                (IF (CONSP LAMBDA-LIST)
+                    (CDR LAMBDA-LIST)
+                    LAMBDA-LIST))))
           (AUGMENT-ENV VAR)
           (PUSH '&REST NEW-LAMBDA-LIST)
           (PUSH VAR NEW-LAMBDA-LIST))
