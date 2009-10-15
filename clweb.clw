@@ -356,6 +356,19 @@ whether or not the node was already in the tree.
         (setf (right-child parent) node)))
   (values node nil))
 
+@ Besides searching, probably the most common operation on a \csc{bst} is
+to traverse it in-order, applying some function to each node.
+
+@l
+(defgeneric maptree (function tree))
+
+(defmethod maptree (function (tree (eql nil)))
+  (declare (ignore function)))
+(defmethod maptree (function (tree binary-search-tree))
+  (maptree function (left-child tree))
+  (funcall function tree)
+  (maptree function (right-child tree)))
+
 @t@l
 (deftest (bst 1)
   (let ((tree (make-instance 'binary-search-tree :key 0)))
@@ -374,12 +387,9 @@ whether or not the node was already in the tree.
     (dolist (n numbers)
       (find-or-insert n tree))
     (let ((keys '()))
-      (labels ((traverse-in-order (node)
-                 (when node
-                   (traverse-in-order (left-child node))
-                   (push (node-key node) keys)
-                   (traverse-in-order (right-child node)))))
-        (traverse-in-order tree)
+      (flet ((push-key (node)
+               (push (node-key node) keys)))
+        (maptree #'push-key tree)
         (equal (nreverse keys)
                (remove-duplicates (sort numbers #'<))))))
   t)
@@ -2525,13 +2535,10 @@ warnings about unused named sections.
 
 @ @<Complain about any unused...@>=
 (let ((unused-sections '()))
-  (labels ((collect-unused-sections (section)
-             (when section
-               (collect-unused-sections (left-child section))
-               (collect-unused-sections (right-child section))
-               (when (null (used-by section))
-                 (push section unused-sections)))))
-    (collect-unused-sections *named-sections*)
+  (flet ((note-unused-section (section)
+           (when (null (used-by section))
+             (push section unused-sections))))
+    (maptree #'note-unused-section *named-sections*)
     (map nil
          (lambda (section)
            (warn 'unused-named-section-warning
@@ -2562,7 +2569,7 @@ If successful, |weave| returns the truename of the output file.
 
 @l
 (defun weave (input-file &rest args &key
-              output-file tests-file
+              output-file tests-file (index-file nil index-file-supplied-p)
               (verbose *weave-verbose*)
               (print *weave-print*)
               (if-does-not-exist t)
@@ -2579,6 +2586,14 @@ If successful, |weave| returns the truename of the output file.
                                                 input-file)))
               (tests-file (apply #'tests-file-pathname @+
                                  output-file "TEX" args))
+              (index-file (if index-file
+                              (merge-pathnames index-file
+                                               (make-pathname :type "IDX" @+
+                                                              :case :common))
+                              (when (not index-file-supplied-p)
+                                (merge-pathnames (make-pathname :type "IDX" @+
+                                                                :case :common)
+                                                 output-file))))
               (*readtable* *readtable*)
               (*package* *package*))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
@@ -2593,11 +2608,16 @@ If successful, |weave| returns the truename of the output file.
   (when (and tests-file
              (> (length *test-sections*) 1)) ; there's always a limbo section
     (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
-    (weave-sections *test-sections* tests-file
+    (weave-sections *test-sections*
+                    :output-file tests-file
                     :print print
+                    :verbose verbose
                     :external-format external-format))
     (when verbose (format t "~&; weaving sections to ~A~%" output-file))
-    (weave-sections *sections* output-file
+    (weave-sections *sections*
+                    :output-file output-file
+                    :index-file index-file
+                    :verbose verbose
                     :print print
                     :external-format external-format))
 
@@ -2615,22 +2635,21 @@ printer with a customized dispatch table.
 file.
 
 @l
-(defun weave-sections (sections output-file &key
+(defun weave-sections (sections &key
+                       output-file index-file
+                       (verbose *weave-verbose*)
                        (print *weave-print*)
                        (external-format :default))
-  (with-open-file (output output-file
-                   :direction :output
-                   :external-format external-format
-                   :if-exists :supersede)
-    (format output "\\input clwebmac~%")
-    (flet ((write-section (section)
-             (write section
-                    :stream output
-                    :case :downcase
-                    :escape nil
-                    :pretty t
-                    :pprint-dispatch *weave-pprint-dispatch*
-                    :right-margin 1000)))
+  (let ((*print-case* :downcase)
+        (*print-escape* nil)
+        (*print-pretty* t)
+        (*print-pprint-dispatch* *weave-pprint-dispatch*)
+        (*print-right-margin* 1000))
+    (with-open-file (out output-file
+                     :direction :output
+                     :external-format external-format
+                     :if-exists :supersede)
+      (format out "\\input clwebmac~%")
       (if print
           (pprint-logical-block (nil nil :per-line-prefix "; ")
             (map nil
@@ -2638,11 +2657,34 @@ file.
                    (format t "~:[~;~:@_*~]~D~:_ "
                            (typep section 'starred-section)
                            (section-number section))
-                   (write-section section))
+                   (write section :stream out))
                  sections))
-          (map nil #'write-section sections)))
-    (format output "~&\\bye~%")
-    (truename output)))
+          (map nil (lambda (section) (write section :stream out)) sections))
+      (when index-file
+        (when verbose (format t "~&; writing the index to ~A~%" index-file))
+        (with-open-file (idx index-file
+                         :direction :output
+                         :external-format external-format
+                         :if-exists :supersede)
+          (write (index-sections sections) :stream idx))
+        (with-open-file (scn (merge-pathnames (make-pathname :type "SCN" @+
+                                                             :case :common)
+                                              index-file)
+                         :direction :output
+                         :external-format external-format
+                         :if-exists :supersede)
+          (flet ((print-section (section)
+                   (format scn "\\I\\X~{~D~^, ~}:~/clweb::print-TeX/\\X~%"
+                           (sort (mapcar #'section-number
+                                         (named-section-sections section))
+                                 #'<)
+                           (read-TeX-from-string (section-name section)))
+                   (print-xrefs scn #\U
+                                (remove section (used-by section)))))
+            (maptree #'print-section *named-sections*)))
+        (format out "~&\\inx~%\\fin~%\\con~%"))
+      (format out "~&\\end~%")
+      (truename out))))
 
 @ The rest of the weaver consists entirely of pretty-printing routines that
 are installed in |*weave-pprint-dispatch*|.
@@ -2661,7 +2703,8 @@ pretty-printing.
 (defvar *inner-lisp* nil)
 
 @ @l
-(defun print-TeX (stream tex-mode-material)
+(defun print-TeX (stream tex-mode-material &rest args)
+  (declare (ignore args))
   (dolist (x tex-mode-material)
     (etypecase x
       (string (write-string x stream))
@@ -4479,3 +4522,44 @@ of all of the interesting symbols so encountered.
 (defun index-sections (sections &key (walker (make-instance 'indexing-walker)))
   (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
     (walk-form walker form)))
+
+@ All that remains now is to write the index entries out to the index file.
+
+@l
+(set-weave-dispatch 'index-entry
+  (lambda (stream entry)
+    (format stream "\\I~/clweb::print-entry-heading/~{, ~W~}.~%"
+            (entry-heading entry)
+            (sort (copy-list (entry-locators entry)) #'<
+                  :key (lambda (loc) (section-number (location loc)))))))
+
+(set-weave-dispatch 'section-locator
+  (lambda (stream loc)
+    (format stream "~:[~D~;\\[~D]~]"
+            (locator-definition-p loc)
+            (section-number (location loc)))))
+
+(set-weave-dispatch 'index
+  (lambda (stream index)
+    (flet ((print-entry (entry)
+             (write entry :stream stream)))
+      (maptree #'print-entry (index-entries index)))))
+
+@ @l
+(defun print-entry-heading (stream heading &rest args)
+  (declare (ignore args))
+  (pprint-logical-block (stream heading)
+    (pprint-exit-if-list-exhausted)
+    (loop
+      (let ((heading (pprint-pop)))
+        (typecase heading
+          (keyword (write-string-escaped (substitute #\Space #\-
+                                                     (string-downcase @+
+                                                      (symbol-name heading)))
+                                         stream))
+          (symbol (format stream "\\(~W\\)" heading))
+          (t (write heading :stream stream))))
+      (pprint-exit-if-list-exhausted)
+      (write-char #\Space stream))))
+
+@* Index.
