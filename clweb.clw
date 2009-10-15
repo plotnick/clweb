@@ -4023,9 +4023,9 @@ the walker classes defined in this program.
   (declare (ignore car env))
   (format t "~<; ~@;walking compound form ~W~:>~%" (list form)))
 
-@*Indexing. Having built up our code walker, we can now use it to produce
-an index of the interesting symbols in a web. We'll say a symbol is
-{\it interesting\/} if it is interned in one of the packages listed in
+@*Indexing. Having constructed our code walker, we can now use it to
+produce an index of the interesting symbols in a web. We'll say a symbol
+is {\it interesting\/} if it is interned in one of the packages listed in
 |*index-packages*|. The user can manually add packages to this list using
 \.{@@e} forms, but that should be unecessay in most cases, since we'll
 automatically add all packages that are defined in the web being processed.
@@ -4037,12 +4037,10 @@ automatically add all packages that are defined in the web being processed.
 @ @<Initialize global...@>=
 ;FIXME: (setq *index-packages* nil)
 
-@ Before we proceed, let's establish some terminology. Some of these
-terms have already been used informally, but it's best to nail down
-their meanings. Formally, an {\it index\/} is an ordered collection of
-{\it entries}, each of which is a (\metasyn{heading}, \metasyn{locator})
-pair: the {\it locator} indicates where the object referred to by the
-{\it heading} may be found.
+@ Before we proceed, let's establish some terminology. Formally, an
+{\it index\/} is an ordered collection of {\it entries}, each of which
+is a (\metasyn{heading}, \metasyn{locator}) pair: the {\it locator}
+indicates where the object referred to by the {\it heading} may be found.
 
 Headings may in general be multi-leveled. For example, in the entries
 we generate via the code walk below, the headings will always be of the
@@ -4075,9 +4073,10 @@ string designators, and are sorted lexicographically.
                 (entry-heading-lessp '(a x) '(b y))))
   t)
 
-@ A locator is either a section (the usual case) or a cross-reference to
-another index entry. We'll represent locators as instances of a |locator|
-class, and use a single generic function, |location|, to dereference them.
+@ A locator is either a pointer to a section (the usual case) or a
+cross-reference to another index entry. We'll represent locators as
+instances of a |locator| class, and use a single generic function,
+|location|, to dereference them.
 
 Section locators have an additional slot for a definition flag, which
 when true indicates that the object referred to by the associated heading
