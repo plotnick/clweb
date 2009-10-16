@@ -4240,7 +4240,8 @@ doesn't pretty-print correctly, and so doesn't get tangled properly.
         (cons 'labels :local-function)
         (cons 'macrolet :local-macro)
         (cons 'defvar :special-variable)
-        (cons 'defparameter :special-variable)))
+        (cons 'defparameter :special-variable)
+        (cons 'defgeneric :generic-function)))
 
 @t@l
 (deftest keyword-from-def
@@ -4423,13 +4424,32 @@ implementation-specific expansion doesn't interest us, and we get
 everything we need with this walk.
 
 @l
-(define-special-form-walker defun ((walker indexing-walker) form env)
-  `(,(car form)
-    ,@(walk-lambda-expression walker (cdr form) env :def (car form))))
+(macrolet ((define-defun-walker (operator)
+             `(define-special-form-walker ,operator @+
+                  ((walker indexing-walker) form env)
+                `(,(car form)
+                  ,@(walk-lambda-expression walker (cdr form) env @+
+                                            :def (car form))))))
+  (define-defun-walker defun)
+  (define-defun-walker defmacro)
+  (define-defun-walker defgeneric))
 
-(define-special-form-walker defmacro ((walker indexing-walker) form env)
-  `(,(car form)
-    ,@(walk-lambda-expression walker (cdr form) env :def (car form))))
+@ Method definitions have a different syntax because of the method qualifiers.
+We won't even bother trying to parse the specialized \L list for now.
+
+@l
+(define-special-form-walker defmethod ((walker indexing-walker) form env)
+  
+  (multiple-value-bind (qualifiers rest)
+      (loop for q = (cddr form) then (cdr q)
+            until (listp (car q))
+            collect (walk-atomic-form walker (car q) env) into qualifiers
+            finally (return (values qualifiers q)))
+    ;; FIXME: I'd like to include the qualifiers in the index sub-heading.
+    `(,(car form)
+      ,(walk-function-name walker (cadr form) env :def (car form))
+      ,@qualifiers
+      ,@rest)))
 
 @t Besides testing the return value of a walk over a |defmacro| form, this
 test ensures that complex \L-lists are properly indexed and have their
@@ -4527,6 +4547,29 @@ about |special| declarations, so we just throw everything else away.
                                       nil)
          '((special x y z)))
   t)
+
+@ We'll walk |defclass| and |define-condition| forms to get the class names.
+We'll be lazy and just punt on the rest, which means that referring symbols
+won't get replaced.
+
+@l
+(macrolet ((define-defclass-walker (operator)
+             `(define-special-form-walker ,operator @+
+                  ((walker indexing-walker) form env)
+                (declare (ignore env))
+                `(,(car form)
+                  ,(multiple-value-bind (symbol section) @+
+                       (symbol-provenance (cadr form))
+                     (when section
+                       (add-index-entry (walker-index walker)
+                                        (list symbol @+
+                                              (keyword-from-def (car form)))
+                                        section
+                                        :def t))
+                     symbol)
+                  ,@(cddr form)))))
+  (define-defclass-walker defclass)
+  (define-defclass-walker define-condition))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index
