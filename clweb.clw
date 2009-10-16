@@ -95,9 +95,10 @@ The weaver has a single entry point: |weave| takes a web as input and
 generates a file that can be fed to \TeX\ to generate a pretty-printed
 version of that web.
 
-@ We'll start by setting up a package for the system. In addition to the
-top-level tangler and weaver functions mentioned above, there's a fourth
-exported function, |load-sections-from-temp-file|, that is conceptually
+@ We'll start by setting up a package for the system. In addition to
+the top-level tangler and weaver functions mentioned above, there's
+|index-package|, which tells the weaver which packages' symbols to
+index, and, |load-sections-from-temp-file|, which is conceptually
 part of the tangler, but is a special-purpose routine designed to be used
 in conjunction with an editor such as Emacs to provide incremental
 redefinition of sections; the user will generally never need to call it
@@ -119,6 +120,7 @@ web.
   (:export "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
+           "INDEX-PACKAGE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
            "AMBIGUOUS-PREFIX-ERROR"
            "SECTION-NAME-CONTEXT-ERROR"
@@ -2644,7 +2646,8 @@ file.
         (*print-escape* nil)
         (*print-pretty* t)
         (*print-pprint-dispatch* *weave-pprint-dispatch*)
-        (*print-right-margin* 1000))
+        (*print-right-margin* 1000)
+        (*evaluating* t))
     (with-open-file (out output-file
                      :direction :output
                      :external-format external-format
@@ -4025,17 +4028,29 @@ the walker classes defined in this program.
 
 @*Indexing. Having constructed our code walker, we can now use it to
 produce an index of the interesting symbols in a web. We'll say a symbol
-is {\it interesting\/} if it is interned in one of the packages listed in
-|*index-packages*|. The user can manually add packages to this list using
-\.{@@e} forms, but that should be unecessay in most cases, since we'll
-automatically add all packages that are defined in the web being processed.
-{\it FIXME\/}: This isn't true yet.
+is {\it interesting\/} if it is interned in one of the packages listed
+in |*index-packages*|. The user should manually add packages to this list
+using an \.{@@e} form containing a call to the following function, which
+takes a designator for a list of package designators, and adds each package
+to |*index-packages*|.
 
-@<Global variables@>=
+In this program, we want to index all and only the symbols in the |"CLWEB"|
+package.
+
+@l
+(defun index-package (packages &aux
+                      (packages (if (listp packages) packages (list packages))))
+  (dolist (package packages)
+    (pushnew (find-package package) *index-packages*)))
+
+@e
+(index-package "CLWEB")
+
+@ @<Global variables@>=
 (defvar *index-packages* nil)
 
 @ @<Initialize global...@>=
-;FIXME: (setq *index-packages* nil)
+(setq *index-packages* nil)
 
 @ Before we proceed, let's establish some terminology. Formally, an
 {\it index\/} is an ordered collection of {\it entries}, each of which
