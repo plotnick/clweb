@@ -3343,11 +3343,13 @@ they're not necessarily atomic.
 function name.
 
 @l
+(deftype setf-function-name () '(cons (eql setf) (cons symbol null)))
+
 (defmethod walk-function-name ((walker walker) function-name env &key)
   (typecase function-name
     (symbol
      (walk-atomic-form walker function-name env nil))
-    ((cons (eql setf) (cons symbol null))
+    (setf-function-name
      `(setf ,(walk-atomic-form walker (cadr function-name) env nil)))
     (t (cerror "Use the function name anyway."
                'invalid-function-name :name function-name)
@@ -3718,7 +3720,9 @@ to avoid having to worry about reversing an improper |new-lambda-list|.
 @ Having built up the necessary machinery, walking a \L-expression is now
 straightforward. The slight generality of walking the car of the form using
 |walk-function-name| is because this function will also be used to walk the
-bindings in |flet|, |macrolet|, and~|labels| special forms.
+bindings in |flet|, |macrolet|, and~|labels| special forms. Note also that
+this function passes all of its extra arguments down to |walk-function-name|;
+this will be used later to aid in the indexing process.
 
 @l
 (defun walk-lambda-expression (walker form env &rest args &aux
@@ -3861,7 +3865,10 @@ their body forms in an environment that contains all of new the bindings.
 (define-special-form-walker flet
     ((walker walker) form env &aux
      (bindings (mapcar (lambda (p)
-                         (walk-lambda-expression walker p env :def 'flet))
+                         (walk-lambda-expression walker p env
+                                                 :operator 'flet
+                                                 :local t
+                                                 :def t))
                        (cadr form)))
      (body (cddr form)))
   (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
@@ -3876,7 +3883,10 @@ their body forms in an environment that contains all of new the bindings.
 (define-special-form-walker macrolet
     ((walker walker) form env &aux
      (bindings (mapcar (lambda (p)
-                         (walk-lambda-expression walker p env :def 'macrolet))
+                         (walk-lambda-expression walker p env
+                                                 :operator 'macrolet
+                                                 :local t
+                                                 :def t))
                        (cadr form)))
      (body (cddr form))
      (macros (make-macro-definitions walker bindings env)))
@@ -3917,11 +3927,11 @@ their body forms in an environment that contains all of new the bindings.
 
 (define-walk-binding-test walk-flet
   (flet ((foo (x) (check-binding x :variable :lexical))
-         (bar (y) (check-binding foo :function nil)))
+         (bar (y) y))
     (declare (special x))
     (check-binding x :variable :special)
     (check-binding foo :function :function))
-  (flet ((foo (x) x) (bar (y) foo)) (declare (special x)) x foo))
+  (flet ((foo (x) x) (bar (y) y)) (declare (special x)) x foo))
 
 (define-walk-binding-test walk-macrolet
   (macrolet ((foo (x) `,(check-binding x :variable :lexical))
@@ -3933,9 +3943,8 @@ their body forms in an environment that contains all of new the bindings.
 (define-walk-binding-test walk-symbol-macrolet
   (symbol-macrolet ((foo :foo)
                     (bar :bar))
-    (check-binding (foo bar) :variable :symbol-macro)
-    (check-binding foo :function nil))
-  (symbol-macrolet ((foo :foo) (bar :bar)) (:foo :bar) :foo))
+    (check-binding (foo bar) :variable :symbol-macro))
+  (symbol-macrolet ((foo :foo) (bar :bar)) (:foo :bar)))
 
 @ The two outliers are |let*|, which augments its environment sequentially,
 and |labels|, which does so before walking any of its bindings.
@@ -3963,7 +3972,9 @@ and |labels|, which does so before walking any of its bindings.
       (parse-body body :walker walker :env env)
     (let* ((function-names (mapcar (lambda (p)
                                      (walk-function-name walker (car p) env @+
-                                                         :def 'labels))
+                                                         :operator 'labels
+                                                         :local t
+                                                         :def t))
                                    bindings))
            (env (augment-walker-environment walker env
                                             :function function-names
@@ -4056,46 +4067,235 @@ package.
 {\it index\/} is an ordered collection of {\it entries}, each of which
 is a (\metasyn{heading}, \metasyn{locator}) pair: the {\it locator}
 indicates where the object referred to by the {\it heading} may be found.
+A list of entries with the same heading is called an {\it entry list},
+or sometimes just an {\it entry}; this latter is an abuse of terminology,
+but useful and usually clear in context.
 
-Headings may in general be multi-leveled. For example, in the entries
-we generate via the code walk below, the headings will always be of the
-form (\metasyn{name}, \metasyn{kind}), where {\it kind\/} is a symbol
-representing an abstract namespace like `local function' or `special
-variable'.
-
+Headings may in general be multi-leveled, and are sorted lexicographically.
 In this program, headings are represented by designators for lists of
-string designators, and are sorted lexicographically.
+objects that have a specialized |heading-name| method. That method should
+return a string designator.
 
 @l
 (defun entry-heading-lessp (h1 h2 &aux
                             (h1 (if (listp h1) h1 (list h1)))
                             (h2 (if (listp h2) h2 (list h2))))
   (or (and (null h1) h2)
-      (string-lessp (string (car h1)) (string (car h2)))
-      (and (string-equal (string (car h1)) (string (car h2)))
+      (string-lessp (string (heading-name (car h1)))
+                    (string (heading-name (car h2))))
+      (and (string-equal (string (heading-name (car h1)))
+                         (string (heading-name (car h2))))
            (cdr h2)
            (entry-heading-lessp (cdr h1) (cdr h2)))))
 
+(defun entry-heading-equalp (h1 h2 &aux
+                             (h1 (if (listp h1) h1 (list h1)))
+                             (h2 (if (listp h2) h2 (list h2))))
+  (and (= (length h1) (length h2))
+       (every #'equalp
+              (mapcar #'string (mapcar #'heading-name h1))
+              (mapcar #'string (mapcar #'heading-name h2)))))
+
 @t@l
 (deftest entry-heading-lessp
-  (notany #'not
-          (list (not (entry-heading-lessp 'a 'a))
-                (entry-heading-lessp 'a 'b)
-                (entry-heading-lessp 'a '(a x))
-                (entry-heading-lessp '(a x) '(a y))
-                (entry-heading-lessp '(a x) '(b x))
-                (entry-heading-lessp '(a y) '(b x))
-                (entry-heading-lessp '(a x) '(b y))))
+  (let ((a (make-instance 'heading :name "a"))
+        (b (make-instance 'heading :name "b"))
+        (x (make-instance 'heading :name "x"))
+        (y (make-instance 'heading :name "y")))
+    (notany #'not
+            (list (not (entry-heading-lessp a a))
+                  (entry-heading-lessp a b)
+                  (entry-heading-lessp a (list a x))
+                  (entry-heading-lessp (list a x) (list a y))
+                  (entry-heading-lessp (list a x) (list b x))
+                  (entry-heading-lessp (list a y) (list b x))
+                  (entry-heading-lessp (list a x) (list b y)))))
   t)
 
-@ A locator is either a pointer to a section (the usual case) or a
+@ Generally, those objects will be instances of the class |heading|, but
+we'll allow a few other types of objects, too.
+
+@l
+(defclass heading ()
+  ((name :initarg :name)))
+
+@t This is just for debugging purposes; we don't use it anywhere in this
+program.
+
+@l
+(defmethod print-object ((heading heading) stream)
+  (print-unreadable-object (heading stream :type t :identity nil)
+    (format stream "\"~A\"" (heading-name heading))))
+
+@ To simplify some of the logic concerning heading names, we'll use a
+custom method combination for |heading-name|.
+
+@l
+(defun concatenate-string (&rest args) (apply #'concatenate 'string args))
+(define-method-combination concatenate-string :identity-with-one-argument t)
+
+@ The default |heading-name| method for |heading| instances is the obvious
+one. Symbols and strings are valid headings, too.
+
+@l
+(defgeneric heading-name (heading)
+  (:method-combination concatenate-string)
+  (:method concatenate-string ((heading heading)) (slot-value heading 'name))
+  (:method concatenate-string ((heading symbol)) heading)
+  (:method concatenate-string ((heading string)) heading))
+
+@t@l
+(deftest heading-name
+  (values (heading-name "foo")
+          (heading-name (make-instance 'heading :name "bar"))
+          (heading-name :baz))
+  "foo"
+  "bar"
+  :baz)
+
+@ The rest of the heading classes are all used as sub-headings, and
+represent the namespace in which the object referred to by the primary
+heading is located.
+
+@l
+(defclass global/local-heading (heading)
+  ((local :reader heading-local-p :initarg :local))
+  (:default-initargs :local nil))
+
+(defclass function-heading (global/local-heading)
+  ((generic :reader function-heading-generic-p :initarg :generic))
+  (:default-initargs :name "function" :generic nil))
+
+(defclass setf-function-heading (function-heading) ()
+  (:default-initargs :name "setf function"))
+
+(defclass macro-heading (global/local-heading) ()
+  (:default-initargs :name "macro"))
+
+(defclass symbol-macro-heading (global/local-heading) ()
+  (:default-initargs :name "symbol macro"))
+
+(defclass method-heading (heading)
+  ((qualifiers :reader method-heading-qualifiers :initarg :qualifiers))
+  (:default-initargs :name "method" :qualifiers nil))
+
+(defclass setf-method-heading (method-heading) ()
+  (:default-initargs :name "setf method"))
+
+(defclass variable-heading (heading)
+  ((special :reader variable-heading-special-p :initarg :special)
+   (constant :reader variable-heading-constant-p :initarg :constant))
+  (:default-initargs :name "variable" :special nil :constant nil))
+
+(defclass class-heading (heading) ()
+  (:default-initargs :name "class"))
+
+(defclass condition-class-heading (heading) ()
+  (:default-initargs :name "condition class"))
+
+@ Several of the heading classes have slots whose names should be prepended
+to the corresponding heading names if the value stored there is true; e.g.,
+if a function sub-heading is marked as local, then its name should be
+``local function''.
+
+@l
+(defmacro define-heading-name-prefix (class &rest slot-names)
+  (let ((*print-case* :downcase)
+        (*print-escape* nil)
+        (*print-pretty* nil))
+    `(defmethod heading-name concatenate-string ((heading ,class))
+       (with-slots ,slot-names heading
+         ;; This stupid `, is for Allegro's broken pretty-printer.
+         (`,cond ,@(loop for slot-name in slot-names
+                       collect `(,slot-name ,(format nil "~A " slot-name))))))))
+
+(define-heading-name-prefix global/local-heading local)
+(define-heading-name-prefix function-heading generic)
+(define-heading-name-prefix variable-heading constant special)
+
+@t@l
+(deftest function-heading-name
+  (values (heading-name (make-instance 'function-heading))
+          (heading-name (make-instance 'function-heading :local t))
+          (heading-name (make-instance 'function-heading :generic t))
+          (heading-name (make-instance 'setf-function-heading :local t)))
+  "function"
+  "local function"
+  "generic function"
+  "local setf function")
+
+(deftest variable-heading-name
+  (values (heading-name (make-instance 'variable-heading))
+          (heading-name (make-instance 'variable-heading :special t))
+          (heading-name (make-instance 'variable-heading :constant t)))
+  "variable"
+  "special variable"
+  "constant variable")
+
+@ For method headings, we'll prepend the list of qualifiers if present;
+otherwise we'll call them `primary'.
+
+@l
+(defmethod heading-name concatenate-string ((heading method-heading))
+  (with-slots (qualifiers) heading
+    (let ((*print-case* :downcase)
+          (*print-escape* nil)
+          (*print-pretty* nil))
+      (format nil "~:[primary~;~:*~{~A~^ ~}~] " qualifiers))))
+
+@t@l
+(deftest method-heading-name
+  (values (heading-name (make-instance 'method-heading))
+          (heading-name (make-instance 'method-heading
+                                       :qualifiers '(:before :during :after))))
+  "primary method"
+  "before during after method")
+
+@ The sub-heading classes above are usually constructed by the following
+function during indexing. The keyword arguments are passed down from
+the various walker functions; we'll use the operator and function name
+to decide what kind of heading to create.
+
+@l
+(defun make-sub-heading (operator &rest args &key function-name @+
+                         &allow-other-keys)
+  (apply #'make-instance
+         (ecase operator
+           ((nil defgeneric) 'function-heading)
+           (defmethod
+            (typecase function-name
+              (symbol 'method-heading)
+              (setf-function-name 'setf-method-heading)))
+           ((defun flet labels)
+            (typecase function-name
+              (symbol 'function-heading)
+              (setf-function-name 'setf-function-heading)))
+           ((defmacro macrolet) 'macro-heading)
+           ((defvar defparameter defconstant) 'variable-heading)
+           (defclass 'class-heading)
+           (define-condition 'condition-class-heading))
+         :allow-other-keys t
+         args))
+
+@t@l
+(deftest make-sub-heading
+  (notany #'null
+          (list (typep (make-sub-heading nil) 'function-heading)
+                (typep (make-sub-heading 'defmethod) 'method-heading)
+                (typep (make-sub-heading 'defun :function-name '(setf foo))
+                       'setf-function-heading)
+                (typep (make-sub-heading 'defclass) 'class-heading)))
+  t)
+
+@ Now let's turn our attention to the other half of index entries.
+A locator is either a pointer to a section (the usual case) or a
 cross-reference to another index entry. We'll represent locators as
 instances of a |locator| class, and use a single generic function,
 |location|, to dereference them.
 
 Section locators have an additional slot for a definition flag, which
 when true indicates that the object referred to by the associated heading
-is defined, and not just used, in the section represented by that locator.
+is defined in the section represented by that locator, not just used.
 Such locators will be given a bit of typographic emphasis by the weaver
 when it prints the containing entry.
 
@@ -4138,15 +4338,29 @@ a fairly traditional manner and call them entries, too.
 
 (defmethod find-or-insert (item (root index-entry) &key
                            (predicate #'entry-heading-lessp)
-                           (test #'equalp)
+                           (test #'entry-heading-equalp)
                            (insert-if-not-found t))
   (call-next-method item root
                     :predicate predicate
                     :test test
                     :insert-if-not-found insert-if-not-found))
 
-@ The entry trees get stored in |index| objects, for which we define the
-following protocol functions.
+@t This |print-object| method is just for debugging purposes.
+
+@l
+(defmethod print-object ((entry index-entry) stream)
+  (print-unreadable-object (entry stream :type t :identity nil)
+    (format stream "~W:" (entry-heading entry))
+    (dolist (locator (sort (copy-list (entry-locators entry)) #'<
+                           :key (lambda (x) (section-number (location x)))))
+      (format stream " ~:[~D~;[~D]~]"
+              (locator-definition-p locator)
+              (section-number (location locator))))))
+
+@ The entry trees get stored in |index| objects, for which we define a few
+protocol functions: |make-index| creates a new index; |add-index-entry|
+adds an entry to it, and |find-index-entries| returns the list of locators
+with the given heading.
 
 @l
 (defclass index ()
@@ -4156,10 +4370,10 @@ following protocol functions.
 (defgeneric add-index-entry (index heading locator &key))
 (defgeneric find-index-entries (index heading))
 
-@ The following method adds an index entry for |heading| with location
-|section|. A new locator is constructed only when necessary, and duplicate
-locators are automatically suppressed. Definitional locators are also made
-to supersede ordinary ones.
+@ This method adds an index entry for |heading| with location |section|. A
+new locator is constructed only when necessary, and duplicate locators are
+automatically suppressed. Definitional locators are also made to supersede
+ordinary ones.
 
 @l
 (define-modify-macro orf (&rest args) or)
@@ -4179,10 +4393,7 @@ to supersede ordinary ones.
               (orf (locator-definition-p old-locator) def)
               (push (make-locator) (entry-locators entry)))))))
 
-@ |find-index-entries| returns a list of locators for all of the entries
-with the given heading.
-
-@l
+@ @l
 (defmethod find-index-entries ((index index) heading)
   (let ((entries (index-entries index)))
     (when entries
@@ -4212,81 +4423,80 @@ with the given heading.
     (locator-definition-p (first (find-index-entries index 'foo))))
   t)
 
-@ The {\it kind} field in our entry headings will be keyword symbols that
-denote the namespace into which {\it name} indexes. This little routine
-creates such keywords from symbols whose names start with \.{"DEFINE-"}
-or~\.{"DEF"}, plus a few hard-coded special cases.
+@ In order to index them properly, the walker needs to know whether a given
+function name refers to an ordinary or generic function.
 
 @l
-(defun keyword-from-def (symbol)
-  (or (cdr (assoc symbol *defining-operators*))
-      (values (intern (loop with name = (symbol-name symbol)
-                            for prefix in '("define-" "def")
-                            as n = (min (length prefix) (length name))
-                            if (string-equal (subseq name 0 n) prefix)
-                              do (return (subseq name n))
-                            finally (warn "Non-defining symbol ~S" symbol)
-                                    (return name))
-                      (find-package "KEYWORD")))))
+(defun generic-function-p (function-name)
+  (or (typep function-name 'generic-function)
+      (and (fboundp function-name)
+           (typep (fdefinition function-name) 'generic-function))))
 
-@ This odd way of specifying |*defining-operators*| is just to work
-around a pretty-printing bug in Allegro~CL: the natural literal definition
-doesn't pretty-print correctly, and so doesn't get tangled properly.
-
-@<Global variables@>=
-(defvar *defining-operators*
-  (list (cons 'defun :function)
-        (cons 'flet :local-function)
-        (cons 'labels :local-function)
-        (cons 'macrolet :local-macro)
-        (cons 'defvar :special-variable)
-        (cons 'defparameter :special-variable)
-        (cons 'defgeneric :generic-function)))
-
-@t@l
-(deftest keyword-from-def
-  (values (keyword-from-def 'defun)
-          (keyword-from-def 'flet)
-          (keyword-from-def 'define-foo)
-          (keyword-from-def 'defbar)
-          (handler-bind ((warning #'muffle-warning))
-            (keyword-from-def 'baz)))
-  :function
-  :local-function
-  :foo
-  :bar
-  :baz)
-
-@ Here are a couple of indexing routines that we'll use in the walker
-below. They look up the given variable or function in an environment and
-add an appropriate index entry. We don't currently index lexical variables,
-as that would probably just bulk up the index to no particular advantage.
+@ Here are a couple of indexing routines that we'll use in the walker below
+for indexing function and variable {\it uses}. They look up the given
+variable or function in a lexical environment object and add an appropriate
+index entry. (We can't use this routine for definitions because the name
+being indexed wouldn't in the environment yet.) We don't currently index
+lexical variables, as that would probably just bulk up the index to no
+particular advantage.
 
 @l
-(defun index-variable (index variable section env &optional def)
+(defun index-variable-use (index variable section env)
   (multiple-value-bind (type local) (variable-information variable env)
     (when (member type '(:special :symbol-macro :constant))
-      (add-index-entry index
-                       (list variable
-                             (ecase type
-                               (:special ':special-variable)
-                               (:symbol-macro @+
-                                (if local ':local-symbol-macro ':symbol-macro))
-                               (:constant ':constant)))
-                       section
-                       :def def))))
+      (add-index-entry
+         index
+         (list variable
+               (ecase type
+                 (:special (make-instance 'variable-heading :special t))
+                 (:constant (make-instance 'variable-heading :constant t))
+                 (:symbol-macro (make-instance 'symbol-macro-heading @+
+                                               :local local))))
+         section))))
 
-(defun index-function (index function section env &optional def)
-  (multiple-value-bind (type local) (function-information function env)
+(defun index-function-use (index function-name section env)
+  (multiple-value-bind (type local) @+
+      (function-information function-name env)
     (when (member type '(:function :macro))
-      (add-index-entry index
-                       (list function
-                             (ecase type
-                               (:function @+
-                                (if local ':local-function ':function))
-                               (:macro (if local ':local-macro ':macro))))
-                       section
-                       :def def))))
+      (add-index-entry
+         index
+         (list function-name
+               (ecase type
+                 (:function @+
+                  (make-instance 'function-heading
+                                 :local local
+                                 :generic (generic-function-p function-name)))
+                 (:macro @+
+                  (make-instance 'macro-heading :local local))))
+         section))))
+
+@ To index definitions, we'll need more information from the walker about
+the context in which the variable or function name occured; in particular,
+we'll get the car of the defining form as the |operator| argument.
+
+@l
+(defun index-variable-definition (index variable section &key @+
+                                  operator special &aux
+                                  (constant (eql operator 'defconstant)))
+  (add-index-entry
+     index
+     (list variable
+           (make-sub-heading operator :special special :constant constant))
+     section
+     :def t))
+
+(defun index-function-definition (index function-name section &key @+
+                                  operator local qualifiers)
+  (add-index-entry
+     index
+     (list function-name
+           (make-sub-heading operator
+                             :function-name function-name
+                             :local local
+                             :generic (generic-function-p function-name)
+                             :qualifiers qualifiers))
+     section
+     :def t))
 
 @ We'll perform the indexing by walking over the code of each section and
 noting each of the interesting symbols that we find there according to its
@@ -4397,7 +4607,7 @@ we'll walk.
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
         (when section
-          (index-variable (walker-index walker) symbol section env))
+          (index-variable-use (walker-index walker) symbol section env))
         symbol)
       form))
 
@@ -4411,12 +4621,12 @@ not worry about it.
   (declare (ignore form))
   (multiple-value-bind (symbol section) (symbol-provenance car)
     (when section
-      (index-function (walker-index walker) symbol section env))))
+      (index-function-use (walker-index walker) symbol section env))))
 
 @ We need to treat global function-defining forms like |defun| and
 |defmacro| as special forms, because otherwise they'll get macro-expanded
 before we get a chance to walk them. The indexing proper happens in
-the |walk-function-name| method defined below; remember that
+the |walk-function-name| method defined below; recall that
 |walk-lambda-expression| passes keyword arguments down to that function.
 
 We won't bother macro-expanding these forms, because the
@@ -4429,7 +4639,8 @@ everything we need with this walk.
                   ((walker indexing-walker) form env)
                 `(,(car form)
                   ,@(walk-lambda-expression walker (cdr form) env @+
-                                            :def (car form))))))
+                                            :operator (car form)
+                                            :def t)))))
   (define-defun-walker defun)
   (define-defun-walker defmacro)
   (define-defun-walker defgeneric))
@@ -4445,9 +4656,11 @@ We won't even bother trying to parse the specialized \L list for now.
             until (listp (car q))
             collect (walk-atomic-form walker (car q) env) into qualifiers
             finally (return (values qualifiers q)))
-    ;; FIXME: I'd like to include the qualifiers in the index sub-heading.
     `(,(car form)
-      ,(walk-function-name walker (cadr form) env :def (car form))
+      ,(walk-function-name walker (cadr form) env
+                           :operator (car form)
+                           :qualifiers qualifiers
+                           :def t)
       ,@qualifiers
       ,@rest)))
 
@@ -4469,11 +4682,12 @@ referring symbols replaced, too.
       (values (tree-equal (walk-form walker (substitute-symbols form section))
                           form)
               (loop with index = (walker-index walker)
-                    for heading in '((k :special-variable)
-                                     (compute-k :local-function)
-                                     (foo :macro))
+                    for h in `((k ,(make-instance 'variable-heading :special t))
+                               (compute-k ,(make-instance 'function-heading @+
+                                                          :local t))
+                               (foo ,(make-instance 'macro-heading)))
                     always (eql (location @+
-                                 (first (find-index-entries index heading)))
+                                 (first (find-index-entries index h)))
                                 section)))))
   t
   t)
@@ -4484,25 +4698,24 @@ since the referring symbols will still get swapped out by
 
 @l
 (defmethod walk-function-name :before
-    ((walker indexing-walker) function-name env &key def)
-  (declare (ignore env))
-  (when def
-    (let ((kind (keyword-from-def def))
-          (index (walker-index walker)))
-      (typecase function-name
-        (symbol
-         (multiple-value-bind (symbol section) (symbol-provenance function-name)
-           (when section
-             (add-index-entry index (list symbol kind) section :def t))))
-        ((cons (eql setf) (cons symbol null))
-         (multiple-value-bind (symbol section) @+
-             (symbol-provenance (cadr function-name))
-           (when section
-             ;; Remember, index entry headings are lists of string designators.
-             (add-index-entry index
-                              (list (format nil "(SETF ~A)" symbol) kind)
-                              section
-                              :def t))))))))
+    ((walker indexing-walker) function-name env &rest args &key def)
+  (let ((index (walker-index walker)))
+    (typecase function-name
+      (symbol
+       (multiple-value-bind (symbol section) (symbol-provenance function-name)
+         (when section
+           (if def
+               (apply #'index-function-definition @+
+                      index symbol section :allow-other-keys t args)
+               (index-function-use index symbol section env)))))
+      (setf-function-name
+       (multiple-value-bind (symbol section) @+
+         (symbol-provenance (cadr function-name))
+         (when section
+           (if def
+               (apply #'index-function-definition @+
+                      index `(setf ,symbol) section :allow-other-keys t args)
+               (index-function-use index symbol section env))))))))
 
 @ The special variable-defining forms must also be walked as if they were
 special forms. Once again, we'll just skip the macro expansions.
@@ -4515,8 +4728,10 @@ special forms. Once again, we'll just skip the macro expansions.
                   ,(multiple-value-bind (symbol section) @+
                        (symbol-provenance (cadr form))
                      (when section
-                       (index-variable (walker-index walker) symbol @+
-                                       section env t))
+                       (index-variable-definition (walker-index walker) @+
+                                                  symbol section
+                                                  :operator (car form)
+                                                  :special t))
                      symbol)
                   ,@(walk-list walker (cddr form) env)))))
   (define-indexing-defvar-walker defvar)
@@ -4563,7 +4778,7 @@ won't get replaced.
                      (when section
                        (add-index-entry (walker-index walker)
                                         (list symbol @+
-                                              (keyword-from-def (car form)))
+                                              (make-sub-heading (car form)))
                                         section
                                         :def t))
                      symbol)
@@ -4583,6 +4798,12 @@ of all of the interesting symbols so encountered.
 @ All that remains now is to write the index entries out to the index file.
 
 @l
+(set-weave-dispatch 'index
+  (lambda (stream index)
+    (flet ((print-entry (entry)
+             (write entry :stream stream)))
+      (maptree #'print-entry (index-entries index)))))
+
 (set-weave-dispatch 'index-entry
   (lambda (stream entry)
     (format stream "\\I~/clweb::print-entry-heading/~{, ~W~}.~%"
@@ -4596,12 +4817,6 @@ of all of the interesting symbols so encountered.
             (locator-definition-p loc)
             (section-number (location loc)))))
 
-(set-weave-dispatch 'index
-  (lambda (stream index)
-    (flet ((print-entry (entry)
-             (write entry :stream stream)))
-      (maptree #'print-entry (index-entries index)))))
-
 @ @l
 (defun print-entry-heading (stream heading &rest args)
   (declare (ignore args))
@@ -4610,12 +4825,8 @@ of all of the interesting symbols so encountered.
     (loop
       (let ((heading (pprint-pop)))
         (typecase heading
-          (keyword (write-string-escaped (substitute #\Space #\-
-                                                     (string-downcase @+
-                                                      (symbol-name heading)))
-                                         stream))
           (symbol (format stream "\\(~W\\)" heading))
-          (t (write heading :stream stream))))
+          (t (write-string (string (heading-name heading)) stream))))
       (pprint-exit-if-list-exhausted)
       (write-char #\Space stream))))
 

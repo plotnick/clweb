@@ -478,14 +478,14 @@
  (FLET ((FOO (X)
           (CHECK-BINDING X :VARIABLE :LEXICAL))
         (BAR (Y)
-          (CHECK-BINDING FOO :FUNCTION NIL)))
+          Y))
    (DECLARE (SPECIAL X))
    (CHECK-BINDING X :VARIABLE :SPECIAL)
    (CHECK-BINDING FOO :FUNCTION :FUNCTION))
  (FLET ((FOO (X)
           X)
         (BAR (Y)
-          FOO))
+          Y))
    (DECLARE (SPECIAL X))
    X
    FOO))
@@ -504,11 +504,9 @@
    :FOO))
 (DEFINE-WALK-BINDING-TEST WALK-SYMBOL-MACROLET
  (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
-   (CHECK-BINDING (FOO BAR) :VARIABLE :SYMBOL-MACRO)
-   (CHECK-BINDING FOO :FUNCTION NIL))
+   (CHECK-BINDING (FOO BAR) :VARIABLE :SYMBOL-MACRO))
  (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
-   (:FOO :BAR)
-   :FOO))
+   (:FOO :BAR)))
 (DEFINE-WALK-BINDING-TEST WALK-LET*
  (LET* ((X 1) (Y (CHECK-BINDING X :VARIABLE :SPECIAL)))
    (DECLARE (SPECIAL X))
@@ -549,15 +547,63 @@
            (DECLARE (IGNORE CAR ENV))
            (FORMAT T "~<; ~@;walking compound form ~W~:>~%" (LIST FORM)))
 (DEFTEST ENTRY-HEADING-LESSP
-         (NOTANY #'NOT
-                 (LIST (NOT (ENTRY-HEADING-LESSP 'A 'A))
-                       (ENTRY-HEADING-LESSP 'A 'B)
-                       (ENTRY-HEADING-LESSP 'A '(A X))
-                       (ENTRY-HEADING-LESSP '(A X) '(A Y))
-                       (ENTRY-HEADING-LESSP '(A X) '(B X))
-                       (ENTRY-HEADING-LESSP '(A Y) '(B X))
-                       (ENTRY-HEADING-LESSP '(A X) '(B Y))))
+         (LET ((A (MAKE-INSTANCE 'HEADING :NAME "a"))
+               (B (MAKE-INSTANCE 'HEADING :NAME "b"))
+               (X (MAKE-INSTANCE 'HEADING :NAME "x"))
+               (Y (MAKE-INSTANCE 'HEADING :NAME "y")))
+           (NOTANY #'NOT
+                   (LIST (NOT (ENTRY-HEADING-LESSP A A))
+                         (ENTRY-HEADING-LESSP A B)
+                         (ENTRY-HEADING-LESSP A (LIST A X))
+                         (ENTRY-HEADING-LESSP (LIST A X) (LIST A Y))
+                         (ENTRY-HEADING-LESSP (LIST A X) (LIST B X))
+                         (ENTRY-HEADING-LESSP (LIST A Y) (LIST B X))
+                         (ENTRY-HEADING-LESSP (LIST A X) (LIST B Y)))))
          T)
+(DEFMETHOD PRINT-OBJECT ((HEADING HEADING) STREAM)
+           (PRINT-UNREADABLE-OBJECT (HEADING STREAM :TYPE T :IDENTITY NIL)
+             (FORMAT STREAM "\"~A\"" (HEADING-NAME HEADING))))
+(DEFTEST HEADING-NAME
+         (VALUES (HEADING-NAME "foo")
+                 (HEADING-NAME (MAKE-INSTANCE 'HEADING :NAME "bar"))
+                 (HEADING-NAME :BAZ))
+         "foo" "bar" :BAZ)
+(DEFTEST FUNCTION-HEADING-NAME
+         (VALUES (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING))
+                 (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING :LOCAL T))
+                 (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING :GENERIC T))
+                 (HEADING-NAME
+                  (MAKE-INSTANCE 'SETF-FUNCTION-HEADING :LOCAL T)))
+         "function" "local function" "generic function" "local setf function")
+(DEFTEST VARIABLE-HEADING-NAME
+         (VALUES (HEADING-NAME (MAKE-INSTANCE 'VARIABLE-HEADING))
+                 (HEADING-NAME (MAKE-INSTANCE 'VARIABLE-HEADING :SPECIAL T))
+                 (HEADING-NAME (MAKE-INSTANCE 'VARIABLE-HEADING :CONSTANT T)))
+         "variable" "special variable" "constant variable")
+(DEFTEST METHOD-HEADING-NAME
+         (VALUES (HEADING-NAME (MAKE-INSTANCE 'METHOD-HEADING))
+                 (HEADING-NAME
+                  (MAKE-INSTANCE 'METHOD-HEADING :QUALIFIERS
+                                 '(:BEFORE :DURING :AFTER))))
+         "primary method" "before during after method")
+(DEFTEST MAKE-SUB-HEADING
+         (NOTANY #'NULL
+                 (LIST (TYPEP (MAKE-SUB-HEADING NIL) 'FUNCTION-HEADING)
+                       (TYPEP (MAKE-SUB-HEADING 'DEFMETHOD) 'METHOD-HEADING)
+                       (TYPEP
+                        (MAKE-SUB-HEADING 'DEFUN :FUNCTION-NAME '(SETF FOO))
+                        'SETF-FUNCTION-HEADING)
+                       (TYPEP (MAKE-SUB-HEADING 'DEFCLASS) 'CLASS-HEADING)))
+         T)
+(DEFMETHOD PRINT-OBJECT ((ENTRY INDEX-ENTRY) STREAM)
+           (PRINT-UNREADABLE-OBJECT (ENTRY STREAM :TYPE T :IDENTITY NIL)
+             (FORMAT STREAM "~W:" (ENTRY-HEADING ENTRY))
+             (DOLIST
+                 (LOCATOR
+                  (SORT (COPY-LIST (ENTRY-LOCATORS ENTRY)) #'< :KEY
+                        (LAMBDA (X) (SECTION-NUMBER (LOCATION X)))))
+               (FORMAT STREAM " ~:[~D~;[~D]~]" (LOCATOR-DEFINITION-P LOCATOR)
+                       (SECTION-NUMBER (LOCATION LOCATOR))))))
 (DEFTEST (ADD-INDEX-ENTRY 1)
          (LET ((INDEX (MAKE-INDEX)) (*SECTIONS* (MAKE-ARRAY 3 :FILL-POINTER 0)))
            (ADD-INDEX-ENTRY INDEX 'FOO (MAKE-INSTANCE 'SECTION))
@@ -576,12 +622,6 @@
            (ADD-INDEX-ENTRY INDEX 'FOO SECTION :DEF T)
            (LOCATOR-DEFINITION-P (FIRST (FIND-INDEX-ENTRIES INDEX 'FOO))))
          T)
-(DEFTEST KEYWORD-FROM-DEF
-         (VALUES (KEYWORD-FROM-DEF 'DEFUN) (KEYWORD-FROM-DEF 'FLET)
-                 (KEYWORD-FROM-DEF 'DEFINE-FOO) (KEYWORD-FROM-DEF 'DEFBAR)
-                 (HANDLER-BIND ((WARNING #'MUFFLE-WARNING))
-                   (KEYWORD-FROM-DEF 'BAZ)))
-         :FUNCTION :LOCAL-FUNCTION :FOO :BAR :BAZ)
 (DEFTEST (SYMBOL-PROVENANCE 1)
          (LET ((*INDEX-PACKAGES* (LIST (FIND-PACKAGE "KEYWORD"))))
            (SYMBOL-PROVENANCE (SUBSTITUTE-SYMBOLS ':FOO 1)))
@@ -605,12 +645,12 @@
              (TREE-EQUAL (WALK-FORM WALKER (SUBSTITUTE-SYMBOLS FORM SECTION))
                          FORM)
              (LOOP WITH INDEX = (WALKER-INDEX WALKER)
-                   FOR HEADING IN '((K :SPECIAL-VARIABLE)
-                                    (COMPUTE-K :LOCAL-FUNCTION) (FOO :MACRO))
-                   ALWAYS (EQL
-                           (LOCATION
-                            (FIRST (FIND-INDEX-ENTRIES INDEX HEADING)))
-                           SECTION)))))
+                   FOR H IN `((K ,(MAKE-INSTANCE 'VARIABLE-HEADING :SPECIAL T))
+                              (COMPUTE-K
+                               ,(MAKE-INSTANCE 'FUNCTION-HEADING :LOCAL T))
+                              (FOO ,(MAKE-INSTANCE 'MACRO-HEADING)))
+                   ALWAYS (EQL (LOCATION (FIRST (FIND-INDEX-ENTRIES INDEX H)))
+                               SECTION)))))
          T T)
 (DEFTEST (WALK-DECLARATION-SPECIFIERS INDEXING)
          (EQUAL
