@@ -1432,6 +1432,33 @@ value.
   (eval (marker-value (read-form-from-string "`(:a ,@'(:b :c) :d)")))
   (:a :b :c :d))
 
+@ Allegro Common Lisp's pretty printer tries to be clever about certain
+forms, like |defun| and |cond|, which might have a list as their |cadr|.
+However, it fails to notice when such a list is one constructed by their
+reader for a comma. It therefore doesn't print such lists using the comma
+syntax, yielding forms that can't be read in other Lisps. The following
+pretty printing routines work around this problem.
+
+@l
+(defun pprint-list (stream list)
+  (format stream "~:@<~/pprint-fill/~:>" list))
+
+(defun print-comma/comma-atsign (stream list)
+  (format stream "~[,~;,@~;,.~]~W"
+          (position (car list)
+                    #+allegro '(excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot)
+                    #-allegro '(:comma :comma-atsign :comma-dot))
+          (cadr list)))
+
+#+allegro
+(deftype comma () '(member excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot))
+#+allegro
+(deftype broken-pprint-operators () '(member defun defmacro macrolet cond))
+#+allegro
+(set-pprint-dispatch '(cons comma) #'print-comma/comma-atsign)
+#+allegro
+(set-pprint-dispatch '(cons broken-pprint-operators) #'pprint-list)
+
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
 handle each sub-char individually, and unfortunately we need to override
@@ -4207,8 +4234,7 @@ if a function sub-heading is marked as local, then its name should be
         (*print-pretty* nil))
     `(defmethod heading-name concatenate-string ((heading ,class))
        (with-slots ,slot-names heading
-         ;; This stupid `, is for Allegro's broken pretty-printer.
-         (`,cond ,@(loop for slot-name in slot-names
+         (cond ,@(loop for slot-name in slot-names
                        collect `(,slot-name ,(format nil "~A " slot-name))))))))
 
 (define-heading-name-prefix global/local-heading local)
