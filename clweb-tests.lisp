@@ -9,7 +9,7 @@
      ,@BODY))
 (DEFTEST CURRENT-SECTION
          (WITH-TEMPORARY-SECTIONS
-          (EQL (MAKE-INSTANCE 'SECTION) *CURRENT-SECTION*))
+           (EQL (MAKE-INSTANCE 'SECTION) *CURRENT-SECTION*))
          T)
 (DEFTEST (BST 1)
          (LET ((TREE (MAKE-INSTANCE 'BINARY-SEARCH-TREE :KEY 0)))
@@ -39,12 +39,12 @@
          NIL NIL)
 (DEFTEST NAMED-SECTION-NUMBER/CODE
          (WITH-TEMPORARY-SECTIONS
-          (LET ((SECTION (MAKE-INSTANCE 'NAMED-SECTION)))
-            (MAKE-INSTANCE 'SECTION)
-            (LOOP FOR I FROM 1 TO 3
-                  DO (PUSH (MAKE-INSTANCE 'SECTION :NAME "foo" :CODE (LIST I))
-                           (NAMED-SECTION-SECTIONS SECTION)))
-            (VALUES (SECTION-CODE SECTION) (SECTION-NUMBER SECTION))))
+           (LET ((SECTION (MAKE-INSTANCE 'NAMED-SECTION)))
+             (MAKE-INSTANCE 'SECTION)
+             (LOOP FOR I FROM 1 TO 3
+                   DO (PUSH (MAKE-INSTANCE 'SECTION :NAME "foo" :CODE (LIST I))
+                            (NAMED-SECTION-SECTIONS SECTION)))
+             (VALUES (SECTION-CODE SECTION) (SECTION-NUMBER SECTION))))
          (1 2 3) 1)
 (DEFTEST (SECTION-NAME-PREFIX-P 1) (SECTION-NAME-PREFIX-P "a") NIL 1)
 (DEFTEST (SECTION-NAME-PREFIX-P 2) (SECTION-NAME-PREFIX-P "ab...") T 2)
@@ -61,16 +61,16 @@
 (DEFTEST (SQUEEZE 3) (SQUEEZE (FORMAT NIL " a b ~C c " #\Tab)) "a b c")
 (DEFVAR *SAMPLE-NAMED-SECTIONS*
   (WITH-TEMPORARY-SECTIONS
-   (LET ((NAMED-SECTIONS (MAKE-INSTANCE 'NAMED-SECTION :NAME "baz")))
-     (FLET ((PUSH-SECTION (NAME CODE)
-              (PUSH (MAKE-INSTANCE 'SECTION :NAME NAME :CODE CODE)
-                    (NAMED-SECTION-SECTIONS
-                     (FIND-OR-INSERT NAME NAMED-SECTIONS)))))
-       (PUSH-SECTION "baz" '(:BAZ))
-       (PUSH-SECTION "foo" '(:FOO))
-       (PUSH-SECTION "bar" '(:BAR))
-       (PUSH-SECTION "qux" '(:QUX)))
-     NAMED-SECTIONS)))
+    (LET ((NAMED-SECTIONS (MAKE-INSTANCE 'NAMED-SECTION :NAME "baz")))
+      (FLET ((PUSH-SECTION (NAME CODE)
+               (PUSH (MAKE-INSTANCE 'SECTION :NAME NAME :CODE CODE)
+                     (NAMED-SECTION-SECTIONS
+                      (FIND-OR-INSERT NAME NAMED-SECTIONS)))))
+        (PUSH-SECTION "baz" '(:BAZ))
+        (PUSH-SECTION "foo" '(:FOO))
+        (PUSH-SECTION "bar" '(:BAR))
+        (PUSH-SECTION "qux" '(:QUX)))
+      NAMED-SECTIONS)))
 (DEFUN FIND-SAMPLE-SECTION (NAME)
   (FIND-OR-INSERT NAME *SAMPLE-NAMED-SECTIONS* :INSERT-IF-NOT-FOUND NIL))
 (DEFTEST FIND-NAMED-SECTION (SECTION-NAME (FIND-SAMPLE-SECTION "bar")) "bar")
@@ -421,121 +421,127 @@
                         ',WALKED-FORM)
             T))
 (DEFINE-WALK-BINDING-TEST WALK-ORDINARY-LAMBDA-LIST
- (LAMBDA
-     (X Y
-      &OPTIONAL
-      (O
-       (+ (CHECK-BINDING O :VARIABLE NIL) (CHECK-BINDING X :VARIABLE :SPECIAL)
-          (CHECK-BINDING Y :VARIABLE :LEXICAL)))
-      &KEY ((SECRET K) 1 K-S-P) (K2 (CHECK-BINDING K-S-P :VARIABLE :LEXICAL))
-      K3
-      &REST ARGS
-      &AUX W
-      (Z
-       (IF K-S-P
-           O
-           X)))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING X :VARIABLE :SPECIAL)
-   (CHECK-BINDING (Y Z O K K-S-P K2 K3 ARGS W Z) :VARIABLE :LEXICAL)
-   (CHECK-BINDING SECRET :VARIABLE NIL))
- (LAMBDA
-     (X Y
-      &OPTIONAL (O (+ O X Y))
-      &KEY ((SECRET K) 1 K-S-P) (K2 K-S-P) K3
-      &REST ARGS
-      &AUX W
-      (Z
-       (IF K-S-P
-           O
-           X)))
-   (DECLARE (SPECIAL X))
-   X
-   (Y Z O K K-S-P K2 K3 ARGS W Z)
-   SECRET))
+                          (LAMBDA
+                              (X Y
+                               &OPTIONAL
+                               (O
+                                (+ (CHECK-BINDING O :VARIABLE NIL)
+                                   (CHECK-BINDING X :VARIABLE :SPECIAL)
+                                   (CHECK-BINDING Y :VARIABLE :LEXICAL)))
+                               &KEY ((SECRET K) 1 K-S-P)
+                               (K2 (CHECK-BINDING K-S-P :VARIABLE :LEXICAL)) K3
+                               &REST ARGS
+                               &AUX W
+                               (Z
+                                (IF K-S-P
+                                    O
+                                    X)))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING X :VARIABLE :SPECIAL)
+                            (CHECK-BINDING (Y Z O K K-S-P K2 K3 ARGS W Z)
+                             :VARIABLE :LEXICAL)
+                            (CHECK-BINDING SECRET :VARIABLE NIL))
+                          (LAMBDA
+                              (X Y
+                               &OPTIONAL (O (+ O X Y))
+                               &KEY ((SECRET K) 1 K-S-P) (K2 K-S-P) K3
+                               &REST ARGS
+                               &AUX W
+                               (Z
+                                (IF K-S-P
+                                    O
+                                    X)))
+                            (DECLARE (SPECIAL X))
+                            X
+                            (Y Z O K K-S-P K2 K3 ARGS W Z)
+                            SECRET))
 (DEFINE-WALK-BINDING-TEST WALK-MACRO-LAMBDA-LIST
- (LAMBDA
-     (&WHOLE W (X Y)
-      &OPTIONAL ((O) (+ X Y))
-      &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV . BODY)
-   (CHECK-BINDING (W X Y O K1 K2 K-S-P ENV BODY) :VARIABLE :LEXICAL))
- (LAMBDA
-     (&WHOLE W (X Y)
-      &OPTIONAL ((O) (+ X Y))
-      &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV
-      &REST BODY)
-   (W X Y O K1 K2 K-S-P ENV BODY)))
+                          (LAMBDA
+                              (&WHOLE W (X Y)
+                               &OPTIONAL ((O) (+ X Y))
+                               &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT
+                               ENV . BODY)
+                            (CHECK-BINDING (W X Y O K1 K2 K-S-P ENV BODY)
+                             :VARIABLE :LEXICAL))
+                          (LAMBDA
+                              (&WHOLE W (X Y)
+                               &OPTIONAL ((O) (+ X Y))
+                               &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV
+                               &REST BODY)
+                            (W X Y O K1 K2 K-S-P ENV BODY)))
 (DEFINE-WALK-BINDING-TEST WALK-LET
- (LET ((X 1) (Y (CHECK-BINDING X :VARIABLE NIL)))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING X :VARIABLE :SPECIAL)
-   (CHECK-BINDING Y :VARIABLE :LEXICAL))
- (LET ((X 1) (Y X))
-   (DECLARE (SPECIAL X))
-   X
-   Y))
+                          (LET ((X 1) (Y (CHECK-BINDING X :VARIABLE NIL)))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING X :VARIABLE :SPECIAL)
+                            (CHECK-BINDING Y :VARIABLE :LEXICAL))
+                          (LET ((X 1) (Y X))
+                            (DECLARE (SPECIAL X))
+                            X
+                            Y))
 (DEFINE-WALK-BINDING-TEST WALK-FLET
- (FLET ((FOO (X)
-          (CHECK-BINDING X :VARIABLE :LEXICAL))
-        (BAR (Y)
-          Y))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING X :VARIABLE :SPECIAL)
-   (CHECK-BINDING FOO :FUNCTION :FUNCTION))
- (FLET ((FOO (X)
-          X)
-        (BAR (Y)
-          Y))
-   (DECLARE (SPECIAL X))
-   X
-   FOO))
+                          (FLET ((FOO (X)
+                                   (CHECK-BINDING X :VARIABLE :LEXICAL))
+                                 (BAR (Y)
+                                   Y))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING X :VARIABLE :SPECIAL)
+                            (CHECK-BINDING FOO :FUNCTION :FUNCTION))
+                          (FLET ((FOO (X)
+                                   X)
+                                 (BAR (Y)
+                                   Y))
+                            (DECLARE (SPECIAL X))
+                            X
+                            FOO))
 (DEFINE-WALK-BINDING-TEST WALK-MACROLET
- (MACROLET ((FOO (X)
-              (CHECK-BINDING X :VARIABLE :LEXICAL))
-            (BAR (Y)
-              Y))
-   (CHECK-BINDING FOO :FUNCTION :MACRO)
-   (FOO :FOO))
- (MACROLET ((FOO (X)
-              X)
-            (BAR (Y)
-              Y))
-   FOO
-   :FOO))
+                          (MACROLET ((FOO (X)
+                                       (CHECK-BINDING X :VARIABLE :LEXICAL))
+                                     (BAR (Y)
+                                       Y))
+                            (CHECK-BINDING FOO :FUNCTION :MACRO)
+                            (FOO :FOO))
+                          (MACROLET ((FOO (X)
+                                       X)
+                                     (BAR (Y)
+                                       Y))
+                            FOO
+                            :FOO))
 (DEFINE-WALK-BINDING-TEST WALK-SYMBOL-MACROLET
- (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
-   (CHECK-BINDING (FOO BAR) :VARIABLE :SYMBOL-MACRO))
- (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
-   (:FOO :BAR)))
+                          (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
+                            (CHECK-BINDING (FOO BAR) :VARIABLE :SYMBOL-MACRO))
+                          (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
+                            (:FOO :BAR)))
 (DEFINE-WALK-BINDING-TEST WALK-LET*
- (LET* ((X 1) (Y (CHECK-BINDING X :VARIABLE :SPECIAL)))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING Y :VARIABLE :LEXICAL))
- (LET* ((X 1) (Y X))
-   (DECLARE (SPECIAL X))
-   Y))
+                          (LET* ((X 1) (Y (CHECK-BINDING X :VARIABLE :SPECIAL)))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING Y :VARIABLE :LEXICAL))
+                          (LET* ((X 1) (Y X))
+                            (DECLARE (SPECIAL X))
+                            Y))
 (DEFINE-WALK-BINDING-TEST WALK-LABELS
- (LABELS ((FOO (X)
-            (CHECK-BINDING X :VARIABLE :LEXICAL))
-          (BAR (Y)
-            (CHECK-BINDING FOO :FUNCTION :FUNCTION)))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING X :VARIABLE :SPECIAL)
-   (CHECK-BINDING FOO :FUNCTION :FUNCTION))
- (LABELS ((FOO (X)
-            X)
-          (BAR (Y)
-            FOO))
-   (DECLARE (SPECIAL X))
-   X
-   FOO))
+                          (LABELS ((FOO (X)
+                                     (CHECK-BINDING X :VARIABLE :LEXICAL))
+                                   (BAR (Y)
+                                     (CHECK-BINDING FOO :FUNCTION :FUNCTION)))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING X :VARIABLE :SPECIAL)
+                            (CHECK-BINDING FOO :FUNCTION :FUNCTION))
+                          (LABELS ((FOO (X)
+                                     X)
+                                   (BAR (Y)
+                                     FOO))
+                            (DECLARE (SPECIAL X))
+                            X
+                            FOO))
 (DEFINE-WALK-BINDING-TEST WALK-LOCALLY
- (LET ((Y T))
-   (CHECK-BINDING Y :VARIABLE :LEXICAL)
-   (LOCALLY (DECLARE (SPECIAL Y)) (CHECK-BINDING Y :VARIABLE :SPECIAL)))
- (LET ((Y T))
-   Y
-   (LOCALLY (DECLARE (SPECIAL Y)) Y)))
+                          (LET ((Y T))
+                            (CHECK-BINDING Y :VARIABLE :LEXICAL)
+                            (LOCALLY
+                             (DECLARE (SPECIAL Y))
+                             (CHECK-BINDING Y :VARIABLE :SPECIAL)))
+                          (LET ((Y T))
+                            Y
+                            (LOCALLY (DECLARE (SPECIAL Y)) Y)))
 (DEFCLASS TRACING-WALKER (WALKER) NIL)
 (DEFMETHOD WALK-ATOMIC-FORM :BEFORE
            ((WALKER TRACING-WALKER) FORM ENV &OPTIONAL (EVALP T))
@@ -629,28 +635,29 @@
 (DEFTEST (SYMBOL-PROVENANCE 2) (SYMBOL-PROVENANCE :FOO) :FOO)
 (DEFTEST INDEXING-WALK-DEFUN
          (WITH-TEMPORARY-SECTIONS
-          (LET ((WALKER (MAKE-INSTANCE 'INDEXING-WALKER))
-                (FORM
-                 '(FLET ((COMPUTE-K (X Y Z)
-                           (+ X Y Z)))
-                    (DEFMACRO FOO
-                              (&WHOLE W X Y Z &ENVIRONEMNT ENV
-                               &KEY ((KEY K) (COMPUTE-K X Y Z) K-S-P)
-                               &BODY BODY)
-                      (DECLARE (SPECIAL K))
-                      BODY)))
-                (SECTION (MAKE-INSTANCE 'SECTION))
-                (*INDEX-PACKAGES* (LIST (FIND-PACKAGE "CLWEB"))))
-            (VALUES
-             (TREE-EQUAL (WALK-FORM WALKER (SUBSTITUTE-SYMBOLS FORM SECTION))
-                         FORM)
-             (LOOP WITH INDEX = (WALKER-INDEX WALKER)
-                   FOR H IN `((K ,(MAKE-INSTANCE 'VARIABLE-HEADING :SPECIAL T))
-                              (COMPUTE-K
-                               ,(MAKE-INSTANCE 'FUNCTION-HEADING :LOCAL T))
-                              (FOO ,(MAKE-INSTANCE 'MACRO-HEADING)))
-                   ALWAYS (EQL (LOCATION (FIRST (FIND-INDEX-ENTRIES INDEX H)))
-                               SECTION)))))
+           (LET ((WALKER (MAKE-INSTANCE 'INDEXING-WALKER))
+                 (FORM
+                  '(FLET ((COMPUTE-K (X Y Z)
+                            (+ X Y Z)))
+                     (DEFMACRO FOO
+                               (&WHOLE W X Y Z &ENVIRONEMNT ENV
+                                &KEY ((KEY K) (COMPUTE-K X Y Z) K-S-P)
+                                &BODY BODY)
+                       (DECLARE (SPECIAL K))
+                       BODY)))
+                 (SECTION (MAKE-INSTANCE 'SECTION))
+                 (*INDEX-PACKAGES* (LIST (FIND-PACKAGE "CLWEB"))))
+             (VALUES
+              (TREE-EQUAL (WALK-FORM WALKER (SUBSTITUTE-SYMBOLS FORM SECTION))
+                          FORM)
+              (LOOP WITH INDEX = (WALKER-INDEX WALKER)
+                    FOR H IN `((K
+                                ,(MAKE-INSTANCE 'VARIABLE-HEADING :SPECIAL T))
+                               (COMPUTE-K
+                                ,(MAKE-INSTANCE 'FUNCTION-HEADING :LOCAL T))
+                               (FOO ,(MAKE-INSTANCE 'MACRO-HEADING)))
+                    ALWAYS (EQL (LOCATION (FIRST (FIND-INDEX-ENTRIES INDEX H)))
+                                SECTION)))))
          T T)
 (DEFTEST (WALK-DECLARATION-SPECIFIERS INDEXING)
          (EQUAL

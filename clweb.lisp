@@ -1474,13 +1474,15 @@
                     (AND (SYMBOLP FORM)
                          (EQL (VARIABLE-INFORMATION FORM ENV) ':SYMBOL-MACRO))))
              (LOOP
-              (COND ((SYMBOL-MACRO-P FORM ENV))
-                    ((ATOM FORM) (RETURN (WALK-ATOMIC-FORM WALKER FORM ENV)))
-                    ((NOT (SYMBOLP (CAR FORM)))
-                     (RETURN (WALK-LIST WALKER FORM ENV)))
-                    ((OR (NOT EXPANDED)
-                         (WALK-AS-SPECIAL-FORM-P WALKER (CAR FORM) FORM ENV))
-                     (RETURN (WALK-COMPOUND-FORM WALKER (CAR FORM) FORM ENV))))
+              (CATCH FORM
+                (COND ((SYMBOL-MACRO-P FORM ENV))
+                      ((ATOM FORM) (RETURN (WALK-ATOMIC-FORM WALKER FORM ENV)))
+                      ((NOT (SYMBOLP (CAR FORM)))
+                       (RETURN (WALK-LIST WALKER FORM ENV)))
+                      ((OR (NOT EXPANDED)
+                           (WALK-AS-SPECIAL-FORM-P WALKER (CAR FORM) FORM ENV))
+                       (RETURN
+                        (WALK-COMPOUND-FORM WALKER (CAR FORM) FORM ENV)))))
               (MULTIPLE-VALUE-SETQ (FORM EXPANDED)
                 (MACROEXPAND-FOR-WALK WALKER FORM ENV)))))
 (DEFMETHOD WALK-AS-SPECIAL-FORM-P (WALKER CAR FORM ENV)
@@ -2143,15 +2145,12 @@
   (DEFINE-DEFUN-WALKER DEFGENERIC))
 (DEFINE-SPECIAL-FORM-WALKER DEFMETHOD
     ((WALKER INDEXING-WALKER) FORM ENV)
-  (MULTIPLE-VALUE-BIND (QUALIFIERS REST)
-      (LOOP FOR Q = (CDDR FORM) THEN (CDR Q)
-            UNTIL (LISTP (CAR Q))
-            COLLECT (WALK-ATOMIC-FORM WALKER (CAR Q) ENV) INTO QUALIFIERS
-            FINALLY (RETURN (VALUES QUALIFIERS Q)))
-    `(,(CAR FORM)
-      ,(WALK-FUNCTION-NAME WALKER (CADR FORM) ENV :OPERATOR (CAR FORM)
-                           :QUALIFIERS QUALIFIERS :DEF T)
-      ,@QUALIFIERS ,@REST)))
+  (WALK-FUNCTION-NAME WALKER (CADR FORM) ENV :OPERATOR (CAR FORM) :QUALIFIERS
+                      (LOOP FOR Q = (CDDR FORM) THEN (CDR Q)
+                            UNTIL (LISTP (CAR Q))
+                            COLLECT (WALK-ATOMIC-FORM WALKER (CAR Q) ENV))
+                      :DEF T)
+  (THROW FORM FORM))
 (DEFMETHOD WALK-FUNCTION-NAME :BEFORE
            ((WALKER INDEXING-WALKER) FUNCTION-NAME ENV &REST ARGS &KEY DEF)
            (LET ((INDEX (WALKER-INDEX WALKER)))
@@ -2196,16 +2195,14 @@
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
                 (DECLARE (IGNORE ENV))
-                ,'`(,(CAR FORM)
-                    ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                         (SYMBOL-PROVENANCE (CADR FORM))
-                       (WHEN SECTION
-                         (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
-                                          (LIST SYMBOL
-                                                (MAKE-SUB-HEADING (CAR FORM)))
-                                          SECTION :DEF T))
-                       SYMBOL)
-                    ,@(CDDR FORM)))))
+                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                    (SYMBOL-PROVENANCE (CADR FORM))
+                  (WHEN SECTION
+                    (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
+                                     (LIST SYMBOL
+                                           (MAKE-SUB-HEADING (CAR FORM)))
+                                     SECTION :DEF T)))
+                (THROW FORM FORM))))
   (DEFINE-DEFCLASS-WALKER DEFCLASS)
   (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION))
 (DEFUN INDEX-SECTIONS (SECTIONS &KEY (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))

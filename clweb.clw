@@ -3236,9 +3236,11 @@ Thanks, Franz!
       (symbol-function 'function-information)
       (reorder-env-information #'sys:function-information))
 
-@ The main entry point for the walker is |walk-form|. The walk stops after
-walking an atomic or special form; otherwise, we keep walking until the
-form no longer macroexpands.
+@ The main entry point for the walker is |walk-form|. The walk ordinarily
+stops after encountering an atomic or special form; otherwise, we macro
+expand and try again. If a walker method wants to decline to walk, however,
+it may |throw| the given form, and the walk will continue with macro
+expansion.
 
 @l
 (defmethod walk-form ((walker walker) form &optional env &aux
@@ -3248,14 +3250,15 @@ form no longer macroexpands.
            (and (symbolp form)
                 (eql (variable-information form env) ':symbol-macro))))
     (loop
-      (cond ((symbol-macro-p form env)) ; wait for macro expansion
-            ((atom form)
-             (return (walk-atomic-form walker form env)))
-            ((not (symbolp (car form)))
-             (return (walk-list walker form env)))
-            ((or (not expanded)
-                 (walk-as-special-form-p walker (car form) form env))
-             (return (walk-compound-form walker (car form) form env))))
+      (catch form
+        (cond ((symbol-macro-p form env)) ; wait for macro expansion
+              ((atom form)
+               (return (walk-atomic-form walker form env)))
+              ((not (symbolp (car form)))
+               (return (walk-list walker form env)))
+              ((or (not expanded)
+                   (walk-as-special-form-p walker (car form) form env))
+               (return (walk-compound-form walker (car form) form env)))))
       (multiple-value-setq (form expanded)
         (macroexpand-for-walk walker form env)))))
 
@@ -4646,23 +4649,19 @@ everything we need with this walk.
   (define-defun-walker defgeneric))
 
 @ Method definitions have a different syntax because of the method qualifiers.
-We won't even bother trying to parse the specialized \L list for now.
+We parse just enough to walk the function name and qualifiers, then punt and
+let the macroexpansion take place.
 
 @l
 (define-special-form-walker defmethod ((walker indexing-walker) form env)
-  
-  (multiple-value-bind (qualifiers rest)
-      (loop for q = (cddr form) then (cdr q)
-            until (listp (car q))
-            collect (walk-atomic-form walker (car q) env) into qualifiers
-            finally (return (values qualifiers q)))
-    `(,(car form)
-      ,(walk-function-name walker (cadr form) env
-                           :operator (car form)
-                           :qualifiers qualifiers
-                           :def t)
-      ,@qualifiers
-      ,@rest)))
+  (walk-function-name walker (cadr form) env
+                      :operator (car form)
+                      :qualifiers (loop for q = (cddr form) then (cdr q)
+                                        until (listp (car q))
+                                        collect (walk-atomic-form @+
+                                                 walker (car q) env))
+                      :def t)
+  (throw form form))
 
 @t Besides testing the return value of a walk over a |defmacro| form, this
 test ensures that complex \L-lists are properly indexed and have their
@@ -4763,26 +4762,23 @@ about |special| declarations, so we just throw everything else away.
          '((special x y z)))
   t)
 
-@ We'll walk |defclass| and |define-condition| forms to get the class names.
-We'll be lazy and just punt on the rest, which means that referring symbols
-won't get replaced.
+@ We'll walk |defclass| and |define-condition| forms to get the class names,
+then punt.
 
 @l
 (macrolet ((define-defclass-walker (operator)
              `(define-special-form-walker ,operator @+
                   ((walker indexing-walker) form env)
                 (declare (ignore env))
-                `(,(car form)
-                  ,(multiple-value-bind (symbol section) @+
-                       (symbol-provenance (cadr form))
-                     (when section
-                       (add-index-entry (walker-index walker)
-                                        (list symbol @+
-                                              (make-sub-heading (car form)))
-                                        section
-                                        :def t))
-                     symbol)
-                  ,@(cddr form)))))
+                (multiple-value-bind (symbol section) @+
+                    (symbol-provenance (cadr form))
+                  (when section
+                    (add-index-entry (walker-index walker)
+                                     (list symbol @+
+                                           (make-sub-heading (car form)))
+                                     section
+                                     :def t)))
+                (throw form form))))
   (define-defclass-walker defclass)
   (define-defclass-walker define-condition))
 
