@@ -3269,12 +3269,12 @@ expansion.
 |walk-as-special-form-p| returns true of that form.
 
 @l
-(defmethod walk-as-special-form-p (walker car form env)
-  (declare (ignore walker car form env))
+(defmethod walk-as-special-form-p (walker operator form env)
+  (declare (ignore walker operator form env))
   nil)
 
 @ @<Walker generic functions@>=
-(defgeneric walk-as-special-form-p (walker car form env))
+(defgeneric walk-as-special-form-p (walker operator form env))
 
 @ Macroexpansion and environment augmentation both get wrapped in generic
 functions to allow subclasses to override the usual behavior.
@@ -3309,13 +3309,13 @@ real work-horses of the walker. The former takes a walker instance,
 an (atomic) form, an environment, and a flag indicating whether or
 not the form occurs in an evaluated position. Compound forms, being
 always evaluated, don't need such a flag, but we do provide an
-additional |car| argument so that we can use |eql|-specializers.
-The |car| of a form passed to |walk-compound-form| will always be
+additional |operator| argument so that we can use |eql|-specializers.
+The |operator| of a form passed to |walk-compound-form| will always be
 a symbol.
 
 @<Walker generic functions@>=
 (defgeneric walk-atomic-form (walker form env &optional evalp))
-(defgeneric walk-compound-form (walker car form env))
+(defgeneric walk-compound-form (walker operator form env))
 
 @ The default method for |walk-atomic-form| simply returns the form.
 Note that this function won't be called for symbol macros; those are
@@ -3330,8 +3330,8 @@ expanded in |walk-form|.
 forms; it leaves its |car| unevaluated and walks its |cdr|.
 
 @l
-(defmethod walk-compound-form ((walker walker) car form env)
-  (declare (ignore car))
+(defmethod walk-compound-form ((walker walker) operator form env)
+  (declare (ignore operator))
   `(,(walk-atomic-form walker (car form) env nil)
     ,@(walk-list walker (cdr form) env)))
 
@@ -3398,7 +3398,7 @@ macro.'' (\csc{ansi} Common Lisp, section~3.1.2.1.2.2)
 @l
 (macrolet ((walk-as-special-form (operator)
              `(defmethod walk-as-special-form-p
-                  ((walker walker) (car (eql ',operator)) form env)
+                  ((walker walker) (operator (eql ',operator)) form env)
                 (declare (ignore form env))
                 t)))
   (walk-as-special-form catch)
@@ -3420,13 +3420,13 @@ The following macro makes sure that these are consistently defined.
 @l
 (defmacro define-special-form-walker (operator (walker form env &rest rest) @+
                                       &body body &aux
-                                      (car `(car (eql ',operator))))
+                                      (oparg `(,(gensym) (eql ',operator))))
   (flet ((arg-name (arg) (if (consp arg) (car arg) arg)))
     `(progn
-       (defmethod walk-as-special-form-p (,walker ,car ,form ,env)
+       (defmethod walk-as-special-form-p (,walker ,oparg ,form ,env)
          (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
          t)
-       (defmethod walk-compound-form (,walker ,car ,form ,env ,@rest)
+       (defmethod walk-compound-form (,walker ,oparg ,form ,env ,@rest)
          (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
          ,@body))))
 
@@ -4036,8 +4036,9 @@ the walker classes defined in this program.
   (format t "; walking ~:[un~;~]evaluated atomic form ~S~@[ (~(~A~) variable)~]~%"
           evalp form (and (symbolp form) (variable-information form env))))
 
-(defmethod walk-compound-form :before ((walker tracing-walker) car form env)
-  (declare (ignore car env))
+(defmethod walk-compound-form :before @+
+    ((walker tracing-walker) operator form env)
+  (declare (ignore operator env))
   (format t "~<; ~@;walking compound form ~W~:>~%" (list form)))
 
 @*Indexing. Having constructed our code walker, we can now use it to
@@ -4612,15 +4613,16 @@ we'll walk.
         symbol)
       form))
 
-@ We'll index all function calls whose |car| is a referring symbol. The
-actual replacement of referring symbols with their referents takes place in
-|walk-atomic-form|, above, so we can just use a |:before| method here and
+@ We'll index all function calls whose |operator| is a referring symbol.
+The actual replacement of referring symbols with their referents takes place
+in |walk-atomic-form|, above, so we can just use a |:before| method here and
 not worry about it.
 
 @l
-(defmethod walk-compound-form :before ((walker indexing-walker) car form env)
+(defmethod walk-compound-form :before @+
+    ((walker indexing-walker) operator form env)
   (declare (ignore form))
-  (multiple-value-bind (symbol section) (symbol-provenance car)
+  (multiple-value-bind (symbol section) (symbol-provenance operator)
     (when section
       (index-function-use (walker-index walker) symbol section env))))
 

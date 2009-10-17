@@ -549,8 +549,9 @@
                    "; walking ~:[un~;~]evaluated atomic form ~S~@[ (~(~A~) variable)~]~%"
                    EVALP FORM
                    (AND (SYMBOLP FORM) (VARIABLE-INFORMATION FORM ENV))))
-(DEFMETHOD WALK-COMPOUND-FORM :BEFORE ((WALKER TRACING-WALKER) CAR FORM ENV)
-           (DECLARE (IGNORE CAR ENV))
+(DEFMETHOD WALK-COMPOUND-FORM :BEFORE
+           ((WALKER TRACING-WALKER) OPERATOR FORM ENV)
+           (DECLARE (IGNORE OPERATOR ENV))
            (FORMAT T "~<; ~@;walking compound form ~W~:>~%" (LIST FORM)))
 (DEFTEST ENTRY-HEADING-LESSP
          (LET ((A (MAKE-INSTANCE 'HEADING :NAME "a"))
