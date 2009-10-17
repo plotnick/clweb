@@ -4075,8 +4075,8 @@ or sometimes just an {\it entry}; this latter is an abuse of terminology,
 but useful and usually clear in context.
 
 Headings may in general be multi-leveled, and are sorted lexicographically.
-In this program, headings are represented by designators for lists of
-objects that have a specialized |heading-name| method. That method should
+In this program, headings are represented by (designators for) lists of
+objects that have a specialized |heading-name| method, which method should
 return a string designator.
 
 @l
@@ -4084,10 +4084,8 @@ return a string designator.
                             (h1 (if (listp h1) h1 (list h1)))
                             (h2 (if (listp h2) h2 (list h2))))
   (or (and (null h1) h2)
-      (string-lessp (string (heading-name (car h1)))
-                    (string (heading-name (car h2))))
-      (and (string-equal (string (heading-name (car h1)))
-                         (string (heading-name (car h2))))
+      (string-lessp (heading-name (car h1)) (heading-name (car h2)))
+      (and (string-equal (heading-name (car h1)) (heading-name (car h2)))
            (cdr h2)
            (entry-heading-lessp (cdr h1) (cdr h2)))))
 
@@ -4095,9 +4093,9 @@ return a string designator.
                              (h1 (if (listp h1) h1 (list h1)))
                              (h2 (if (listp h2) h2 (list h2))))
   (and (= (length h1) (length h2))
-       (every #'equalp
-              (mapcar #'string (mapcar #'heading-name h1))
-              (mapcar #'string (mapcar #'heading-name h2)))))
+       (every #'string-equal
+              (mapcar #'heading-name h1)
+              (mapcar #'heading-name h2))))
 
 @t@l
 (deftest entry-heading-lessp
