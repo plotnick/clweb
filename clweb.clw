@@ -1076,13 +1076,13 @@ printing will override this method.
 @t@l
 (deftest print-marker
   (let ((*print-marker* t))
-    (format nil "~A" (make-instance 'marker :value ':foo)))
+    (format nil "~A" (make-instance 'marker :value :foo)))
   "FOO")
 
 (deftest print-marker-unreadably
   (let ((*print-marker* nil)
         (*print-readably* t))
-    (handler-case (format nil "~W" (make-instance 'marker :value ':foo))
+    (handler-case (format nil "~W" (make-instance 'marker :value :foo))
       (print-not-readable (condition)
         (marker-value (print-not-readable-object condition)))))
   :foo)
@@ -3248,7 +3248,7 @@ expansion.
                       (expanded t))
   (flet ((symbol-macro-p (form env)
            (and (symbolp form)
-                (eql (variable-information form env) ':symbol-macro))))
+                (eql (variable-information form env) :symbol-macro))))
     (loop
       (catch form
         (cond ((symbol-macro-p form env)) ; wait for macro expansion
@@ -4558,7 +4558,7 @@ form without having to apply a predicate first.
 @t@l
 (deftest (symbol-provenance 1)
   (let ((*index-packages* (list (find-package "KEYWORD"))))
-    (symbol-provenance (substitute-symbols ':foo 1)))
+    (symbol-provenance (substitute-symbols :foo 1)))
   :foo 1)
 
 (deftest (symbol-provenance 2)

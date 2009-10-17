@@ -1472,7 +1472,7 @@
             (ENV (ENSURE-PORTABLE-WALKING-ENVIRONMENT ENV)) (EXPANDED T))
            (FLET ((SYMBOL-MACRO-P (FORM ENV)
                     (AND (SYMBOLP FORM)
-                         (EQL (VARIABLE-INFORMATION FORM ENV) ':SYMBOL-MACRO))))
+                         (EQL (VARIABLE-INFORMATION FORM ENV) :SYMBOL-MACRO))))
              (LOOP
               (CATCH FORM
                 (COND ((SYMBOL-MACRO-P FORM ENV))
