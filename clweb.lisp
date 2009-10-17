@@ -540,7 +540,7 @@
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\, #'COMMA-READER NIL (READTABLE-FOR-MODE MODE)))
 (DEFUN PPRINT-LIST (STREAM LIST) (FORMAT STREAM "~:@<~/pprint-fill/~:>" LIST))
-(DEFUN PRINT-COMMA (STREAM LIST)
+(DEFUN PPRINT-COMMA (STREAM LIST)
   (FORMAT STREAM "~[,~;,@~;,.~]~W"
           (POSITION (CAR LIST)
                     #+:ALLEGRO '(excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot)
@@ -548,7 +548,7 @@
           (CADR LIST)))
 #+:ALLEGRO (deftype comma () '(member excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot))
 #+:ALLEGRO (deftype broken-pprint-operators () '(member defun defmacro macrolet cond))
-#+:ALLEGRO (set-pprint-dispatch '(cons comma) #'print-comma)
+#+:ALLEGRO (set-pprint-dispatch '(cons comma) #'pprint-comma)
 #+:ALLEGRO (set-pprint-dispatch '(cons broken-pprint-operators) #'pprint-list)
 (DEFCLASS FUNCTION-MARKER (QUOTE-MARKER) NIL)
 (DEFUN SHARPSIGN-QUOTE-READER (STREAM SUB-CHAR ARG)

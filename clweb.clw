@@ -1443,7 +1443,7 @@ pretty printing routines work around this problem.
 (defun pprint-list (stream list)
   (format stream "~:@<~/pprint-fill/~:>" list))
 
-(defun print-comma (stream list)
+(defun pprint-comma (stream list)
   (format stream "~[,~;,@~;,.~]~W"
           (position (car list)
                     #+allegro '(excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot)
@@ -1455,7 +1455,7 @@ pretty printing routines work around this problem.
 #+allegro
 (deftype broken-pprint-operators () '(member defun defmacro macrolet cond))
 #+allegro
-(set-pprint-dispatch '(cons comma) #'print-comma)
+(set-pprint-dispatch '(cons comma) #'pprint-comma)
 #+allegro
 (set-pprint-dispatch '(cons broken-pprint-operators) #'pprint-list)
 
