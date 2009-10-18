@@ -35,7 +35,6 @@
 (DEFVAR *WEAVE-VERBOSE* T)
 (DEFVAR *WEAVE-PRINT* T)
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
-(DEFVAR *INNER-LISP* NIL)
 (DEFVAR *INDEX-PACKAGES* NIL)
 (DEFVAR *INDEXING* NIL)
 (DEFINE-CONDITION AMBIGUOUS-PREFIX-ERROR
@@ -1402,10 +1401,8 @@
                       (FORMAT STREAM "\\'~W" (QUOTED-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'COMMENT-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (WRITE-STRING "\\C{" STREAM)
-                      (PRINT-TEX STREAM
-                                 (READ-TEX-FROM-STRING (COMMENT-TEXT OBJ)))
-                      (WRITE-STRING "}" STREAM)))
+                      (FORMAT STREAM "\\C{~/clweb::print-TeX/}"
+                              (READ-TEX-FROM-STRING (COMMENT-TEXT OBJ)))))
 (SET-WEAVE-DISPATCH 'BACKQUOTE-MARKER
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\`~W" (BACKQ-FORM OBJ))))

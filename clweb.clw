@@ -2722,14 +2722,11 @@ are installed in |*weave-pprint-dispatch*|.
                        *weave-pprint-dispatch*))
 
 @ \TeX-mode material is represented as a list of strings containing pure
-\TeX\ text and lists of (inner-)Lisp forms. We bind |*inner-lisp*| to true
-when we're printing inner-Lisp-mode material so that we can adjust our
-pretty-printing.
+\TeX\ text and lists of (inner-)Lisp forms, and this routine is responsible
+for printing it. It takes a |&rest| parameter so that it can be used with
+the `\.{\~/.../}' |format| directive.
 
-@<Global variables@>=
-(defvar *inner-lisp* nil)
-
-@ @l
+@l
 (defun print-TeX (stream tex-mode-material &rest args)
   (declare (ignore args))
   (dolist (x tex-mode-material)
@@ -3134,9 +3131,8 @@ which see.
 @ @l
 (set-weave-dispatch 'comment-marker
   (lambda (stream obj)
-    (write-string "\\C{" stream)
-    (print-TeX stream (read-TeX-from-string (comment-text obj)))
-    (write-string "}" stream)))
+    (format stream "\\C{~/clweb::print-TeX/}"
+            (read-TeX-from-string (comment-text obj)))))
 
 @ @l
 (set-weave-dispatch 'backquote-marker
