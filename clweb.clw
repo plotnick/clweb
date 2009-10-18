@@ -2791,7 +2791,9 @@ re-reads such strings and picks up any inner-Lisp material.
       (format stream "\\T~P~D.~%"
               (length (section-code section))
               (section-number (test-for-section section))))
-    (when named-section
+    (when (and named-section
+               (= (section-number section)
+                  (section-number named-section)))
       (print-xrefs stream #\A
                    (remove section (named-section-sections named-section)))
       (print-xrefs stream #\U
