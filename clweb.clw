@@ -4826,8 +4826,9 @@ of all of the interesting symbols so encountered.
 
 @l
 (defun index-sections (sections &key (walker (make-instance 'indexing-walker)))
-  (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
-    (walk-form walker form)))
+  (let ((*evaluating* t))
+    (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
+      (walk-form walker form))))
 
 @ All that remains now is to write the index entries out to the index file.
 
