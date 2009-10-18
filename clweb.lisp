@@ -1739,6 +1739,38 @@
           (PUSH '&REST NEW-LAMBDA-LIST)
           (PUSH VAR NEW-LAMBDA-LIST))
         (SETQ LAMBDA-LIST NIL)))))
+(DEFTYPE CLASS-SPECIALIZER () '(CONS SYMBOL (CONS SYMBOL NULL)))
+(DEFTYPE COMPOUND-SPECIALIZER (&OPTIONAL (OPERATOR (QUOTE EQL)))
+  `(CONS SYMBOL (CONS (CONS (EQL ,OPERATOR) (CONS SYMBOL NULL)) NULL)))
+(DEFUN WALK-SPECIALIZED-LAMBDA-LIST (WALKER LAMBDA-LIST DECLS ENV)
+  (LET ((REQ-PARAMS
+         (FLET ((AUGMENT-ENV (VAR)
+                  (SETQ ENV
+                          (AUGMENT-WALKER-ENVIRONMENT WALKER ENV :VARIABLE
+                                                      (LIST VAR) :DECLARE
+                                                      DECLS)))
+                (WALK-VAR (SPEC)
+                  (ETYPECASE SPEC
+                    (SYMBOL (WALK-ATOMIC-FORM WALKER SPEC ENV NIL))
+                    (CLASS-SPECIALIZER
+                     (LIST (WALK-ATOMIC-FORM WALKER (CAR SPEC) NIL)
+                           (WALK-ATOMIC-FORM WALKER (CADR SPEC) NIL)))
+                    ((COMPOUND-SPECIALIZER EQL)
+                     (LIST (WALK-ATOMIC-FORM WALKER (CAR SPEC) NIL)
+                           `(EQL ,(WALK-FORM WALKER (CADADR SPEC))))))))
+           (LOOP UNTIL (OR (NULL LAMBDA-LIST)
+                           (MEMBER (CAR LAMBDA-LIST)
+                                   LAMBDA-LIST-KEYWORDS)) AS VAR = (WALK-VAR
+                                                                    (POP
+                                                                     LAMBDA-LIST))
+                 DO (AUGMENT-ENV
+                     (IF (CONSP VAR)
+                         (CAR VAR)
+                         VAR))
+                 COLLECT VAR))))
+    (MULTIPLE-VALUE-BIND (OTHER-PARAMS ENV)
+        (WALK-LAMBDA-LIST WALKER LAMBDA-LIST DECLS ENV)
+      (VALUES (NCONC REQ-PARAMS OTHER-PARAMS) ENV))))
 (DEFUN WALK-LAMBDA-EXPRESSION
        (WALKER FORM ENV
         &REST ARGS
@@ -2153,13 +2185,25 @@
   (DEFINE-DEFUN-WALKER DEFMACRO)
   (DEFINE-DEFUN-WALKER DEFGENERIC))
 (DEFINE-SPECIAL-FORM-WALKER DEFMETHOD
-    ((WALKER INDEXING-WALKER) FORM ENV)
-  (WALK-FUNCTION-NAME WALKER (CADR FORM) ENV :OPERATOR (CAR FORM) :QUALIFIERS
-                      (LOOP FOR Q = (CDDR FORM) THEN (CDR Q)
-                            UNTIL (LISTP (CAR Q))
-                            COLLECT (WALK-ATOMIC-FORM WALKER (CAR Q) ENV))
-                      :DEF T)
-  (THROW FORM FORM))
+    ((WALKER INDEXING-WALKER) FORM ENV &AUX (OPERATOR (POP FORM))
+     (FUNCTION-NAME (POP FORM))
+     (QUALIFIERS
+      (LOOP UNTIL (LISTP (CAR FORM))
+            COLLECT (WALK-ATOMIC-FORM WALKER (POP FORM) ENV)))
+     (LAMBDA-LIST (POP FORM)))
+  (MULTIPLE-VALUE-BIND (BODY-FORMS DECLS DOC)
+      (PARSE-BODY FORM :WALKER WALKER :ENV ENV)
+    (MULTIPLE-VALUE-BIND (LAMBDA-LIST ENV)
+        (WALK-SPECIALIZED-LAMBDA-LIST WALKER LAMBDA-LIST DECLS ENV)
+      `(,OPERATOR
+        ,(WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV :OPERATOR OPERATOR
+                             :QUALIFIERS QUALIFIERS :DEF T)
+        ,@QUALIFIERS ,LAMBDA-LIST
+        ,@(IF DOC
+              `(,DOC))
+        ,@(IF DECLS
+              `((DECLARE ,@DECLS)))
+        ,@(WALK-LIST WALKER BODY-FORMS ENV)))))
 (DEFMETHOD WALK-FUNCTION-NAME :BEFORE
            ((WALKER INDEXING-WALKER) FUNCTION-NAME ENV &REST ARGS &KEY DEF)
            (LET ((INDEX (WALKER-INDEX WALKER)))

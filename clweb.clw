@@ -3763,6 +3763,49 @@ to avoid having to worry about reversing an improper |new-lambda-list|.
   (push var new-lambda-list))
 (setq lambda-list nil) ; walk no more
 
+@ While we're in the mood to deal with \L-lists, let's write a routine that
+can walk the `specialized' \L-lists used in |defmethod| forms. We can't use
+the same function as the one used to parse macro \L-lists, since the syntax
+would be ambiguous: there would be no way to distinguish between a
+specialized required parameter and a destructuring pattern. What we can do,
+however, is peel off just the required parameters from a specialized
+\L-list, and feed the rest to |walk-lambda-list|.
+
+This function returns the same kind of values as |walk-lambda-list|;
+viz., the walked specialized \L-list and an environment augmented with
+the parameters found therein.
+
+@l
+(deftype class-specializer () '(cons symbol (cons symbol null)))
+(deftype compound-specializer (&optional (operator 'eql))
+  `(cons symbol (cons (cons (eql ,operator) (cons symbol null)) null)))
+
+(defun walk-specialized-lambda-list (walker lambda-list decls env)
+  (let ((req-params @<Extract the required parameters from |lambda-list|@>))
+    (multiple-value-bind (other-params env) @+
+        (walk-lambda-list walker lambda-list decls env)
+      (values (nconc req-params other-params) env))))
+
+@ @<Extract the required...@>=
+(flet ((augment-env (var)
+         (setq env (augment-walker-environment walker env
+                                               :variable (list var)
+                                               :declare decls)))
+       (walk-var (spec)
+         (etypecase spec
+           (symbol (walk-atomic-form walker spec env nil))
+           (class-specializer
+            (list (walk-atomic-form walker (car spec) nil)
+                  (walk-atomic-form walker (cadr spec) nil)))
+           ((compound-specializer eql)
+            (list (walk-atomic-form walker (car spec) nil)
+                  `(eql ,(walk-form walker (cadadr spec))))))))
+  (loop until (or (null lambda-list)
+                  (member (car lambda-list) lambda-list-keywords))
+        as var = (walk-var (pop lambda-list))
+        do (augment-env (if (consp var) (car var) var))
+        collect var))
+
 @ Having built up the necessary machinery, walking a \L-expression is now
 straightforward. The slight generality of walking the car of the form using
 |walk-function-name| is because this function will also be used to walk the
@@ -4687,21 +4730,6 @@ everything we need with this walk.
   (define-defun-walker defmacro)
   (define-defun-walker defgeneric))
 
-@ Method definitions have a different syntax because of the method qualifiers.
-We parse just enough to walk the function name and qualifiers, then punt and
-let the macroexpansion take place.
-
-@l
-(define-special-form-walker defmethod ((walker indexing-walker) form env)
-  (walk-function-name walker (cadr form) env
-                      :operator (car form)
-                      :qualifiers (loop for q = (cddr form) then (cdr q)
-                                        until (listp (car q))
-                                        collect (walk-atomic-form @+
-                                                 walker (car q) env))
-                      :def t)
-  (throw form form))
-
 @t Besides testing the return value of a walk over a |defmacro| form, this
 test ensures that complex \L-lists are properly indexed and have their
 referring symbols replaced, too.
@@ -4730,9 +4758,34 @@ referring symbols replaced, too.
   t
   t)
 
-@ We can also do the indexing of function names in a |:before| method,
-since the referring symbols will still get swapped out by
-|walk-atomic-form|.
+@ We'd like index entries for methods to include the qualifiers, so we'll
+have to walk the |defmethod| forms manually.
+
+@l
+(define-special-form-walker defmethod
+    ((walker indexing-walker) form env &aux
+     (operator (pop form))
+     (function-name (pop form))
+     (qualifiers (loop until (listp (car form))
+                       collect (walk-atomic-form walker (pop form) env)))
+     (lambda-list (pop form)))
+  (multiple-value-bind (body-forms decls doc) @+
+      (parse-body form :walker walker :env env)
+    (multiple-value-bind (lambda-list env) @+
+        (walk-specialized-lambda-list walker lambda-list decls env)
+     `(,operator
+       ,(walk-function-name walker function-name env
+                            :operator operator
+                            :qualifiers qualifiers
+                            :def t)
+       ,@qualifiers
+       ,lambda-list
+       ,@(if doc `(,doc))
+       ,@(if decls `((declare ,@decls)))
+       ,@(walk-list walker body-forms env)))))
+
+@ We can index function names in a |:before| method of |walk-function-name|,
+since the referring symbols will get swapped out by |walk-atomic-form|.
 
 @l
 (defmethod walk-function-name :before
