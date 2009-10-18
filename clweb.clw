@@ -2668,10 +2668,7 @@ file.
                        output-file index-file
                        (verbose *weave-verbose*)
                        (print *weave-print*)
-                       (external-format :default) &aux
-                       (scn-file (merge-pathnames (make-pathname :type "SCN" @+
-                                                                 :case :common)
-                                                  index-file)))
+                       (external-format :default))
   (flet ((weave (object stream)
            (let ((*evaluating* t))
              (write object
@@ -2703,7 +2700,9 @@ file.
           (when verbose (format t "~&; writing the index to ~A~%" index-file))
           (with-output-file (idx index-file)
             (weave (index-sections sections) idx))
-          (with-output-file (scn scn-file)
+          (with-output-file (scn (merge-pathnames (make-pathname :type "SCN" @+
+                                                                 :case :common)
+                                                  index-file))
             (maptree (lambda (section)
                        (weave (make-instance 'section-name-index-entry @+
                                              :named-section section) @+
@@ -4803,7 +4802,7 @@ about |special| declarations, so we just throw everything else away.
   t)
 
 @ We'll walk |defclass| and |define-condition| forms to get the class names,
-then punt.
+but we don't care at all about the slot definitions or options.
 
 @l
 (macrolet ((define-defclass-walker (operator)
@@ -4817,8 +4816,7 @@ then punt.
                                      (list symbol @+
                                            (make-sub-heading (car form)))
                                      section
-                                     :def t)))
-                (throw form form))))
+                                     :def t))))))
   (define-defclass-walker defclass)
   (define-defclass-walker define-condition))
 

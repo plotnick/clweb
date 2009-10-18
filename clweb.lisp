@@ -1128,11 +1128,7 @@
 (DEFUN WEAVE-SECTIONS
        (SECTIONS
         &KEY OUTPUT-FILE INDEX-FILE (VERBOSE *WEAVE-VERBOSE*)
-        (PRINT *WEAVE-PRINT*) (EXTERNAL-FORMAT :DEFAULT)
-        &AUX
-        (SCN-FILE
-         (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "SCN" :CASE :COMMON)
-                          INDEX-FILE)))
+        (PRINT *WEAVE-PRINT*) (EXTERNAL-FORMAT :DEFAULT))
   (FLET ((WEAVE (OBJECT STREAM)
            (LET ((*EVALUATING* T))
              (WRITE OBJECT :STREAM STREAM :CASE :DOWNCASE :ESCAPE NIL :PRETTY T
@@ -1158,7 +1154,10 @@
          (WHEN VERBOSE (FORMAT T "~&; writing the index to ~A~%" INDEX-FILE))
          (WITH-OUTPUT-FILE (IDX INDEX-FILE)
           (WEAVE (INDEX-SECTIONS SECTIONS) IDX))
-         (WITH-OUTPUT-FILE (SCN SCN-FILE)
+         (WITH-OUTPUT-FILE
+          (SCN
+           (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "SCN" :CASE :COMMON)
+                            INDEX-FILE))
           (MAPTREE
            (LAMBDA (SECTION)
              (WEAVE
@@ -2211,8 +2210,7 @@
                     (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
                                      (LIST SYMBOL
                                            (MAKE-SUB-HEADING (CAR FORM)))
-                                     SECTION :DEF T)))
-                (THROW FORM FORM))))
+                                     SECTION :DEF T))))))
   (DEFINE-DEFCLASS-WALKER DEFCLASS)
   (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION))
 (DEFUN INDEX-SECTIONS (SECTIONS &KEY (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
