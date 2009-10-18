@@ -2669,12 +2669,15 @@ file.
                        (verbose *weave-verbose*)
                        (print *weave-print*)
                        (external-format :default))
-  (let ((*print-case* :downcase)
-        (*print-escape* nil)
-        (*print-pretty* t)
-        (*print-pprint-dispatch* *weave-pprint-dispatch*)
-        (*print-right-margin* 1000)
-        (*evaluating* t))
+  (flet ((weave (object stream)
+           (let ((*evaluating* t))
+             (write object
+                    :stream stream
+                    :case :downcase
+                    :escape nil
+                    :pretty t
+                    :pprint-dispatch *weave-pprint-dispatch*
+                    :right-margin 1000))))
     (with-open-file (out output-file
                      :direction :output
                      :external-format external-format
@@ -2687,31 +2690,27 @@ file.
                    (format t "~:[~;~:@_*~]~D~:_ "
                            (typep section 'starred-section)
                            (section-number section))
-                   (write section :stream out))
+                   (weave section out))
                  sections))
-          (map nil (lambda (section) (write section :stream out)) sections))
+          (map nil (lambda (section) (weave section out)) sections))
       (when index-file
         (when verbose (format t "~&; writing the index to ~A~%" index-file))
         (with-open-file (idx index-file
                          :direction :output
                          :external-format external-format
                          :if-exists :supersede)
-          (write (index-sections sections) :stream idx))
+          (weave (index-sections sections) idx))
         (with-open-file (scn (merge-pathnames (make-pathname :type "SCN" @+
                                                              :case :common)
                                               index-file)
                          :direction :output
                          :external-format external-format
                          :if-exists :supersede)
-          (flet ((print-section (section)
-                   (format scn "\\I\\X~{~D~^, ~}:~/clweb::print-TeX/\\X~%"
-                           (sort (mapcar #'section-number
-                                         (named-section-sections section))
-                                 #'<)
-                           (read-TeX-from-string (section-name section)))
-                   (print-xrefs scn #\U
-                                (remove section (used-by section)))))
-            (maptree #'print-section *named-sections*)))
+          (maptree (lambda (section)
+                     (weave (make-instance 'section-name-index-entry
+                                           :named-section section)
+                            scn))
+                   *named-sections*))
         (format out "~&\\inx~%\\fin~%\\con~%"))
       (format out "~&\\end~%")
       (truename out))))
@@ -2822,6 +2821,25 @@ and~\.{\\ETs} (for between the last of three or more).
   (write-string "\\X" stream))
 
 (set-weave-dispatch 'named-section #'print-section-name)
+
+@ Part of the index is a list of all the section names. These are printed
+in a way similar to the one above, but using a slightly different format.
+The weaver wraps the |named-section| instances in a |section-name-index|
+instance so that we can dispatch on that type.
+
+@l
+(defclass section-name-index-entry ()
+  ((named-section :accessor named-section :initarg :named-section)))
+
+(set-weave-dispatch 'section-name-index-entry
+  (lambda (stream section-name &aux (section (named-section section-name)))
+    (format stream "\\I\\X~{~D~^, ~}:~/clweb::print-TeX/\\X~%"
+            (sort (mapcar #'section-number @+
+                          (named-section-sections section)) @+
+                  #'<)
+            (read-TeX-from-string (section-name section)))
+                 (print-xrefs stream #\U
+                              (remove section (used-by section)))))
 
 @ Because we're outputting \TeX, we need to carefully escape characters
 that \TeX\ treats as special. Unfortunately, because \TeX's syntax is so
@@ -4265,11 +4283,8 @@ otherwise we'll call them `primary'.
 
 @l
 (defmethod heading-name concatenate-string ((heading method-heading))
-  (with-slots (qualifiers) heading
-    (let ((*print-case* :downcase)
-          (*print-escape* nil)
-          (*print-pretty* nil))
-      (format nil "~:[primary~;~:*~{~A~^ ~}~] " qualifiers))))
+  (format nil "~:[primary~;~:*~{~A~^ ~}~] " @+
+          (method-heading-qualifiers heading)))
 
 @t@l
 (deftest method-heading-name
@@ -4277,7 +4292,7 @@ otherwise we'll call them `primary'.
           (heading-name (make-instance 'method-heading
                                        :qualifiers '(:before :during :after))))
   "primary method"
-  "before during after method")
+  "BEFORE DURING AFTER method")
 
 @ The sub-heading classes above are usually constructed by the following
 function during indexing. The keyword arguments are passed down from
@@ -4822,9 +4837,8 @@ of all of the interesting symbols so encountered.
 @l
 (set-weave-dispatch 'index
   (lambda (stream index)
-    (flet ((print-entry (entry)
-             (write entry :stream stream)))
-      (maptree #'print-entry (index-entries index)))))
+    (maptree (lambda (entry) (write entry :stream stream))
+             (index-entries index))))
 
 (set-weave-dispatch 'index-entry
   (lambda (stream entry)

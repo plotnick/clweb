@@ -592,7 +592,7 @@
                  (HEADING-NAME
                   (MAKE-INSTANCE 'METHOD-HEADING :QUALIFIERS
                                  '(:BEFORE :DURING :AFTER))))
-         "primary method" "before during after method")
+         "primary method" "BEFORE DURING AFTER method")
 (DEFTEST MAKE-SUB-HEADING
          (NOTANY #'NULL
                  (LIST (TYPEP (MAKE-SUB-HEADING NIL) 'FUNCTION-HEADING)
