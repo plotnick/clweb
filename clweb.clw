@@ -2668,7 +2668,10 @@ file.
                        output-file index-file
                        (verbose *weave-verbose*)
                        (print *weave-print*)
-                       (external-format :default))
+                       (external-format :default) &aux
+                       (scn-file (merge-pathnames (make-pathname :type "SCN" @+
+                                                                 :case :common)
+                                                  index-file)))
   (flet ((weave (object stream)
            (let ((*evaluating* t))
              (write object
@@ -2678,42 +2681,37 @@ file.
                     :pretty t
                     :pprint-dispatch *weave-pprint-dispatch*
                     :right-margin 1000))))
-    (with-open-file (out output-file
-                     :direction :output
-                     :external-format external-format
-                     :if-exists :supersede)
-      (format out "\\input clwebmac~%")
-      (if print
-          (pprint-logical-block (nil nil :per-line-prefix "; ")
-            (map nil
-                 (lambda (section)
-                   (format t "~:[~;~:@_*~]~D~:_ "
-                           (typep section 'starred-section)
-                           (section-number section))
-                   (weave section out))
-                 sections))
-          (map nil (lambda (section) (weave section out)) sections))
-      (when index-file
-        (when verbose (format t "~&; writing the index to ~A~%" index-file))
-        (with-open-file (idx index-file
-                         :direction :output
-                         :external-format external-format
-                         :if-exists :supersede)
-          (weave (index-sections sections) idx))
-        (with-open-file (scn (merge-pathnames (make-pathname :type "SCN" @+
-                                                             :case :common)
-                                              index-file)
-                         :direction :output
-                         :external-format external-format
-                         :if-exists :supersede)
-          (maptree (lambda (section)
-                     (weave (make-instance 'section-name-index-entry
-                                           :named-section section)
-                            scn))
-                   *named-sections*))
-        (format out "~&\\inx~%\\fin~%\\con~%"))
-      (format out "~&\\end~%")
-      (truename out))))
+    (macrolet ((with-output-file ((stream filespec) &body body)
+                 `(with-open-file (,stream ,filespec
+                                   :direction :output
+                                   :external-format external-format
+                                   :if-exists :supersede)
+                    ,@body)))
+      (with-output-file (out output-file)
+        (format out "\\input clwebmac~%")
+        (if print
+            (pprint-logical-block (nil nil :per-line-prefix "; ")
+              (map nil
+                   (lambda (section)
+                     (format t "~:[~;~:@_*~]~D~:_ "
+                             (typep section 'starred-section)
+                             (section-number section))
+                     (weave section out))
+                   sections))
+            (map nil (lambda (section) (weave section out)) sections))
+        (when index-file
+          (when verbose (format t "~&; writing the index to ~A~%" index-file))
+          (with-output-file (idx index-file)
+            (weave (index-sections sections) idx))
+          (with-output-file (scn scn-file)
+            (maptree (lambda (section)
+                       (weave (make-instance 'section-name-index-entry @+
+                                             :named-section section) @+
+                                             scn))
+                     *named-sections*))
+          (format out "~&\\inx~%\\fin~%\\con~%"))
+        (format out "~&\\end~%")
+        (truename out)))))
 
 @ The rest of the weaver consists entirely of pretty-printing routines that
 are installed in |*weave-pprint-dispatch*|.
@@ -2814,18 +2812,25 @@ and~\.{\\ETs} (for between the last of three or more).
     (format stream "\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}.~%"
             kind (sort (mapcar #'section-number xrefs) #'<))))
 
-@ @l
-(defun print-section-name (stream named-section)
-  (format stream "\\X~D:" (section-number named-section))
-  (print-TeX stream (read-TeX-from-string (section-name named-section)))
-  (write-string "\\X" stream))
+@ Aside from printing the section name in the body of the woven output,
+this routine also knows how to print entries for the section name index,
+which uses a similar, but slightly different format.
+
+@l
+(defun print-section-name (stream section &key (indexing nil))
+  (format stream "~:[~;\\I~]\\X~{~D~^, ~}:~/clweb::print-TeX/\\X"
+          indexing
+          (if indexing
+              (sort (mapcar #'section-number @+
+                            (named-section-sections section)) @+
+                            #'<)
+              (list (section-number section)))
+          (read-TeX-from-string (section-name section))))
 
 (set-weave-dispatch 'named-section #'print-section-name)
 
-@ Part of the index is a list of all the section names. These are printed
-in a way similar to the one above, but using a slightly different format.
-The weaver wraps the |named-section| instances in a |section-name-index|
-instance so that we can dispatch on that type.
+@ When printing the section name index, the weaver wraps each named section
+in a |section-name-index| instance so that we can dispatch on that type.
 
 @l
 (defclass section-name-index-entry ()
@@ -2833,13 +2838,9 @@ instance so that we can dispatch on that type.
 
 (set-weave-dispatch 'section-name-index-entry
   (lambda (stream section-name &aux (section (named-section section-name)))
-    (format stream "\\I\\X~{~D~^, ~}:~/clweb::print-TeX/\\X~%"
-            (sort (mapcar #'section-number @+
-                          (named-section-sections section)) @+
-                  #'<)
-            (read-TeX-from-string (section-name section)))
-                 (print-xrefs stream #\U
-                              (remove section (used-by section)))))
+    (print-section-name stream section :indexing t)
+    (terpri stream)
+    (print-xrefs stream #\U (remove section (used-by section)))))
 
 @ Because we're outputting \TeX, we need to carefully escape characters
 that \TeX\ treats as special. Unfortunately, because \TeX's syntax is so

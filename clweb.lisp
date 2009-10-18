@@ -1129,47 +1129,45 @@
 (DEFUN WEAVE-SECTIONS
        (SECTIONS
         &KEY OUTPUT-FILE INDEX-FILE (VERBOSE *WEAVE-VERBOSE*)
-        (PRINT *WEAVE-PRINT*) (EXTERNAL-FORMAT :DEFAULT))
+        (PRINT *WEAVE-PRINT*) (EXTERNAL-FORMAT :DEFAULT)
+        &AUX
+        (SCN-FILE
+         (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "SCN" :CASE :COMMON)
+                          INDEX-FILE)))
   (FLET ((WEAVE (OBJECT STREAM)
            (LET ((*EVALUATING* T))
              (WRITE OBJECT :STREAM STREAM :CASE :DOWNCASE :ESCAPE NIL :PRETTY T
                     :PPRINT-DISPATCH *WEAVE-PPRINT-DISPATCH* :RIGHT-MARGIN
                     1000))))
-    (WITH-OPEN-FILE
-        (OUT OUTPUT-FILE :DIRECTION :OUTPUT :EXTERNAL-FORMAT EXTERNAL-FORMAT
-         :IF-EXISTS :SUPERSEDE)
-      (FORMAT OUT "\\input clwebmac~%")
-      (IF PRINT
-          (PPRINT-LOGICAL-BLOCK (NIL NIL :PER-LINE-PREFIX "; ")
-            (MAP NIL
-                 (LAMBDA (SECTION)
-                   (FORMAT T "~:[~;~:@_*~]~D~:_ "
-                           (TYPEP SECTION 'STARRED-SECTION)
-                           (SECTION-NUMBER SECTION))
-                   (WEAVE SECTION OUT))
-                 SECTIONS))
-          (MAP NIL (LAMBDA (SECTION) (WEAVE SECTION OUT)) SECTIONS))
-      (WHEN INDEX-FILE
-        (WHEN VERBOSE (FORMAT T "~&; writing the index to ~A~%" INDEX-FILE))
-        (WITH-OPEN-FILE
-            (IDX INDEX-FILE :DIRECTION :OUTPUT :EXTERNAL-FORMAT EXTERNAL-FORMAT
-             :IF-EXISTS :SUPERSEDE)
+    (MACROLET ((WITH-OUTPUT-FILE ((STREAM FILESPEC) &BODY BODY)
+                 `(WITH-OPEN-FILE
+                      (,STREAM ,FILESPEC :DIRECTION :OUTPUT :EXTERNAL-FORMAT
+                       EXTERNAL-FORMAT :IF-EXISTS :SUPERSEDE)
+                    ,@BODY)))
+      (WITH-OUTPUT-FILE (OUT OUTPUT-FILE) (FORMAT OUT "\\input clwebmac~%")
+       (IF PRINT
+           (PPRINT-LOGICAL-BLOCK (NIL NIL :PER-LINE-PREFIX "; ")
+             (MAP NIL
+                  (LAMBDA (SECTION)
+                    (FORMAT T "~:[~;~:@_*~]~D~:_ "
+                            (TYPEP SECTION 'STARRED-SECTION)
+                            (SECTION-NUMBER SECTION))
+                    (WEAVE SECTION OUT))
+                  SECTIONS))
+           (MAP NIL (LAMBDA (SECTION) (WEAVE SECTION OUT)) SECTIONS))
+       (WHEN INDEX-FILE
+         (WHEN VERBOSE (FORMAT T "~&; writing the index to ~A~%" INDEX-FILE))
+         (WITH-OUTPUT-FILE (IDX INDEX-FILE)
           (WEAVE (INDEX-SECTIONS SECTIONS) IDX))
-        (WITH-OPEN-FILE
-            (SCN
-             (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "SCN" :CASE :COMMON)
-                              INDEX-FILE)
-             :DIRECTION :OUTPUT :EXTERNAL-FORMAT EXTERNAL-FORMAT :IF-EXISTS
-             :SUPERSEDE)
+         (WITH-OUTPUT-FILE (SCN SCN-FILE)
           (MAPTREE
            (LAMBDA (SECTION)
              (WEAVE
               (MAKE-INSTANCE 'SECTION-NAME-INDEX-ENTRY :NAMED-SECTION SECTION)
               SCN))
            *NAMED-SECTIONS*))
-        (FORMAT OUT "~&\\inx~%\\fin~%\\con~%"))
-      (FORMAT OUT "~&\\end~%")
-      (TRUENAME OUT))))
+         (FORMAT OUT "~&\\inx~%\\fin~%\\con~%"))
+       (FORMAT OUT "~&\\end~%") (TRUENAME OUT)))))
 (DEFUN SET-WEAVE-DISPATCH (TYPE-SPECIFIER FUNCTION &OPTIONAL (PRIORITY 0))
   (SET-PPRINT-DISPATCH TYPE-SPECIFIER FUNCTION PRIORITY
                        *WEAVE-PPRINT-DISPATCH*))
@@ -1231,10 +1229,13 @@
     (FORMAT STREAM
             "\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}.~%"
             KIND (SORT (MAPCAR #'SECTION-NUMBER XREFS) #'<))))
-(DEFUN PRINT-SECTION-NAME (STREAM NAMED-SECTION)
-  (FORMAT STREAM "\\X~D:" (SECTION-NUMBER NAMED-SECTION))
-  (PRINT-TEX STREAM (READ-TEX-FROM-STRING (SECTION-NAME NAMED-SECTION)))
-  (WRITE-STRING "\\X" STREAM))
+(DEFUN PRINT-SECTION-NAME (STREAM SECTION &KEY (INDEXING NIL))
+  (FORMAT STREAM "~:[~;\\I~]\\X~{~D~^, ~}:~/clweb::print-TeX/\\X" INDEXING
+          (IF INDEXING
+              (SORT (MAPCAR #'SECTION-NUMBER (NAMED-SECTION-SECTIONS SECTION))
+                    #'<)
+              (LIST (SECTION-NUMBER SECTION)))
+          (READ-TEX-FROM-STRING (SECTION-NAME SECTION))))
 (SET-WEAVE-DISPATCH 'NAMED-SECTION #'PRINT-SECTION-NAME)
 (DEFCLASS SECTION-NAME-INDEX-ENTRY NIL
           ((NAMED-SECTION :ACCESSOR NAMED-SECTION :INITARG :NAMED-SECTION)))
@@ -1242,13 +1243,8 @@
                     (LAMBDA
                         (STREAM SECTION-NAME
                          &AUX (SECTION (NAMED-SECTION SECTION-NAME)))
-                      (FORMAT STREAM
-                              "\\I\\X~{~D~^, ~}:~/clweb::print-TeX/\\X~%"
-                              (SORT
-                               (MAPCAR #'SECTION-NUMBER
-                                       (NAMED-SECTION-SECTIONS SECTION))
-                               #'<)
-                              (READ-TEX-FROM-STRING (SECTION-NAME SECTION)))
+                      (PRINT-SECTION-NAME STREAM SECTION :INDEXING T)
+                      (TERPRI STREAM)
                       (PRINT-XREFS STREAM #\U
                                    (REMOVE SECTION (USED-BY SECTION)))))
 (DEFPARAMETER *TEX-ESCAPE-ALIST*
