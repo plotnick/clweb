@@ -3914,7 +3914,7 @@ the same purpose.
 
 @ |let|, |flet|, |macrolet|, and |symbol-macrolet| are all parallel binding
 forms: they walk their bindings in an unaugmented environment, then execute
-their body forms in an environment that contains all of new the bindings.
+their body forms in an environment that contains all of the new bindings.
 
 @l
 (define-special-form-walker let
