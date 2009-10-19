@@ -2327,7 +2327,9 @@ if \X$n$:foo\X$\mathrel\E$|(x y)|, then
 \((tangle-1 \'(a \X$n$:foo\X\ b))\)$\;\to\;$|(a x y b)|,~|t|.
 
 Tangling also replaces bound markers with their associated values, and
-removes unbound markers.
+removes unbound markers. If the keyword argument |expand-named-sections|
+is false, then this is in fact all that |tangle-1| does; we'll use this
+capability later in the indexing code.
 
 @l
 (defun tangle-1 (form &key (expand-named-sections t))
