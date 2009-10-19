@@ -1468,10 +1468,8 @@
         (APPLY FN ARGS)
       (DECLARE (IGNORE LOCATIVE))
       (VALUES TYPE LOCAL DECLARATIONS))))
-#+:ALLEGRO (setf (symbol-function 'variable-information)
-      (reorder-env-information #'sys:variable-information)
-      (symbol-function 'function-information)
-      (reorder-env-information #'sys:function-information))
+#+:ALLEGRO (setf (fdefinition 'variable-information) (reorder-env-information #'sys:variable-information))
+#+:ALLEGRO (setf (fdefinition 'function-information) (reorder-env-information #'sys:function-information))
 (DEFMETHOD WALK-FORM
            ((WALKER WALKER) FORM &OPTIONAL ENV &AUX
             (ENV (ENSURE-PORTABLE-WALKING-ENVIRONMENT ENV)) (EXPANDED T))
@@ -1786,12 +1784,6 @@
              (LIST P))))
   (LIST (WALK-ATOMIC-FORM WALKER (CAR BINDING) ENV NIL)
         (AND (CDR BINDING) (WALK-FORM WALKER (CADR BINDING) ENV))))
-(DEFUN MAKE-MACRO-DEFINITIONS (WALKER DEFS ENV)
-  (MAPCAR
-   (LAMBDA (DEF &AUX (NAME (WALK-ATOMIC-FORM WALKER (CAR DEF) ENV NIL)))
-     (LIST NAME
-           (ENCLOSE (PARSE-MACRO NAME (CADR DEF) (CDDR DEF) ENV) ENV WALKER)))
-   DEFS))
 (DEFINE-SPECIAL-FORM-WALKER LET
     ((WALKER WALKER) FORM ENV &AUX
      (BINDINGS
@@ -1823,6 +1815,12 @@
                    (AUGMENT-WALKER-ENVIRONMENT WALKER ENV :FUNCTION
                                                (MAPCAR #'CAR BINDINGS) :DECLARE
                                                DECLS)))))
+(DEFUN MAKE-MACRO-DEFINITIONS (WALKER DEFS ENV)
+  (MAPCAR
+   (LAMBDA (DEF &AUX (NAME (WALK-ATOMIC-FORM WALKER (CAR DEF) ENV NIL)))
+     (LIST NAME
+           (ENCLOSE (PARSE-MACRO NAME (CADR DEF) (CDDR DEF) ENV) ENV WALKER)))
+   DEFS))
 (DEFINE-SPECIAL-FORM-WALKER MACROLET
     ((WALKER WALKER) FORM ENV &AUX
      (BINDINGS
