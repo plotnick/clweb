@@ -4370,14 +4370,15 @@ to decide what kind of heading to create.
   t)
 
 @ Now let's turn our attention to the other half of index entries.
-A locator is either a pointer to a section (the usual case) or a
-cross-reference to another index entry. We'll represent locators as
-instances of a |locator| class, and use a single generic function,
-|location|, to dereference them.
+In this program, a locator is either a pointer to a section (the usual
+case) or a cross-reference to another index entry. We'll represent
+locators as instances of a |locator| class, and use a single generic
+function,|location|, to dereference them.
 
 Section locators have an additional slot for a definition flag, which
 when true indicates that the object referred to by the associated heading
 is defined in the section represented by that locator, not just used.
+
 Such locators will be given a bit of typographic emphasis by the weaver
 when it prints the containing entry.
 
