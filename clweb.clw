@@ -2848,28 +2848,32 @@ how, and when.
 
 The following routine is the basis for most of the escaping. It writes
 |string| to the output stream designated by |stream|, escaping the
-characters given in the a-list |escape-chars|. The entries in this a-list
-should be of the form `(\metasyn{characters}~.~\metasyn{replacement})',
+characters given in the a-list |*print-escape-list*|. The entries in this
+a-list should be of the form `(\metasyn{characters}~.~\metasyn{replacement})',
 where \metasyn{replacement} describes how to escape each of the characters
 in \metasyn{characters}. Suppose $c$ is a character in |string| that
 appears in one of the \metasyn{characters} strings. If the corresponding
-\metasyn{replacement} is a single character, then |write-string-escaped|
-will output it prior to every occurrence of $c$. If \metasyn{replacement}
-is a string, it will be output {\it instead of\/} every occurrence of $c$
-in the input. Otherwise, $c$ will be output without escaping.
+\metasyn{replacement} is a single character, then |print-escaped| will
+output it prior to every occurrence of $c$. If \metasyn{replacement} is a
+string, it will be output {\it instead of\/} every occurrence of $c$ in
+the input. Otherwise, $c$ will be output without escaping.
+
+The default value for |*print-escape-list*| defined below is suitable for
+escaping most \TeX\ metacharacters; callers should bind it to a new
+value if they require specialized escaping.
 
 @l
-(defparameter *tex-escape-alist*
+(defparameter *print-escape-list*
   '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 
-(defun write-string-escaped (string &optional stream @+
-                             (escape-chars *tex-escape-alist*) &aux
-                             (stream (case stream
-                                       ((t) *terminal-io*)
-                                       ((nil) *standard-output*)
-                                       (otherwise stream))))
+(defun print-escaped (stream string &rest args &aux
+                      (stream (case stream
+                                ((t) *terminal-io*)
+                                ((nil) *standard-output*)
+                                (otherwise stream))))
+  (declare (ignore args))
   (loop for char across string
-        as escape = (cdr (assoc char escape-chars :test #'find))
+        as escape = (cdr (assoc char *print-escape-list* :test #'find))
         if escape
           do (etypecase escape
                (character (write-char escape stream)
@@ -2879,41 +2883,37 @@ in the input. Otherwise, $c$ will be output without escaping.
           do (write-char char stream)))
 
 @t@l
-(deftest write-string-escaped
+(deftest print-escaped
   (with-output-to-string (s)
-    (write-string-escaped "foo#{bar}*baz" s))
+    (print-escaped s "foo#{bar}*baz"))
   "foo\\#$\\{$bar$\\}$*baz")
 
 @ We need to be careful about embedded newlines in string literals.
 
 @l
 (defun print-string (stream string)
-  (loop for last = 0 then (1+ newline)
+  (loop with *print-escape-list* = `(("{*}" . #\\)
+                                     ("\\" . "\\\\\\\\")
+                                     ("\"" . "\\\\\"")
+                                     ,@*print-escape-list*)
+        for last = 0 then (1+ newline)
         for newline = (position #\Newline string :start last)
         as line = (subseq string last newline)
-        do (format stream "\\.{~:[~;\"~]" (zerop last))
-           (write-string-escaped line stream
-                                 (list* '("{*}" . #\\)
-                                        '("\\" . "\\\\\\\\")
-                                        '("\"" . "\\\\\"")
-                                        *tex-escape-alist*))
-           (format stream "~:[~;\"~]}" (null newline))
+        do (format stream "\\.{~:[~;\"~]~/clweb::print-escaped/~:[~;\"~]}"
+                   (zerop last) line (null newline))
         when newline do (format stream "\\cr~:@_") else do (loop-finish)))
 
 (set-weave-dispatch 'string #'print-string)
 
 @ @l
 (defun print-char (stream char)
-  (let ((graphicp (and (graphic-char-p char)
-                       (standard-char-p char)))
-        (name (char-name char)))
-    (write-string "\\#\\CH{" stream)
-    (write-string-escaped (if (and name (not graphicp))
-                              name
-                              (make-string 1 :initial-element char))
-                          stream
-                          (list* '("{}" . #\\) *tex-escape-alist*))
-    (write-string "}" stream)
+  (let ((graphicp (and (graphic-char-p char) (standard-char-p char)))
+        (name (char-name char))
+        (*print-escape-list* `(("{}" . #\\) ,@*print-escape-list*)))
+    (format stream "\\#\\CH{~/clweb::print-escaped/}"
+            (if (and name (not graphicp))
+                name
+                (make-string 1 :initial-element char)))
     char))
 
 (set-weave-dispatch 'character #'print-char)
@@ -2931,8 +2931,7 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
                         (write-string "\\K{" stream))
                        ((keywordp symbol)
                         (write-string "\\:{" stream)))))
-    (write-string-escaped (write-to-string symbol :escape nil :pretty nil) @+
-                          stream)
+    (print-escaped stream (write-to-string symbol :escape nil :pretty nil))
     (when group-p (write-string "}" stream))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
@@ -3187,12 +3186,10 @@ which see.
 @ @l
 (set-weave-dispatch 'read-time-conditional-marker
   (lambda (stream obj)
-    (format stream "\\#~:[--~;+~]\\RC{~S"
+    (format stream "\\#~:[--~;+~]\\RC{~S ~/clweb::print-escaped/}"
             (read-time-conditional-plusp obj)
-            (read-time-conditional-test obj))
-    (write-char #\Space stream)
-    (write-string-escaped (read-time-conditional-form obj) stream)
-    (write-char #\} stream)))
+            (read-time-conditional-test obj)
+            (read-time-conditional-form obj))))
 
 @*The walker. Our last major task is to produce an index of every
 interesting symbol that occurs in a web (we'll define what makes a

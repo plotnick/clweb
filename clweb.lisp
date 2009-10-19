@@ -1248,57 +1248,48 @@
                       (TERPRI STREAM)
                       (PRINT-XREFS STREAM #\U
                                    (REMOVE SECTION (USED-BY SECTION)))))
-(DEFPARAMETER *TEX-ESCAPE-ALIST*
+(DEFPARAMETER *PRINT-ESCAPE-LIST*
   '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
-(DEFUN WRITE-STRING-ESCAPED
-       (STRING
-        &OPTIONAL STREAM (ESCAPE-CHARS *TEX-ESCAPE-ALIST*)
+(DEFUN PRINT-ESCAPED
+       (STREAM STRING
+        &REST ARGS
         &AUX
         (STREAM
          (CASE STREAM
            ((T) *TERMINAL-IO*)
            ((NIL) *STANDARD-OUTPUT*)
            (OTHERWISE STREAM))))
+  (DECLARE (IGNORE ARGS))
   (LOOP FOR CHAR ACROSS STRING AS ESCAPE = (CDR
-                                            (ASSOC CHAR ESCAPE-CHARS :TEST
-                                                   #'FIND))
+                                            (ASSOC CHAR *PRINT-ESCAPE-LIST*
+                                                   :TEST #'FIND))
         IF ESCAPE
         DO (ETYPECASE ESCAPE
              (CHARACTER (WRITE-CHAR ESCAPE STREAM) (WRITE-CHAR CHAR STREAM))
              (STRING (WRITE-STRING ESCAPE STREAM))) ELSE
         DO (WRITE-CHAR CHAR STREAM)))
 (DEFUN PRINT-STRING (STREAM STRING)
-  (LOOP FOR LAST = 0 THEN (1+ NEWLINE)
+  (LOOP WITH *PRINT-ESCAPE-LIST* = `(("{*}" . #\\) ("\\" . "\\\\\\\\")
+                                     ("\"" . "\\\\\"") ,@*PRINT-ESCAPE-LIST*)
+        FOR LAST = 0 THEN (1+ NEWLINE)
         FOR NEWLINE = (POSITION #\Newline STRING :START LAST) AS LINE = (SUBSEQ
                                                                          STRING
                                                                          LAST
                                                                          NEWLINE)
-        DO (FORMAT STREAM "\\.{~:[~;\"~]" (ZEROP LAST)) (WRITE-STRING-ESCAPED
-                                                         LINE STREAM
-                                                         (LIST* '("{*}" . #\\)
-                                                                '("\\"
-                                                                  . "\\\\\\\\")
-                                                                '("\""
-                                                                  . "\\\\\"")
-                                                                *TEX-ESCAPE-ALIST*)) (FORMAT
-                                                                                      STREAM
-                                                                                      "~:[~;\"~]}"
-                                                                                      (NULL
-                                                                                       NEWLINE))
+        DO (FORMAT STREAM "\\.{~:[~;\"~]~/clweb::print-escaped/~:[~;\"~]}"
+                   (ZEROP LAST) LINE (NULL NEWLINE))
         WHEN NEWLINE
         DO (FORMAT STREAM "\\cr~:@_") ELSE
         DO (LOOP-FINISH)))
 (SET-WEAVE-DISPATCH 'STRING #'PRINT-STRING)
 (DEFUN PRINT-CHAR (STREAM CHAR)
   (LET ((GRAPHICP (AND (GRAPHIC-CHAR-P CHAR) (STANDARD-CHAR-P CHAR)))
-        (NAME (CHAR-NAME CHAR)))
-    (WRITE-STRING "\\#\\CH{" STREAM)
-    (WRITE-STRING-ESCAPED
-     (IF (AND NAME (NOT GRAPHICP))
-         NAME
-         (MAKE-STRING 1 :INITIAL-ELEMENT CHAR))
-     STREAM (LIST* '("{}" . #\\) *TEX-ESCAPE-ALIST*))
-    (WRITE-STRING "}" STREAM)
+        (NAME (CHAR-NAME CHAR))
+        (*PRINT-ESCAPE-LIST* `(("{}" . #\\) ,@*PRINT-ESCAPE-LIST*)))
+    (FORMAT STREAM "\\#\\CH{~/clweb::print-escaped/}"
+            (IF (AND NAME (NOT GRAPHICP))
+                NAME
+                (MAKE-STRING 1 :INITIAL-ELEMENT CHAR)))
     CHAR))
 (SET-WEAVE-DISPATCH 'CHARACTER #'PRINT-CHAR)
 (DEFUN PRINT-SYMBOL (STREAM SYMBOL)
@@ -1306,8 +1297,7 @@
          (COND
           ((MEMBER SYMBOL LAMBDA-LIST-KEYWORDS) (WRITE-STRING "\\K{" STREAM))
           ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM)))))
-    (WRITE-STRING-ESCAPED (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL)
-                          STREAM)
+    (PRINT-ESCAPED STREAM (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL))
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
 (SET-WEAVE-DISPATCH '(EQL LAMBDA)
@@ -1440,13 +1430,11 @@
                       (FORMAT STREAM "\\#S~W" (STRUCTURE-MARKER-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'READ-TIME-CONDITIONAL-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM "\\#~:[--~;+~]\\RC{~S"
+                      (FORMAT STREAM
+                              "\\#~:[--~;+~]\\RC{~S ~/clweb::print-escaped/}"
                               (READ-TIME-CONDITIONAL-PLUSP OBJ)
-                              (READ-TIME-CONDITIONAL-TEST OBJ))
-                      (WRITE-CHAR #\  STREAM)
-                      (WRITE-STRING-ESCAPED (READ-TIME-CONDITIONAL-FORM OBJ)
-                                            STREAM)
-                      (WRITE-CHAR #\} STREAM)))
+                              (READ-TIME-CONDITIONAL-TEST OBJ)
+                              (READ-TIME-CONDITIONAL-FORM OBJ))))
 (DEFCLASS WALKER NIL NIL)
 (DEFGENERIC WALK-FORM
     (WALKER FORM &OPTIONAL ENV))
