@@ -1354,13 +1354,14 @@ newline reader to pick up.
 the whole thing. Our reader macro functions for |#\`| and |#\,| do the
 absolute minimum amount of processing necessary to be able to reconstruct
 the forms that were read. When the tangler asks for the |marker-value| of a
-backquote marker, we reconstruct the source form using the printer, and
-read it back in using the standard readtable. It's a sleazy trick, but it
-works. (It's also the reason we need |print-object| methods for all these
-markers.)
+backquote marker, we reconstruct the source form using the printer, then
+read it back in. The read is done using inner-Lisp mode so that we can
+pick up named section references, and we'll bind the global variable
+|*re-reading*| to true to avoid infinite regress.
 
 Of course, this trick assumes read-print equivalence, but that's not
-unreasonable, since without it the file tangler won't work anyway.
+unreasonable, since without it the file tangler won't work anyway. It's
+also the reason we need |print-object| methods for all the markers.
 
 @l
 (defclass backquote-marker (marker)
@@ -1371,7 +1372,8 @@ unreasonable, since without it the file tangler won't work anyway.
   (let ((*print-pretty* nil)
         (*print-readably* t)
         (*print-marker* t)
-        (*readtable* (readtable-for-mode nil)))
+        (*readtable* (readtable-for-mode :inner-lisp))
+        (*re-reading* t))
     (values (read-from-string (prin1-to-string marker)))))
 
 (defmethod print-object ((obj backquote-marker) stream)
@@ -1380,8 +1382,9 @@ unreasonable, since without it the file tangler won't work anyway.
       (print-unreadable-object (obj stream :type t :identity t))))
 
 (defun backquote-reader (stream char)
-  (declare (ignore char))
-  (make-instance 'backquote-marker :form (read stream t nil t)))
+  (if *re-reading*
+      (funcall (get-macro-character char (readtable-for-mode nil)) stream char)
+      (make-instance 'backquote-marker :form (read stream t nil t))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\` #'backquote-reader nil (readtable-for-mode mode)))
@@ -1392,6 +1395,17 @@ unreasonable, since without it the file tangler won't work anyway.
     (and (typep marker 'backquote-marker)
          (marker-value marker)))
   #.(read-from-string "`(:a :b :c)"))
+
+@ @<Global variables@>=
+(defvar *re-reading* nil)
+
+@ In order to support named section references in backquoted forms, we
+need to be able to print them readably. The simple and obvious method
+works fine, since `readably' here means readable in inner-Lisp mode.
+
+@l
+(defmethod print-object ((obj named-section) stream)
+  (format stream "@<~A@>" (section-name obj)))
 
 @ {\it Comma\/} is really just part of the backquote-syntax, and so we're
 after the same goal as above: reconstructing just enough of the original
@@ -1417,12 +1431,13 @@ value.
       (print-unreadable-object (obj stream :type t :identity t))))
 
 (defun comma-reader (stream char)
-  (declare (ignore char))
-  (case (peek-char nil stream t nil t)
-    ((#\@ #\.) (make-instance 'comma-marker
-                              :modifier (read-char stream)
-                              :form (read stream t nil t)))
-    (t (make-instance 'comma-marker :form (read stream t nil t)))))
+  (if *re-reading*
+      (funcall (get-macro-character char (readtable-for-mode nil)) stream char)
+      (case (peek-char nil stream t nil t)
+        ((#\@ #\.) (make-instance 'comma-marker
+                                  :modifier (read-char stream)
+                                  :form (read stream t nil t)))
+        (t (make-instance 'comma-marker :form (read stream t nil t))))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-macro-character #\, #'comma-reader nil (readtable-for-mode mode)))
@@ -4778,14 +4793,14 @@ index seperately. So we'll walk those, too.
 @l
 (define-special-form-walker defgeneric ((walker indexing-walker) form env)
   (destructuring-bind (operator function-name lambda-list &rest options) form
-    (list* operator
-           (walk-function-name walker function-name env @+
-                               :operator 'defgeneric :def t)
-           (walk-lambda-list walker lambda-list nil env)
-           (loop for form in options
-                 collect (case (car form)
-                           (:method @<Walk the method description in |form|@>)
-                           (t (walk-list walker form env)))))))
+    `(,operator
+      ,(walk-function-name walker function-name env @+
+                           :operator 'defgeneric :def t)
+      ,(walk-lambda-list walker lambda-list nil env)
+      ,@(loop for form in options
+              collect (case (car form)
+                        (:method @<Walk the method description in |form|@>)
+                        (t (walk-list walker form env)))))))
 
 @ Method descriptions are very much like |defmethod| forms with an implicit
 function name; this routine walks both. The function-name (if non-null) and

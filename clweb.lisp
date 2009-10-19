@@ -32,6 +32,7 @@
 (DEFVAR *CHARPOS-STREAMS* (MAKE-HASH-TABLE :TEST #'EQ))
 (DEFVAR *PRINT-MARKER* T)
 (DEFVAR *EVALUATING* NIL)
+(DEFVAR *RE-READING* NIL)
 (DEFVAR *WEAVE-VERBOSE* T)
 (DEFVAR *WEAVE-PRINT* T)
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
@@ -507,17 +508,21 @@
            (LET ((*PRINT-PRETTY* NIL)
                  (*PRINT-READABLY* T)
                  (*PRINT-MARKER* T)
-                 (*READTABLE* (READTABLE-FOR-MODE NIL)))
+                 (*READTABLE* (READTABLE-FOR-MODE :INNER-LISP))
+                 (*RE-READING* T))
              (VALUES (READ-FROM-STRING (PRIN1-TO-STRING MARKER)))))
 (DEFMETHOD PRINT-OBJECT ((OBJ BACKQUOTE-MARKER) STREAM)
            (IF *PRINT-MARKER*
                (FORMAT STREAM "`~W" (BACKQ-FORM OBJ))
                (PRINT-UNREADABLE-OBJECT (OBJ STREAM :TYPE T :IDENTITY T))))
 (DEFUN BACKQUOTE-READER (STREAM CHAR)
-  (DECLARE (IGNORE CHAR))
-  (MAKE-INSTANCE 'BACKQUOTE-MARKER :FORM (READ STREAM T NIL T)))
+  (IF *RE-READING*
+      (FUNCALL (GET-MACRO-CHARACTER CHAR (READTABLE-FOR-MODE NIL)) STREAM CHAR)
+      (MAKE-INSTANCE 'BACKQUOTE-MARKER :FORM (READ STREAM T NIL T))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\` #'BACKQUOTE-READER NIL (READTABLE-FOR-MODE MODE)))
+(DEFMETHOD PRINT-OBJECT ((OBJ NAMED-SECTION) STREAM)
+           (FORMAT STREAM "@<~A@>" (SECTION-NAME OBJ)))
 (DEFCLASS COMMA-MARKER (MARKER)
           ((FORM :READER COMMA-FORM :INITARG :FORM)
            (MODIFIER :READER COMMA-MODIFIER :INITARG :MODIFIER))
@@ -530,12 +535,13 @@
                        (COMMA-FORM OBJ))
                (PRINT-UNREADABLE-OBJECT (OBJ STREAM :TYPE T :IDENTITY T))))
 (DEFUN COMMA-READER (STREAM CHAR)
-  (DECLARE (IGNORE CHAR))
-  (CASE (PEEK-CHAR NIL STREAM T NIL T)
-    ((#\@ #\.)
-     (MAKE-INSTANCE 'COMMA-MARKER :MODIFIER (READ-CHAR STREAM) :FORM
-                    (READ STREAM T NIL T)))
-    (T (MAKE-INSTANCE 'COMMA-MARKER :FORM (READ STREAM T NIL T)))))
+  (IF *RE-READING*
+      (FUNCALL (GET-MACRO-CHARACTER CHAR (READTABLE-FOR-MODE NIL)) STREAM CHAR)
+      (CASE (PEEK-CHAR NIL STREAM T NIL T)
+        ((#\@ #\.)
+         (MAKE-INSTANCE 'COMMA-MARKER :MODIFIER (READ-CHAR STREAM) :FORM
+                        (READ STREAM T NIL T)))
+        (T (MAKE-INSTANCE 'COMMA-MARKER :FORM (READ STREAM T NIL T))))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\, #'COMMA-READER NIL (READTABLE-FOR-MODE MODE)))
 (DEFUN PPRINT-LIST (STREAM LIST) (FORMAT STREAM "~:@<~/pprint-fill/~:>" LIST))
@@ -2178,29 +2184,28 @@
   (DESTRUCTURING-BIND
       (OPERATOR FUNCTION-NAME LAMBDA-LIST &REST OPTIONS)
       FORM
-    (LIST* OPERATOR
-           (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV :OPERATOR 'DEFGENERIC
-                               :DEF T)
-           (WALK-LAMBDA-LIST WALKER LAMBDA-LIST NIL ENV)
-           (LOOP FOR FORM IN OPTIONS
-                 COLLECT (CASE (CAR FORM)
-                           (:METHOD
-                            (LET* ((OPERATOR (POP FORM))
-                                   (QUALIFIERS
-                                    (LOOP UNTIL (LISTP (CAR FORM))
-                                          COLLECT (WALK-ATOMIC-FORM WALKER
-                                                                    (POP FORM)
-                                                                    ENV)))
-                                   (LAMBDA-LIST (POP FORM))
-                                   (BODY FORM))
-                              (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV
-                                                  :OPERATOR 'DEFMETHOD
-                                                  :QUALIFIERS QUALIFIERS :DEF
-                                                  T)
-                              (WALK-METHOD-DEFINITION WALKER OPERATOR NIL
-                                                      QUALIFIERS LAMBDA-LIST
-                                                      BODY ENV)))
-                           (T (WALK-LIST WALKER FORM ENV)))))))
+    `(,OPERATOR
+      ,(WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV :OPERATOR 'DEFGENERIC :DEF
+                           T)
+      ,(WALK-LAMBDA-LIST WALKER LAMBDA-LIST NIL ENV)
+      ,@(LOOP FOR FORM IN OPTIONS
+              COLLECT (CASE (CAR FORM)
+                        (:METHOD
+                         (LET* ((OPERATOR (POP FORM))
+                                (QUALIFIERS
+                                 (LOOP UNTIL (LISTP (CAR FORM))
+                                       COLLECT (WALK-ATOMIC-FORM WALKER
+                                                                 (POP FORM)
+                                                                 ENV)))
+                                (LAMBDA-LIST (POP FORM))
+                                (BODY FORM))
+                           (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV
+                                               :OPERATOR 'DEFMETHOD :QUALIFIERS
+                                               QUALIFIERS :DEF T)
+                           (WALK-METHOD-DEFINITION WALKER OPERATOR NIL
+                                                   QUALIFIERS LAMBDA-LIST BODY
+                                                   ENV)))
+                        (T (WALK-LIST WALKER FORM ENV)))))))
 (DEFUN WALK-METHOD-DEFINITION
        (WALKER OPERATOR FUNCTION-NAME QUALIFIERS LAMBDA-LIST BODY ENV)
   (MULTIPLE-VALUE-BIND (BODY-FORMS DECLS DOC)
