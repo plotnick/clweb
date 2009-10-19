@@ -4476,7 +4476,12 @@ ordinary ones.
               (orf (locator-definition-p old-locator) def)
               (push (make-locator) (entry-locators entry)))))))
 
-@ @l
+@ And here's the main index entry retrieval method. In fact, this function
+isn't used in this program (although the test suite uses it), since all we
+do with the index is add entries to it and then traverse the whole thing
+and print them all out.
+
+@l
 (defmethod find-index-entries ((index index) heading)
   (let ((entries (index-entries index)))
     (when entries
