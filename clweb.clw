@@ -4533,30 +4533,30 @@ particular advantage.
   (multiple-value-bind (type local) (variable-information variable env)
     (when (member type '(:special :symbol-macro :constant))
       (add-index-entry
-         index
-         (list variable
-               (ecase type
-                 (:special (make-instance 'variable-heading :special t))
-                 (:constant (make-instance 'variable-heading :constant t))
-                 (:symbol-macro (make-instance 'symbol-macro-heading @+
-                                               :local local))))
-         section))))
+        index
+        (list variable
+              (ecase type
+                (:special (make-instance 'variable-heading :special t))
+                (:constant (make-instance 'variable-heading :constant t))
+                (:symbol-macro (make-instance 'symbol-macro-heading @+
+                                              :local local))))
+        section))))
 
 (defun index-function-use (index function-name section env)
   (multiple-value-bind (type local) @+
       (function-information function-name env)
     (when (member type '(:function :macro))
       (add-index-entry
-         index
-         (list function-name
-               (ecase type
-                 (:function @+
-                  (make-instance 'function-heading
-                                 :local local
-                                 :generic (generic-function-p function-name)))
-                 (:macro @+
-                  (make-instance 'macro-heading :local local))))
-         section))))
+        index
+        (list function-name
+              (ecase type
+                (:function @+
+                 (make-instance 'function-heading
+                                :local local
+                                :generic (generic-function-p function-name)))
+                (:macro @+
+                 (make-instance 'macro-heading :local local))))
+        section))))
 
 @ To index definitions, we'll need more information from the walker about
 the context in which the variable or function name occured; in particular,
@@ -4567,26 +4567,26 @@ we'll get the car of the defining form as the |operator| argument.
                                   operator special &aux
                                   (constant (eql operator 'defconstant)))
   (add-index-entry
-     index
-     (list variable
-           (make-sub-heading operator :special special :constant constant))
-     section
-     :def t))
+    index
+    (list variable
+          (make-sub-heading operator :special special :constant constant))
+    section
+    :def t))
 
 (defun index-function-definition (index function-name section &key @+
                                   operator local qualifiers)
   (add-index-entry
-     index
-     (list (typecase function-name
-             (symbol function-name)
-             (setf-function-name (cadr function-name)))
-           (make-sub-heading operator
-                             :function-name function-name
-                             :local local
-                             :generic (generic-function-p function-name)
-                             :qualifiers qualifiers))
-     section
-     :def t))
+    index
+    (list (typecase function-name
+            (symbol function-name)
+            (setf-function-name (cadr function-name)))
+          (make-sub-heading operator
+                            :function-name function-name
+                            :local local
+                            :generic (generic-function-p function-name)
+                            :qualifiers qualifiers))
+    section
+    :def t))
 
 @ We'll perform the indexing by walking over the code of each section and
 noting each of the interesting symbols that we find there according to its
