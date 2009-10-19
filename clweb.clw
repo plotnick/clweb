@@ -3897,7 +3897,7 @@ forms in Common Lisp (|let|, |let*|, |flet|, |labels|, |macrolet|, and
 |symbol-macrolet|) all have essentially the same syntax; only the scope
 and namespace of the bindings differ.
 
-@ We'll start with a little utility routine that walks a variable-like
+We'll start with a little utility routine that walks a variable-like
 binding form (e.g., the |cadr| of a |let|/|let*| or |symbol-macrolet|
 form). It normalizes atomic binding forms to conses in order to avoid
 special cases in the actual walker methods.
@@ -3912,7 +3912,7 @@ the same purpose.
         (and (cdr binding)
              (walk-form walker (cadr binding) env))))
 
-@ |let|, |flet|, |macrolet|, and |symbol-macrolet| are all parallel binding
+@ |let|, |flet|, |macrolet|, and |symbol-macrolet| are all `parallel' binding
 forms: they walk their bindings in an unaugmented environment, then execute
 their body forms in an environment that contains all of the new bindings.
 
@@ -3950,7 +3950,13 @@ their body forms in an environment that contains all of the new bindings.
                                                :declare decls)))))
 
 
-@ @l
+@ The bindings established by |macrolet| and |symbol-macrolet| are
+different from those established by the other binding forms in that they
+include definitions as well as names. We'll use a little helper function,
+|make-macro-definitions|, for building the expander functions in the
+former case.
+
+@l
 (defun make-macro-definitions (walker defs env)
   (mapcar (lambda (def &aux (name (walk-atomic-form walker (car def) env nil)))
             (list name
@@ -3965,26 +3971,27 @@ their body forms in an environment that contains all of the new bindings.
                                                  :operator 'macrolet
                                                  :local t :def t))
                        (cadr form)))
-     (body (cddr form))
-     (macros (make-macro-definitions walker bindings env)))
-  (multiple-value-bind (forms decls)
-      (parse-body body :walker walker :env env)
+     (body (cddr form)))
+  (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     `(,(car form)
       ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
                    (augment-walker-environment walker env
-                                               :macro macros
+                                               :macro (make-macro-definitions @+
+                                                       walker bindings env)
                                                :declare decls)))))
 
-@ @l
+@ Walking |symbol-macrolet| is simpler, since the definitions are given in
+the bindings themselves.
+
+@l
 (define-special-form-walker symbol-macrolet
     ((walker walker) form env &aux
      (bindings (mapcar (lambda (p) (walk-variable-binding walker p env)) @+
                        (cadr form)))
      (body (cddr form)))
-  (multiple-value-bind (forms decls)
-      (parse-body body :walker walker :env env)
+  (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     `(,(car form)
       ,bindings
       ,@(if decls `((declare ,@decls)))
@@ -4028,9 +4035,10 @@ and |labels|, which does so before walking any of its bindings.
 
 @l
 (define-special-form-walker let*
-    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
-  (multiple-value-bind (forms decls)
-      (parse-body body :walker walker :env env)
+    ((walker walker) form env &aux
+     (bindings (cadr form))
+     (body (cddr form)))
+  (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     `(,(car form)
       ,(mapcar (lambda (p)
                  (let ((walked-binding (walk-variable-binding walker p env)))
@@ -4045,11 +4053,12 @@ and |labels|, which does so before walking any of its bindings.
 
 @ @l
 (define-special-form-walker labels
-    ((walker walker) form env &aux (bindings (cadr form)) (body (cddr form)))
-  (multiple-value-bind (forms decls)
-      (parse-body body :walker walker :env env)
+    ((walker walker) form env &aux
+     (bindings (cadr form))
+     (body (cddr form)))
+  (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     (let* ((function-names (mapcar (lambda (p)
-                                     (walk-function-name walker (car p) env @+
+                                     (walk-function-name walker (car p) env
                                                          :operator 'labels
                                                          :local t
                                                          :def t))
@@ -4084,7 +4093,7 @@ set of declarations.
 
 @l
 (define-special-form-walker locally ((walker walker) form env)
-  (multiple-value-bind (forms decls)
+  (multiple-value-bind (forms decls) @+
       (parse-body (cdr form) :walker walker :env env)
     `(,(car form)
       ,@(if decls `((declare ,@decls)))

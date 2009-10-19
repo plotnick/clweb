@@ -1829,14 +1829,17 @@
          (WALK-LAMBDA-EXPRESSION WALKER P ENV :OPERATOR 'MACROLET :LOCAL T :DEF
                                  T))
        (CADR FORM)))
-     (BODY (CDDR FORM)) (MACROS (MAKE-MACRO-DEFINITIONS WALKER BINDINGS ENV)))
+     (BODY (CDDR FORM)))
   (MULTIPLE-VALUE-BIND (FORMS DECLS)
       (PARSE-BODY BODY :WALKER WALKER :ENV ENV)
     `(,(CAR FORM) ,BINDINGS
       ,@(IF DECLS
             `((DECLARE ,@DECLS)))
       ,@(WALK-LIST WALKER FORMS
-                   (AUGMENT-WALKER-ENVIRONMENT WALKER ENV :MACRO MACROS
+                   (AUGMENT-WALKER-ENVIRONMENT WALKER ENV :MACRO
+                                               (MAKE-MACRO-DEFINITIONS WALKER
+                                                                       BINDINGS
+                                                                       ENV)
                                                :DECLARE DECLS)))))
 (DEFINE-SPECIAL-FORM-WALKER SYMBOL-MACROLET
     ((WALKER WALKER) FORM ENV &AUX
