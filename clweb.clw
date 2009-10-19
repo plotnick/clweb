@@ -2469,8 +2469,8 @@ argument is supplied and is |nil|, then no tests file will be written at
 all.
 
 @l
-(defun tests-file-pathname (output-file type &key
-                            (tests-file nil tests-file-supplied-p)
+(defun tests-file-pathname (output-file type &key @+
+                            (tests-file nil tests-file-supplied-p) @+
                             &allow-other-keys)
   (if tests-file
       (merge-pathnames tests-file (make-pathname :type type :case :common))
@@ -2514,16 +2514,7 @@ sections' code should be written.
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
-                    (input-file (merge-pathnames @+
-                                 input-file @+
-                                 (make-pathname :type "CLW" :case :common)))
-                    (output-file (apply #'compile-file-pathname @+
-                                        input-file :allow-other-keys t args))
-                    (lisp-file (merge-pathnames @+
-                                (make-pathname :type "LISP" :case :common) @+
-                                output-file))
-                    (tests-file (apply #'tests-file-pathname @+
-                                       output-file "LISP" args))
+                    @<Merge defaults for tangler file names@>
                     (*readtable* *readtable*)
                     (*package* *package*))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
@@ -2557,6 +2548,15 @@ sections' code should be written.
     (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
     (write-forms *sections* lisp-file)
     (apply #'compile-file lisp-file :allow-other-keys t args)))
+
+@ @<Merge defaults for tangler...@>=
+(input-file (merge-pathnames input-file @+
+                             (make-pathname :type "CLW" :case :common)))
+(output-file (apply #'compile-file-pathname @+
+                    input-file :allow-other-keys t args))
+(lisp-file (merge-pathnames (make-pathname :type "LISP" :case :common) @+
+                            output-file))
+(tests-file (apply #'tests-file-pathname output-file "LISP" args))
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
@@ -2605,26 +2605,7 @@ If successful, |weave| returns the truename of the output file.
               (print *weave-print*)
               (if-does-not-exist t)
               (external-format :default) &aux
-              (input-file (merge-pathnames input-file
-                                           (make-pathname :type "CLW" @+
-                                                          :case :common)))
-              (output-file (if output-file
-                               (merge-pathnames output-file
-                                                (make-pathname :type "TEX" @+
-                                                               :case :common))
-                               (merge-pathnames (make-pathname :type "TEX" @+
-                                                               :case :common)
-                                                input-file)))
-              (tests-file (apply #'tests-file-pathname @+
-                                 output-file "TEX" args))
-              (index-file (if index-file
-                              (merge-pathnames index-file
-                                               (make-pathname :type "IDX" @+
-                                                              :case :common))
-                              (when (not index-file-supplied-p)
-                                (merge-pathnames (make-pathname :type "IDX" @+
-                                                                :case :common)
-                                                 output-file))))
+              @<Merge defaults for weaver file names@>
               (*readtable* *readtable*)
               (*package* *package*))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
@@ -2648,9 +2629,29 @@ If successful, |weave| returns the truename of the output file.
     (weave-sections *sections*
                     :output-file output-file
                     :index-file index-file
+                    :sections-file sections-file
                     :verbose verbose
                     :print print
                     :external-format external-format))
+
+@ @<Merge defaults for weaver...@>=
+(input-file (merge-pathnames input-file @+
+                             (make-pathname :type "CLW" :case :common)))
+(output-file (if output-file
+                 (merge-pathnames output-file @+
+                                  (make-pathname :type "TEX" :case :common))
+                 (merge-pathnames (make-pathname :type "TEX" :case :common) @+
+                                  input-file)))
+(tests-file (apply #'tests-file-pathname output-file "TEX" args))
+(index-file (if index-file
+                (merge-pathnames index-file @+
+                                 (make-pathname :type "IDX" :case :common))
+                (when (not index-file-supplied-p)
+                  (merge-pathnames (make-pathname :type "IDX" :case :common) @+
+                                   output-file))))
+(sections-file (when index-file
+                 (merge-pathnames (make-pathname :type "SCN" :case :common) @+
+                                  index-file)))
 
 @ @<Global variables@>=
 (defvar *weave-verbose* t)
@@ -2667,7 +2668,7 @@ file.
 
 @l
 (defun weave-sections (sections &key
-                       output-file index-file
+                       output-file index-file sections-file
                        (verbose *weave-verbose*)
                        (print *weave-print*)
                        (external-format :default))
@@ -2702,9 +2703,7 @@ file.
           (when verbose (format t "~&; writing the index to ~A~%" index-file))
           (with-output-file (idx index-file)
             (weave (index-sections sections) idx))
-          (with-output-file (scn (merge-pathnames (make-pathname :type "SCN" @+
-                                                                 :case :common)
-                                                  index-file))
+          (with-output-file (scn sections-file)
             (maptree (lambda (section)
                        (weave (make-instance 'section-name-index-entry @+
                                              :named-section section) @+
