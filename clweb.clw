@@ -4559,8 +4559,9 @@ particular advantage.
         section))))
 
 @ To index definitions, we'll need more information from the walker about
-the context in which the variable or function name occured; in particular,
-we'll get the car of the defining form as the |operator| argument.
+the context in which the variable or function name occured. In particular,
+we'll get the |car| of the defining form as the |operator| argument, which
+is then passed down to |make-sub-heading|.
 
 @l
 (defun index-variable-definition (index variable section &key @+
@@ -4568,10 +4569,9 @@ we'll get the car of the defining form as the |operator| argument.
                                   (constant (eql operator 'defconstant)))
   (add-index-entry
     index
-    (list variable
+    (list variable @+
           (make-sub-heading operator :special special :constant constant))
-    section
-    :def t))
+    section :def t))
 
 (defun index-function-definition (index function-name section &key @+
                                   operator local qualifiers)
@@ -4585,8 +4585,7 @@ we'll get the car of the defining form as the |operator| argument.
                             :local local
                             :generic (generic-function-p function-name)
                             :qualifiers qualifiers))
-    section
-    :def t))
+    section :def t))
 
 @ We'll perform the indexing by walking over the code of each section and
 noting each of the interesting symbols that we find there according to its
