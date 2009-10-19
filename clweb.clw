@@ -2945,17 +2945,15 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
     (write-string "\\L" stream))
   1)
 
-@ Next, we turn to list printing, and the tricky topic of indentation. On
-the assumption that the human writing the code in a \WEB\ is smarter than
-any sort of automatic indentation that we might be able to do, we attempt
-to approximate (but {\it not\/} duplicate) on output the indentation given
-in the input by utilizing the character position values that the list
-reader stores in the list markers.
-
-We do this by breaking up lists into {\it logical blocks\/}---the same sort
-of (abstract) entities that the pretty printer uses, but made concrete
-here. A logical block defines a left edge for a list of forms, some of
-which may be nested logical blocks.
+@ Next, we turn to list printing, and the tricky topic of indentation.
+On the assumption that the human writing a web is smarter than a program
+doing any sort of automatic indentation, we attempt to approximate (but
+not duplicate) on output the indentation given in the input by utilizing
+the character position values that the list reader stores in the list
+markers. We do this by breaking up lists into {\it logical blocks\/}---the
+same sort of (abstract) entities that the pretty printer uses, but made
+concrete here. A logical block defines a left edge for a list of forms,
+some of which may be nested logical blocks.
 
 @l
 (defstruct (logical-block (:constructor make-logical-block (list)))
