@@ -2174,28 +2174,60 @@
                     ,@(WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :OPERATOR
                                               (CAR FORM) :DEF T)))))
   (DEFINE-DEFUN-WALKER DEFUN)
-  (DEFINE-DEFUN-WALKER DEFMACRO)
-  (DEFINE-DEFUN-WALKER DEFGENERIC))
+  (DEFINE-DEFUN-WALKER DEFMACRO))
+(DEFINE-SPECIAL-FORM-WALKER DEFGENERIC
+    ((WALKER INDEXING-WALKER) FORM ENV)
+  (DESTRUCTURING-BIND
+      (OPERATOR FUNCTION-NAME LAMBDA-LIST &REST OPTIONS)
+      FORM
+    (LIST* OPERATOR
+           (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV :OPERATOR 'DEFGENERIC
+                               :DEF T)
+           (WALK-LAMBDA-LIST WALKER LAMBDA-LIST NIL ENV)
+           (LOOP FOR FORM IN OPTIONS
+                 COLLECT (CASE (CAR FORM)
+                           (:METHOD
+                            (LET* ((OPERATOR (POP FORM))
+                                   (QUALIFIERS
+                                    (LOOP UNTIL (LISTP (CAR FORM))
+                                          COLLECT (WALK-ATOMIC-FORM WALKER
+                                                                    (POP FORM)
+                                                                    ENV)))
+                                   (LAMBDA-LIST (POP FORM))
+                                   (BODY FORM))
+                              (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV
+                                                  :OPERATOR 'DEFMETHOD
+                                                  :QUALIFIERS QUALIFIERS :DEF
+                                                  T)
+                              (WALK-METHOD-DEFINITION WALKER OPERATOR NIL
+                                                      QUALIFIERS LAMBDA-LIST
+                                                      BODY ENV)))
+                           (T (WALK-LIST WALKER FORM ENV)))))))
+(DEFUN WALK-METHOD-DEFINITION
+       (WALKER OPERATOR FUNCTION-NAME QUALIFIERS LAMBDA-LIST BODY ENV)
+  (MULTIPLE-VALUE-BIND (BODY-FORMS DECLS DOC)
+      (PARSE-BODY BODY :WALKER WALKER :ENV ENV)
+    (MULTIPLE-VALUE-BIND (LAMBDA-LIST ENV)
+        (WALK-SPECIALIZED-LAMBDA-LIST WALKER LAMBDA-LIST DECLS ENV)
+      `(,OPERATOR ,@(WHEN FUNCTION-NAME `(,FUNCTION-NAME)) ,@QUALIFIERS
+        ,LAMBDA-LIST
+        ,@(IF DOC
+              `(,DOC))
+        ,@(IF DECLS
+              `((DECLARE ,@DECLS)))
+        ,@(WALK-LIST WALKER BODY-FORMS ENV)))))
 (DEFINE-SPECIAL-FORM-WALKER DEFMETHOD
     ((WALKER INDEXING-WALKER) FORM ENV &AUX (OPERATOR (POP FORM))
      (FUNCTION-NAME (POP FORM))
      (QUALIFIERS
       (LOOP UNTIL (LISTP (CAR FORM))
             COLLECT (WALK-ATOMIC-FORM WALKER (POP FORM) ENV)))
-     (LAMBDA-LIST (POP FORM)))
-  (MULTIPLE-VALUE-BIND (BODY-FORMS DECLS DOC)
-      (PARSE-BODY FORM :WALKER WALKER :ENV ENV)
-    (MULTIPLE-VALUE-BIND (LAMBDA-LIST ENV)
-        (WALK-SPECIALIZED-LAMBDA-LIST WALKER LAMBDA-LIST DECLS ENV)
-      `(,OPERATOR
-        ,(WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV :OPERATOR OPERATOR
-                             :QUALIFIERS QUALIFIERS :DEF T)
-        ,@QUALIFIERS ,LAMBDA-LIST
-        ,@(IF DOC
-              `(,DOC))
-        ,@(IF DECLS
-              `((DECLARE ,@DECLS)))
-        ,@(WALK-LIST WALKER BODY-FORMS ENV)))))
+     (LAMBDA-LIST (POP FORM)) (BODY FORM))
+  (WALK-METHOD-DEFINITION WALKER OPERATOR
+                          (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV
+                                              :OPERATOR OPERATOR :QUALIFIERS
+                                              QUALIFIERS :DEF T)
+                          QUALIFIERS LAMBDA-LIST BODY ENV))
 (DEFMETHOD WALK-FUNCTION-NAME :BEFORE
            ((WALKER INDEXING-WALKER) FUNCTION-NAME ENV &REST ARGS &KEY DEF)
            (LET ((INDEX (WALKER-INDEX WALKER)))

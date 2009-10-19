@@ -4743,8 +4743,7 @@ everything we need with this walk.
                                             :operator (car form)
                                             :def t)))))
   (define-defun-walker defun)
-  (define-defun-walker defmacro)
-  (define-defun-walker defgeneric))
+  (define-defun-walker defmacro))
 
 @t Besides testing the return value of a walk over a |defmacro| form, this
 test ensures that complex \L-lists are properly indexed and have their
@@ -4774,31 +4773,74 @@ referring symbols replaced, too.
   t
   t)
 
-@ We'd like index entries for methods to include the qualifiers, so we'll
-have to walk the |defmethod| forms manually.
+@ Generic function definitions can contain methods, which we might want to
+index seperately. So we'll walk those, too.
+
+@l
+(define-special-form-walker defgeneric ((walker indexing-walker) form env)
+  (destructuring-bind (operator function-name lambda-list &rest options) form
+    (list* operator
+           (walk-function-name walker function-name env @+
+                               :operator 'defgeneric :def t)
+           (walk-lambda-list walker lambda-list nil env)
+           (loop for form in options
+                 collect (case (car form)
+                           (:method @<Walk the method description in |form|@>)
+                           (t (walk-list walker form env)))))))
+
+@ Method descriptions are very much like |defmethod| forms with an implicit
+function name; this routine walks both. The function-name (if non-null) and
+qualifiers (if any) should have been walked already; we'll walk the
+specialized \L-list and body forms here.
+
+@l
+(defun walk-method-definition (walker operator function-name qualifiers
+                               lambda-list body env)
+  (multiple-value-bind (body-forms decls doc) @+
+      (parse-body body :walker walker :env env)
+    (multiple-value-bind (lambda-list env) @+
+        (walk-specialized-lambda-list walker lambda-list decls env)
+      `(,operator
+        ,@(when function-name `(,function-name))
+        ,@qualifiers
+        ,lambda-list
+        ,@(if doc `(,doc))
+        ,@(if decls `((declare ,@decls)))
+        ,@(walk-list walker body-forms env)))))
+
+@ @<Walk the method description in |form|@>=
+(let* ((operator (pop form))
+       (qualifiers @<Collect the method qualifiers at the head of |form|@>)
+       (lambda-list (pop form))
+       (body form))
+  ;; This is purely for its side-effect on the index.
+  (walk-function-name walker function-name env
+                      :operator 'defmethod
+                      :qualifiers qualifiers
+                      :def t)
+  (walk-method-definition walker operator nil qualifiers lambda-list body env))
+
+@ Walking a |defmethod| form is almost, but not quite, the same as walking
+a method description.
 
 @l
 (define-special-form-walker defmethod
     ((walker indexing-walker) form env &aux
      (operator (pop form))
-     (function-name (pop form))
-     (qualifiers (loop until (listp (car form))
-                       collect (walk-atomic-form walker (pop form) env)))
-     (lambda-list (pop form)))
-  (multiple-value-bind (body-forms decls doc) @+
-      (parse-body form :walker walker :env env)
-    (multiple-value-bind (lambda-list env) @+
-        (walk-specialized-lambda-list walker lambda-list decls env)
-     `(,operator
-       ,(walk-function-name walker function-name env
-                            :operator operator
-                            :qualifiers qualifiers
-                            :def t)
-       ,@qualifiers
-       ,lambda-list
-       ,@(if doc `(,doc))
-       ,@(if decls `((declare ,@decls)))
-       ,@(walk-list walker body-forms env)))))
+     (function-name (pop form)) ; don't walk yet: wait for the qualifiers
+     (qualifiers @<Collect the method qualifiers...@>)
+     (lambda-list (pop form))
+     (body form))
+  (walk-method-definition walker operator
+                          (walk-function-name walker function-name env
+                                              :operator operator
+                                              :qualifiers qualifiers
+                                              :def t)
+                          qualifiers lambda-list body env))
+
+@ @<Collect the method qualifiers...@>=
+(loop until (listp (car form))
+      collect (walk-atomic-form walker (pop form) env))
 
 @ We can index function names in a |:before| method of |walk-function-name|,
 since the referring symbols will get swapped out by |walk-atomic-form|.
