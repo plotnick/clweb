@@ -4247,11 +4247,11 @@ heading is located.
 
 @l
 (defclass global/local-heading (heading)
-  ((local :reader heading-local-p :initarg :local))
+  ((local :initarg :local))
   (:default-initargs :local nil))
 
 (defclass function-heading (global/local-heading)
-  ((generic :reader function-heading-generic-p :initarg :generic))
+  ((generic :initarg :generic))
   (:default-initargs :name "function" :generic nil))
 
 (defclass setf-function-heading (function-heading) ()
@@ -4271,8 +4271,8 @@ heading is located.
   (:default-initargs :name "setf method"))
 
 (defclass variable-heading (heading)
-  ((special :reader variable-heading-special-p :initarg :special)
-   (constant :reader variable-heading-constant-p :initarg :constant))
+  ((special :initarg :special)
+   (constant :initarg :constant))
   (:default-initargs :name "variable" :special nil :constant nil))
 
 (defclass class-heading (heading) ()
