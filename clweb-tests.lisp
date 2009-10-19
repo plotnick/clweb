@@ -596,7 +596,10 @@
 (DEFTEST MAKE-SUB-HEADING
          (NOTANY #'NULL
                  (LIST (TYPEP (MAKE-SUB-HEADING NIL) 'FUNCTION-HEADING)
-                       (TYPEP (MAKE-SUB-HEADING 'DEFMETHOD) 'METHOD-HEADING)
+                       (TYPEP (MAKE-SUB-HEADING 'DEFMETHOD) 'FUNCTION-HEADING)
+                       (TYPEP
+                        (MAKE-SUB-HEADING 'DEFMETHOD :QUALIFIERS '(:AFTER))
+                        'METHOD-HEADING)
                        (TYPEP
                         (MAKE-SUB-HEADING 'DEFUN :FUNCTION-NAME '(SETF FOO))
                         'SETF-FUNCTION-HEADING)

@@ -4335,36 +4335,47 @@ otherwise we'll call them `primary'.
 
 @ The sub-heading classes above are usually constructed by the following
 function during indexing. The keyword arguments are passed down from
-the various walker functions; we'll use the operator and function name
-to decide what kind of heading to create.
+the various walker functions, and this function passes them down to the
+initializers for the various (sub-)heading classes, but peeks at a few
+of them to figure out what kind of heading class to instantiate.
 
 @l
-(defun make-sub-heading (operator &rest args &key function-name @+
+(defun make-sub-heading (operator &rest args &key function-name qualifiers @+
                          &allow-other-keys)
   (apply #'make-instance
          (ecase operator
            ((nil defgeneric) 'function-heading)
-           (defmethod
-            (typecase function-name
-              (symbol 'method-heading)
-              (setf-function-name 'setf-method-heading)))
-           ((defun flet labels)
-            (typecase function-name
-              (symbol 'function-heading)
-              (setf-function-name 'setf-function-heading)))
+           ((defmethod) @<Choose an appropriate heading class for a method@>)
+           ((defun flet labels) (typecase function-name
+                                  (symbol 'function-heading)
+                                  (setf-function-name 'setf-function-heading)))
            ((defmacro macrolet) 'macro-heading)
            ((defvar defparameter defconstant) 'variable-heading)
-           (defclass 'class-heading)
-           (define-condition 'condition-class-heading))
+           ((defclass) 'class-heading)
+           ((define-condition) 'condition-class-heading))
          :allow-other-keys t
          args))
+
+@ Primary methods (i.e., methods with empty qualifier lists) are indexed as
+functions so that they'll appear as definitions of the generic function
+they're methods of; only methods with qualifiers get independent entries.
+This helps keep the index compact without significantly affecting usability.
+
+@<Choose an appropriate heading class...@>=
+(if qualifiers
+    (typecase function-name
+      (symbol 'method-heading)
+      (setf-function-name 'setf-method-heading))
+    'function-heading)
 
 @t@l
 (deftest make-sub-heading
   (notany #'null
           (list (typep (make-sub-heading nil) 'function-heading)
-                (typep (make-sub-heading 'defmethod) 'method-heading)
-                (typep (make-sub-heading 'defun :function-name '(setf foo))
+                (typep (make-sub-heading 'defmethod) 'function-heading)
+                (typep (make-sub-heading 'defmethod :qualifiers '(:after)) @+
+                       'method-heading)
+                (typep (make-sub-heading 'defun :function-name '(setf foo)) @+
                        'setf-function-heading)
                 (typep (make-sub-heading 'defclass) 'class-heading)))
   t)
