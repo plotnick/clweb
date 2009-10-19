@@ -4239,9 +4239,9 @@ one. Symbols and strings are valid headings, too.
   "bar"
   :baz)
 
-@ The rest of the heading classes are all used as sub-headings, and
-represent the namespace in which the object referred to by the primary
-heading is located.
+@ The following heading classes are all used as sub-headings, and represent
+the namespace in which the object referred to by the primary heading is
+located.
 
 @l
 (defclass global/local-heading (heading)
