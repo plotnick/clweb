@@ -2118,11 +2118,14 @@
 (DEFUN INDEX-FUNCTION-DEFINITION
        (INDEX FUNCTION-NAME SECTION &KEY OPERATOR LOCAL QUALIFIERS)
   (ADD-INDEX-ENTRY INDEX
-                   (LIST FUNCTION-NAME
-                         (MAKE-SUB-HEADING OPERATOR :FUNCTION-NAME
-                                           FUNCTION-NAME :LOCAL LOCAL :GENERIC
-                                           (GENERIC-FUNCTION-P FUNCTION-NAME)
-                                           :QUALIFIERS QUALIFIERS))
+                   (LIST
+                    (TYPECASE FUNCTION-NAME
+                      (SYMBOL FUNCTION-NAME)
+                      (SETF-FUNCTION-NAME (CADR FUNCTION-NAME)))
+                    (MAKE-SUB-HEADING OPERATOR :FUNCTION-NAME FUNCTION-NAME
+                                      :LOCAL LOCAL :GENERIC
+                                      (GENERIC-FUNCTION-P FUNCTION-NAME)
+                                      :QUALIFIERS QUALIFIERS))
                    SECTION :DEF T))
 (DEFUN SUBSTITUTE-SYMBOLS (FORM SECTION &AUX SYMBOLS)
   (LABELS ((GET-SYMBOLS (FORM)
@@ -2247,16 +2250,47 @@
 (MACROLET ((DEFINE-DEFCLASS-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
-                (DECLARE (IGNORE ENV))
-                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                    (SYMBOL-PROVENANCE (CADR FORM))
-                  (WHEN SECTION
-                    (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
-                                     (LIST SYMBOL
-                                           (MAKE-SUB-HEADING (CAR FORM)))
-                                     SECTION :DEF T))))))
+                (DESTRUCTURING-BIND
+                    (OPERATOR NAME SUPERS SLOT-SPECS &REST OPTIONS)
+                    FORM
+                  (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                      (SYMBOL-PROVENANCE NAME)
+                    (WHEN SECTION
+                      (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
+                                       (LIST SYMBOL
+                                             (MAKE-SUB-HEADING OPERATOR))
+                                       SECTION :DEF T))
+                    ,'`(,OPERATOR ,(WALK-ATOMIC-FORM WALKER SYMBOL ENV)
+                        ,(WALK-LIST WALKER SUPERS ENV)
+                        ,(MAPCAR
+                          (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
+                          SLOT-SPECS)
+                        ,@(WALK-LIST WALKER OPTIONS ENV)))))))
   (DEFINE-DEFCLASS-WALKER DEFCLASS)
   (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION))
+(DEFUN WALK-SLOT-SPECIFIER (WALKER SPEC ENV)
+  (ETYPECASE SPEC
+    (SYMBOL (WALK-ATOMIC-FORM WALKER SPEC ENV))
+    (CONS
+     (DESTRUCTURING-BIND
+         (NAME &REST OPTIONS)
+         SPEC
+       (LOOP FOR OPT = OPTIONS THEN (CDDR OPT) AS OPT-NAME = (CAR OPT)
+             AND OPT-VALUE = (CADR OPT)
+             DO (CASE OPT-NAME
+                  ((:READER :WRITER :ACCESSOR)
+                   (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                       (SYMBOL-PROVENANCE OPT-VALUE)
+                     (WHEN SECTION
+                       (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER) SYMBOL
+                                                  SECTION :OPERATOR 'DEFMETHOD)
+                       (WHEN (EQL OPT-NAME :ACCESSOR)
+                         (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER)
+                                                    `(SETF ,SYMBOL) SECTION
+                                                    :OPERATOR 'DEFMETHOD))))))
+             UNTIL (NULL OPT))
+       `(,(WALK-ATOMIC-FORM WALKER NAME ENV)
+         ,@(WALK-LIST WALKER OPTIONS ENV))))))
 (DEFUN INDEX-SECTIONS (SECTIONS &KEY (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
   (LET ((*EVALUATING* T))
     (DOLIST (FORM (TANGLE-CODE-FOR-INDEXING SECTIONS) (WALKER-INDEX WALKER))

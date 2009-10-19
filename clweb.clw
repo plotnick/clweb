@@ -4573,7 +4573,9 @@ we'll get the car of the defining form as the |operator| argument.
                                   operator local qualifiers)
   (add-index-entry
      index
-     (list function-name
+     (list (typecase function-name
+             (symbol function-name)
+             (setf-function-name (cadr function-name)))
            (make-sub-heading operator
                              :function-name function-name
                              :local local
@@ -4854,24 +4856,57 @@ about |special| declarations, so we just throw everything else away.
          '((special x y z)))
   t)
 
-@ We'll walk |defclass| and |define-condition| forms to get the class names,
-but we don't care at all about the slot definitions or options.
+@ We'll walk |defclass| and |define-condition| forms in order to index the
+class names and accessor methods.
 
 @l
 (macrolet ((define-defclass-walker (operator)
              `(define-special-form-walker ,operator @+
                   ((walker indexing-walker) form env)
-                (declare (ignore env))
-                (multiple-value-bind (symbol section) @+
-                    (symbol-provenance (cadr form))
-                  (when section
-                    (add-index-entry (walker-index walker)
-                                     (list symbol @+
-                                           (make-sub-heading (car form)))
-                                     section
-                                     :def t))))))
+                (destructuring-bind @+
+                      (operator name supers slot-specs &rest options) form
+                  (multiple-value-bind (symbol section) (symbol-provenance name)
+                    (when section
+                      (add-index-entry (walker-index walker)
+                                       (list symbol (make-sub-heading operator))
+                                       section
+                                       :def t))
+                    `(,operator
+                      ,(walk-atomic-form walker symbol env)
+                      ,(walk-list walker supers env)
+                      ,(mapcar (lambda (spec) @+
+                                 (walk-slot-specifier walker spec env)) @+
+                               slot-specs)
+                      ,@(walk-list walker options env)))))))
   (define-defclass-walker defclass)
   (define-defclass-walker define-condition))
+
+@ The only slot options we care about are |:reader|, |:writer|,
+and~|:accessor|. We index the methods implicitly created by those
+options.
+
+@l
+(defun walk-slot-specifier (walker spec env)
+  (etypecase spec
+    (symbol (walk-atomic-form walker spec env))
+    (cons (destructuring-bind (name &rest options) spec
+            (loop for opt = options then (cddr opt)
+                  as opt-name = (car opt) and opt-value = (cadr opt)
+                  do (case opt-name
+                       ((:reader :writer :accessor) @+
+                        @<Index |opt-value| as a slot access method@>))
+                  until (null opt))
+            `(,(walk-atomic-form walker name env)
+              ,@(walk-list walker options env))))))
+
+@ @<Index |opt-value| as a slot access method@>=
+(multiple-value-bind (symbol section) (symbol-provenance opt-value)
+  (when section
+    (index-function-definition (walker-index walker) symbol section @+
+                               :operator 'defmethod)
+    (when (eql opt-name :accessor)
+      (index-function-definition (walker-index walker) `(setf ,symbol) @+
+                                 section :operator 'defmethod))))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index
