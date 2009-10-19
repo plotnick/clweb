@@ -2732,9 +2732,8 @@ the `\.{\~/.../}' |format| directive.
   (dolist (x tex-mode-material)
     (etypecase x
       (string (write-string x stream))
-      (list (let ((*inner-lisp* t))
-              (dolist (form x)
-                (format stream "\\(~W\\)" form)))))))
+      (list (dolist (form x)
+              (format stream "\\(~W\\)" form))))))
 
 @ Control text (like section names) and comments are initially read as
 strings containing pure \TeX\ text, but they actually contain restricted
