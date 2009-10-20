@@ -275,7 +275,7 @@ dont't accidentally clobber any real sections.
 
 @l
 (defmacro with-temporary-sections (&body body)
-  `(let ((*sections* (make-array 16 :fill-pointer 0)))
+  `(let ((*sections* (make-array 16 :adjustable t :fill-pointer 0)))
      ,@body))
 
 (deftest current-section
