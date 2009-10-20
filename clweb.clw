@@ -269,17 +269,9 @@ for |push-section| so that we can override it for test sections.
   (declare (ignore initargs))
   (setq *current-section* (push-section section)))
 
-@t To make testing with sections a little easier, we'll define a simple
-binding macro, |with-temporary-sections|, that will help ensure that we
-dont't accidentally clobber any real sections.
-
-@l
-(defmacro with-temporary-sections (&body body)
-  `(let ((*sections* (make-array 16 :adjustable t :fill-pointer 0)))
-     ,@body))
-
+@t@l
 (deftest current-section
-  (with-temporary-sections
+  (let ((*sections* (make-array 1 :fill-pointer 0)))
     (eql (make-instance 'section) *current-section*))
   t)
 
@@ -304,6 +296,36 @@ need a copy of the limbo text there, too.
 @l
 (defmethod push-section :after ((section limbo-section))
   (vector-push-extend section *test-sections*))
+
+@t To make testing with sections a little easier, we'll define a macro,
+|with-temporary-sections|, that will help ensure that we don't accidentally
+clobber any real sections. It executes its |body| in an environment where
+|*sections*| and |*named-sections*| have been rebound and augmented with
+new sections specified by the |sections| argument. That argument should be
+a list of section specifiers, which are lists beginning with one of the
+keywords |:section|, |:starred-section|, or~|:limbo|, followed by keyword
+arguments that will be used to initialize new |section| instances; e.g.,
+|:name| and~|:code|.
+
+@l
+(defmacro with-temporary-sections (sections &body body &aux
+                                   (spec (gensym))
+                                   (section (gensym))
+                                   (name (gensym)))
+  `(let ((*sections* (make-array 16 :adjustable t :fill-pointer 0))
+         (*test-sections* (make-array 16 :adjustable t :fill-pointer 0))
+         (*named-sections* nil))
+     (dolist (,spec ',sections)
+       (let* ((,section (apply #'make-instance
+                               (ecase (pop ,spec)
+                                 (:section 'section)
+                                 (:starred-section 'starred-section)
+                                 (:limbo 'limbo-section))
+                               ,spec))
+              (,name (section-name ,section)))
+         (when ,name
+           (push ,section (named-section-sections (find-section ,name))))))
+     ,@body))
 
 @ We keep named sections in a binary search tree whose keys are section
 names and whose values are code forms; the tangler will replace references
@@ -446,15 +468,14 @@ reference this named section.
 @t@l
 (deftest named-section-number/code
   (with-temporary-sections
-    (let ((section (make-instance 'named-section)))
-      (make-instance 'section) ; `limbo' section
-      (loop for i from 1 to 3
-            do (push (make-instance 'section :name "foo" :code (list i))
-                     (named-section-sections section)))
+      ((:section :name "foo" :code (1))
+       (:section :name "foo" :code (2))
+       (:section :name "foo" :code (3)))
+    (let ((section (find-section "foo")))
       (values (section-code section)
               (section-number section))))
   (1 2 3)
-  1)
+  0)
 
 @ Section names in the input file can be abbreviated by giving a prefix of
 the full name followed by `$\ldots$': e.g., \.{@@<Frob...@@>} might refer
@@ -634,16 +655,11 @@ having code parts, but later tests will.
 @l
 (defvar *sample-named-sections*
   (with-temporary-sections
-    (let ((named-sections (make-instance 'named-section :name "baz")))
-      (flet ((push-section (name code)
-               (push (make-instance 'section :name name :code code)
-                     (named-section-sections (find-or-insert name @+
-                                                             named-sections)))))
-        (push-section "baz" '(:baz))
-        (push-section "foo" '(:foo))
-        (push-section "bar" '(:bar))
-        (push-section "qux" '(:qux)))
-      named-sections)))
+      ((:section :name "bar" :code (:bar))
+       (:section :name "baz" :code (:baz))
+       (:section :name "foo" :code (:foo))
+       (:section :name "qux" :code (:qux)))
+    *named-sections*))
 
 (defun find-sample-section (name)
   (find-or-insert name *sample-named-sections* :insert-if-not-found nil))
@@ -657,13 +673,16 @@ having code parts, but later tests will.
   "qux")
 
 (deftest find-section-by-ambiguous-prefix
-  (section-name
-   (handler-bind ((ambiguous-prefix-error
-                   (lambda (condition)
-                     (declare (ignore condition))
-                     (invoke-restart 'use-alt-match))))
-     (find-sample-section "b...")))
-  "bar")
+  (let ((handled nil))
+    (values (section-name (handler-bind ((ambiguous-prefix-error
+                                          (lambda (condition)
+                                            (declare (ignore condition))
+                                            (setq handled t)
+                                            (invoke-restart 'use-first-match))))
+                            (find-sample-section "b...")))
+            handled))
+  "bar"
+  t)
 
 (deftest find-section
   (let ((*named-sections* *sample-named-sections*))
@@ -4789,7 +4808,7 @@ referring symbols replaced, too.
 
 @l
 (deftest indexing-walk-defun
-  (with-temporary-sections
+  (with-temporary-sections ()
     (let ((walker (make-instance 'indexing-walker))
           (form '(flet ((compute-k (x y z) (+ x y z)))
                    (defmacro foo (&whole w x y z &environemnt env &key

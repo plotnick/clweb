@@ -4,13 +4,29 @@
   (REQUIRE 'RT)
   (LOOP FOR SYMBOL BEING EACH EXTERNAL-SYMBOL OF (FIND-PACKAGE "RT")
         DO (IMPORT SYMBOL)))
-(DEFMACRO WITH-TEMPORARY-SECTIONS (&BODY BODY)
-  `(LET ((*SECTIONS* (MAKE-ARRAY 16 :ADJUSTABLE T :FILL-POINTER 0)))
-     ,@BODY))
 (DEFTEST CURRENT-SECTION
-         (WITH-TEMPORARY-SECTIONS
+         (LET ((*SECTIONS* (MAKE-ARRAY 1 :FILL-POINTER 0)))
            (EQL (MAKE-INSTANCE 'SECTION) *CURRENT-SECTION*))
          T)
+(DEFMACRO WITH-TEMPORARY-SECTIONS
+          (SECTIONS
+           &BODY BODY
+           &AUX (SPEC (GENSYM)) (SECTION (GENSYM)) (NAME (GENSYM)))
+  `(LET ((*SECTIONS* (MAKE-ARRAY 16 :ADJUSTABLE T :FILL-POINTER 0))
+         (*TEST-SECTIONS* (MAKE-ARRAY 16 :ADJUSTABLE T :FILL-POINTER 0))
+         (*NAMED-SECTIONS* NIL))
+     (DOLIST (,SPEC ',SECTIONS)
+       (LET* ((,SECTION
+               (APPLY #'MAKE-INSTANCE
+                      (ECASE (POP ,SPEC)
+                        (:SECTION 'SECTION)
+                        (:STARRED-SECTION 'STARRED-SECTION)
+                        (:LIMBO 'LIMBO-SECTION))
+                      ,SPEC))
+              (,NAME (SECTION-NAME ,SECTION)))
+         (WHEN ,NAME
+           (PUSH ,SECTION (NAMED-SECTION-SECTIONS (FIND-SECTION ,NAME))))))
+     ,@BODY))
 (DEFTEST (BST 1)
          (LET ((TREE (MAKE-INSTANCE 'BINARY-SEARCH-TREE :KEY 0)))
            (FIND-OR-INSERT -1 TREE)
@@ -38,14 +54,12 @@
            (FIND-OR-INSERT -1 TREE :INSERT-IF-NOT-FOUND NIL))
          NIL NIL)
 (DEFTEST NAMED-SECTION-NUMBER/CODE
-         (WITH-TEMPORARY-SECTIONS
-           (LET ((SECTION (MAKE-INSTANCE 'NAMED-SECTION)))
-             (MAKE-INSTANCE 'SECTION)
-             (LOOP FOR I FROM 1 TO 3
-                   DO (PUSH (MAKE-INSTANCE 'SECTION :NAME "foo" :CODE (LIST I))
-                            (NAMED-SECTION-SECTIONS SECTION)))
+         (WITH-TEMPORARY-SECTIONS ((:SECTION :NAME "foo" :CODE (1))
+                                   (:SECTION :NAME "foo" :CODE (2))
+                                   (:SECTION :NAME "foo" :CODE (3)))
+           (LET ((SECTION (FIND-SECTION "foo")))
              (VALUES (SECTION-CODE SECTION) (SECTION-NUMBER SECTION))))
-         (1 2 3) 1)
+         (1 2 3) 0)
 (DEFTEST (SECTION-NAME-PREFIX-P 1) (SECTION-NAME-PREFIX-P "a") NIL 1)
 (DEFTEST (SECTION-NAME-PREFIX-P 2) (SECTION-NAME-PREFIX-P "ab...") T 2)
 (DEFTEST (SECTION-NAME-PREFIX-P 3) (SECTION-NAME-PREFIX-P "abcd...") T 4)
@@ -60,30 +74,28 @@
 (DEFTEST (SQUEEZE 2) (SQUEEZE "ab c") "ab c")
 (DEFTEST (SQUEEZE 3) (SQUEEZE (FORMAT NIL " a b ~C c " #\Tab)) "a b c")
 (DEFVAR *SAMPLE-NAMED-SECTIONS*
-  (WITH-TEMPORARY-SECTIONS
-    (LET ((NAMED-SECTIONS (MAKE-INSTANCE 'NAMED-SECTION :NAME "baz")))
-      (FLET ((PUSH-SECTION (NAME CODE)
-               (PUSH (MAKE-INSTANCE 'SECTION :NAME NAME :CODE CODE)
-                     (NAMED-SECTION-SECTIONS
-                      (FIND-OR-INSERT NAME NAMED-SECTIONS)))))
-        (PUSH-SECTION "baz" '(:BAZ))
-        (PUSH-SECTION "foo" '(:FOO))
-        (PUSH-SECTION "bar" '(:BAR))
-        (PUSH-SECTION "qux" '(:QUX)))
-      NAMED-SECTIONS)))
+  (WITH-TEMPORARY-SECTIONS ((:SECTION :NAME "bar" :CODE (:BAR))
+                            (:SECTION :NAME "baz" :CODE (:BAZ))
+                            (:SECTION :NAME "foo" :CODE (:FOO))
+                            (:SECTION :NAME "qux" :CODE (:QUX)))
+    *NAMED-SECTIONS*))
 (DEFUN FIND-SAMPLE-SECTION (NAME)
   (FIND-OR-INSERT NAME *SAMPLE-NAMED-SECTIONS* :INSERT-IF-NOT-FOUND NIL))
 (DEFTEST FIND-NAMED-SECTION (SECTION-NAME (FIND-SAMPLE-SECTION "bar")) "bar")
 (DEFTEST FIND-SECTION-BY-PREFIX (SECTION-NAME (FIND-SAMPLE-SECTION "q..."))
          "qux")
 (DEFTEST FIND-SECTION-BY-AMBIGUOUS-PREFIX
-         (SECTION-NAME
-          (HANDLER-BIND ((AMBIGUOUS-PREFIX-ERROR
-                          (LAMBDA (CONDITION)
-                            (DECLARE (IGNORE CONDITION))
-                            (INVOKE-RESTART 'USE-ALT-MATCH))))
-            (FIND-SAMPLE-SECTION "b...")))
-         "bar")
+         (LET ((HANDLED NIL))
+           (VALUES
+            (SECTION-NAME
+             (HANDLER-BIND ((AMBIGUOUS-PREFIX-ERROR
+                             (LAMBDA (CONDITION)
+                               (DECLARE (IGNORE CONDITION))
+                               (SETQ HANDLED T)
+                               (INVOKE-RESTART 'USE-FIRST-MATCH))))
+               (FIND-SAMPLE-SECTION "b...")))
+            HANDLED))
+         "bar" T)
 (DEFTEST FIND-SECTION
          (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
            (FIND-SECTION (FORMAT NIL " foo  bar ~C baz..." #\Tab))
@@ -638,7 +650,7 @@
          :FOO 1)
 (DEFTEST (SYMBOL-PROVENANCE 2) (SYMBOL-PROVENANCE :FOO) :FOO)
 (DEFTEST INDEXING-WALK-DEFUN
-         (WITH-TEMPORARY-SECTIONS
+         (WITH-TEMPORARY-SECTIONS NIL
            (LET ((WALKER (MAKE-INSTANCE 'INDEXING-WALKER))
                  (FORM
                   '(FLET ((COMPUTE-K (X Y Z)
