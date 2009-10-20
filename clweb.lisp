@@ -2154,8 +2154,7 @@
     (TANGLE (UNNAMED-SECTION-CODE-PARTS SECTIONS))))
 (DEFCLASS INDEXING-WALKER (WALKER)
           ((INDEX :ACCESSOR WALKER-INDEX :INITFORM (MAKE-INDEX))))
-(DEFMETHOD WALK-ATOMIC-FORM
-           ((WALKER INDEXING-WALKER) FORM ENV &OPTIONAL (EVALP T))
+(DEFMETHOD WALK-ATOMIC-FORM ((WALKER INDEXING-WALKER) FORM ENV &OPTIONAL EVALP)
            (DECLARE (IGNORE EVALP))
            (IF (SYMBOLP FORM)
                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
@@ -2171,6 +2170,27 @@
                (SYMBOL-PROVENANCE OPERATOR)
              (WHEN SECTION
                (INDEX-FUNCTION-USE (WALKER-INDEX WALKER) SYMBOL SECTION ENV))))
+(DEFMETHOD WALK-FUNCTION-NAME :BEFORE
+           ((WALKER INDEXING-WALKER) FUNCTION-NAME ENV &REST ARGS &KEY DEF)
+           (LET ((INDEX (WALKER-INDEX WALKER)))
+             (TYPECASE FUNCTION-NAME
+               (SYMBOL
+                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                    (SYMBOL-PROVENANCE FUNCTION-NAME)
+                  (WHEN SECTION
+                    (IF DEF
+                        (APPLY #'INDEX-FUNCTION-DEFINITION INDEX SYMBOL SECTION
+                               :ALLOW-OTHER-KEYS T ARGS)
+                        (INDEX-FUNCTION-USE INDEX SYMBOL SECTION ENV)))))
+               (SETF-FUNCTION-NAME
+                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                    (SYMBOL-PROVENANCE (CADR FUNCTION-NAME))
+                  (WHEN SECTION
+                    (IF DEF
+                        (APPLY #'INDEX-FUNCTION-DEFINITION INDEX
+                               `(SETF ,SYMBOL) SECTION :ALLOW-OTHER-KEYS T
+                               ARGS)
+                        (INDEX-FUNCTION-USE INDEX SYMBOL SECTION ENV))))))))
 (MACROLET ((DEFINE-DEFUN-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
@@ -2179,6 +2199,25 @@
                                               (CAR FORM) :DEF T)))))
   (DEFINE-DEFUN-WALKER DEFUN)
   (DEFINE-DEFUN-WALKER DEFMACRO))
+(MACROLET ((DEFINE-INDEXING-DEFVAR-WALKER (OPERATOR)
+             `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
+                  ((WALKER INDEXING-WALKER) FORM ENV)
+                ,'`(,(CAR FORM)
+                    ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                         (SYMBOL-PROVENANCE (CADR FORM))
+                       (WHEN SECTION
+                         (INDEX-VARIABLE-DEFINITION (WALKER-INDEX WALKER)
+                                                    SYMBOL SECTION :OPERATOR
+                                                    (CAR FORM) :SPECIAL T))
+                       SYMBOL)
+                    ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
+  (DEFINE-INDEXING-DEFVAR-WALKER DEFVAR)
+  (DEFINE-INDEXING-DEFVAR-WALKER DEFPARAMETER)
+  (DEFINE-INDEXING-DEFVAR-WALKER DEFCONSTANT))
+(DEFMETHOD WALK-DECLARATION-SPECIFIERS ((WALKER INDEXING-WALKER) DECLS ENV)
+           (LOOP FOR (IDENTIFIER . DATA) IN DECLS
+                 IF (EQL IDENTIFIER 'SPECIAL)
+                 COLLECT `(SPECIAL ,@(WALK-LIST WALKER DATA ENV))))
 (DEFMACRO POP-QUALIFIERS (PLACE)
   `(LOOP UNTIL (LISTP (CAR ,PLACE))
          COLLECT (POP ,PLACE)))
@@ -2197,7 +2236,8 @@
                          (LET* ((OPERATOR (POP FORM))
                                 (QUALIFIERS
                                  (MAPCAR
-                                  (LAMBDA (Q) (WALK-ATOMIC-FORM WALKER Q ENV))
+                                  (LAMBDA (Q)
+                                    (WALK-ATOMIC-FORM WALKER Q ENV NIL))
                                   (POP-QUALIFIERS FORM)))
                                 (LAMBDA-LIST (POP FORM))
                                 (BODY FORM))
@@ -2225,7 +2265,7 @@
     ((WALKER INDEXING-WALKER) FORM ENV &AUX (OPERATOR (POP FORM))
      (FUNCTION-NAME (POP FORM))
      (QUALIFIERS
-      (MAPCAR (LAMBDA (Q) (WALK-ATOMIC-FORM WALKER Q ENV))
+      (MAPCAR (LAMBDA (Q) (WALK-ATOMIC-FORM WALKER Q ENV NIL))
               (POP-QUALIFIERS FORM)))
      (LAMBDA-LIST (POP FORM)) (BODY FORM))
   (WALK-METHOD-DEFINITION WALKER OPERATOR
@@ -2233,46 +2273,6 @@
                                               :OPERATOR 'DEFMETHOD :QUALIFIERS
                                               QUALIFIERS :DEF T)
                           QUALIFIERS LAMBDA-LIST BODY ENV))
-(DEFMETHOD WALK-FUNCTION-NAME :BEFORE
-           ((WALKER INDEXING-WALKER) FUNCTION-NAME ENV &REST ARGS &KEY DEF)
-           (LET ((INDEX (WALKER-INDEX WALKER)))
-             (TYPECASE FUNCTION-NAME
-               (SYMBOL
-                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                    (SYMBOL-PROVENANCE FUNCTION-NAME)
-                  (WHEN SECTION
-                    (IF DEF
-                        (APPLY #'INDEX-FUNCTION-DEFINITION INDEX SYMBOL SECTION
-                               :ALLOW-OTHER-KEYS T ARGS)
-                        (INDEX-FUNCTION-USE INDEX SYMBOL SECTION ENV)))))
-               (SETF-FUNCTION-NAME
-                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                    (SYMBOL-PROVENANCE (CADR FUNCTION-NAME))
-                  (WHEN SECTION
-                    (IF DEF
-                        (APPLY #'INDEX-FUNCTION-DEFINITION INDEX
-                               `(SETF ,SYMBOL) SECTION :ALLOW-OTHER-KEYS T
-                               ARGS)
-                        (INDEX-FUNCTION-USE INDEX SYMBOL SECTION ENV))))))))
-(MACROLET ((DEFINE-INDEXING-DEFVAR-WALKER (OPERATOR)
-             `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
-                  ((WALKER INDEXING-WALKER) FORM ENV)
-                ,'`(,(CAR FORM)
-                    ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                         (SYMBOL-PROVENANCE (CADR FORM))
-                       (WHEN SECTION
-                         (INDEX-VARIABLE-DEFINITION (WALKER-INDEX WALKER)
-                                                    SYMBOL SECTION :OPERATOR
-                                                    (CAR FORM) :SPECIAL T))
-                       SYMBOL)
-                    ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
-  (DEFINE-INDEXING-DEFVAR-WALKER DEFVAR)
-  (DEFINE-INDEXING-DEFVAR-WALKER DEFPARAMETER)
-  (DEFINE-INDEXING-DEFVAR-WALKER DEFCONSTANT))
-(DEFMETHOD WALK-DECLARATION-SPECIFIERS ((WALKER INDEXING-WALKER) DECLS ENV)
-           (LOOP FOR (IDENTIFIER . DATA) IN DECLS
-                 IF (EQL IDENTIFIER 'SPECIAL)
-                 COLLECT `(SPECIAL ,@(WALK-LIST WALKER DATA ENV))))
 (MACROLET ((DEFINE-DEFCLASS-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
@@ -2286,7 +2286,7 @@
                                        (LIST SYMBOL
                                              (MAKE-SUB-HEADING OPERATOR))
                                        SECTION :DEF T))
-                    ,'`(,OPERATOR ,(WALK-ATOMIC-FORM WALKER SYMBOL ENV)
+                    ,'`(,OPERATOR ,(WALK-ATOMIC-FORM WALKER SYMBOL ENV NIL)
                         ,(WALK-LIST WALKER SUPERS ENV)
                         ,(MAPCAR
                           (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
@@ -2296,26 +2296,23 @@
   (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION))
 (DEFUN WALK-SLOT-SPECIFIER (WALKER SPEC ENV)
   (ETYPECASE SPEC
-    (SYMBOL (WALK-ATOMIC-FORM WALKER SPEC ENV))
+    (SYMBOL (WALK-ATOMIC-FORM WALKER SPEC ENV NIL))
     (CONS
      (DESTRUCTURING-BIND
          (NAME &REST OPTIONS)
          SPEC
-       (LOOP FOR OPT = OPTIONS THEN (CDDR OPT) AS OPT-NAME = (CAR OPT)
-             AND OPT-VALUE = (CADR OPT)
-             DO (CASE OPT-NAME
-                  ((:READER :WRITER :ACCESSOR)
-                   (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                       (SYMBOL-PROVENANCE OPT-VALUE)
-                     (WHEN SECTION
-                       (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER) SYMBOL
-                                                  SECTION :OPERATOR 'DEFMETHOD)
-                       (WHEN (EQL OPT-NAME :ACCESSOR)
-                         (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER)
-                                                    `(SETF ,SYMBOL) SECTION
-                                                    :OPERATOR 'DEFMETHOD))))))
-             UNTIL (NULL OPT))
-       `(,(WALK-ATOMIC-FORM WALKER NAME ENV)
+       (LOOP FOR (OPT-NAME OPT-VALUE) ON OPTIONS BY #'CDDR
+             IF (MEMBER OPT-NAME '(:READER :WRITER :ACCESSOR))
+             DO (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                    (SYMBOL-PROVENANCE OPT-VALUE)
+                  (WHEN SECTION
+                    (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER) SYMBOL
+                                               SECTION :OPERATOR 'DEFMETHOD)
+                    (WHEN (EQL OPT-NAME :ACCESSOR)
+                      (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER)
+                                                 `(SETF ,SYMBOL) SECTION
+                                                 :OPERATOR 'DEFMETHOD)))))
+       `(,(WALK-ATOMIC-FORM WALKER NAME ENV NIL)
          ,@(WALK-LIST WALKER OPTIONS ENV))))))
 (DEFUN INDEX-SECTIONS (SECTIONS &KEY (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
   (LET ((*EVALUATING* T))

@@ -4706,7 +4706,8 @@ we'll walk.
   (let ((*indexing* t))
     (tangle (unnamed-section-code-parts sections))))
 
-@ Now we'll define a specialized walker that does the actual indexing.
+@ Now we're ready to define a specialized walker that does the actual
+indexing.
 
 @l
 (defclass indexing-walker (walker)
@@ -4715,8 +4716,7 @@ we'll walk.
 @ The only atoms we care about indexing are referring symbols.
 
 @l
-(defmethod walk-atomic-form ((walker indexing-walker) form env &optional @+
-                             (evalp t))
+(defmethod walk-atomic-form ((walker indexing-walker) form env &optional evalp)
   (declare (ignore evalp))
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
@@ -4738,11 +4738,35 @@ not worry about it.
     (when section
       (index-function-use (walker-index walker) symbol section env))))
 
+@ Function names can also be indexed in a |:before| method. The walker
+methods for all of the function-defining and binding forms call down to
+this function, passing keyword arguments that describe the context.
+
+@l
+(defmethod walk-function-name :before
+    ((walker indexing-walker) function-name env &rest args &key def)
+  (let ((index (walker-index walker)))
+    (typecase function-name
+      (symbol
+       (multiple-value-bind (symbol section) (symbol-provenance function-name)
+         (when section
+           (if def
+               (apply #'index-function-definition @+
+                      index symbol section :allow-other-keys t args)
+               (index-function-use index symbol section env)))))
+      (setf-function-name
+       (multiple-value-bind (symbol section) @+
+         (symbol-provenance (cadr function-name))
+         (when section
+           (if def
+               (apply #'index-function-definition @+
+                      index `(setf ,symbol) section :allow-other-keys t args)
+               (index-function-use index symbol section env))))))))
+
 @ We need to treat global function-defining forms like |defun| and
 |defmacro| as special forms, because otherwise they'll get macro-expanded
-before we get a chance to walk them. The indexing proper happens in
-the |walk-function-name| method defined below; recall that
-|walk-lambda-expression| passes keyword arguments down to that function.
+before we get a chance to walk them. The indexing proper happens in the
+|walk-function-name| method we just defined.
 
 We won't bother macro-expanding these forms, because the
 implementation-specific expansion doesn't interest us, and we get
@@ -4786,108 +4810,6 @@ referring symbols replaced, too.
                                 section)))))
   t
   t)
-
-@ Now we'll turn to generic function and method defining forms. We'll start
-with a little macro to pull off method qualifiers from a |defgeneric| form
-or a method description. Syntactically, the qualifiers are any non-list
-objects preceding the specialized \L-list.
-
-@l
-(defmacro pop-qualifiers (place)
-  `(loop until (listp (car ,place))
-         collect (pop ,place)))
-
-@ For |defgeneric| forms, we're interested in the name of the generic
-function being defined and any methods that may be specified as method
-descriptions.
-
-@l
-(define-special-form-walker defgeneric ((walker indexing-walker) form env)
-  (destructuring-bind (operator function-name lambda-list &rest options) form
-    `(,operator
-      ,(walk-function-name walker function-name env @+
-                           :operator 'defgeneric :def t)
-      ,(walk-lambda-list walker lambda-list nil env)
-      ,@(loop for form in options
-              collect (case (car form)
-                        (:method @<Walk the method description in |form|@>)
-                        (t (walk-list walker form env)))))))
-
-@ Method descriptions are very much like |defmethod| forms with an implicit
-function name; this routine walks both. The function-name (if non-null) and
-qualifiers (if any) should have been walked already; we'll walk the
-specialized \L-list and body forms here.
-
-@l
-(defun walk-method-definition (walker operator function-name qualifiers
-                               lambda-list body env)
-  (multiple-value-bind (body-forms decls doc) @+
-      (parse-body body :walker walker :env env)
-    (multiple-value-bind (lambda-list env) @+
-        (walk-specialized-lambda-list walker lambda-list decls env)
-      `(,operator
-        ,@(when function-name `(,function-name))
-        ,@qualifiers
-        ,lambda-list
-        ,@(if doc `(,doc))
-        ,@(if decls `((declare ,@decls)))
-        ,@(walk-list walker body-forms env)))))
-
-@ @<Walk the method description in |form|@>=
-(let* ((operator (pop form))
-       (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q env))
-                           (pop-qualifiers form)))
-       (lambda-list (pop form))
-       (body form))
-  ;; This is purely for its side-effect on the index.
-  (walk-function-name walker function-name env
-                      :operator 'defmethod
-                      :qualifiers qualifiers
-                      :def t)
-  (walk-method-definition walker operator nil qualifiers lambda-list body env))
-
-@ Walking a |defmethod| form is almost, but not quite, the same as walking
-a method description.
-
-@l
-(define-special-form-walker defmethod
-    ((walker indexing-walker) form env &aux
-     (operator (pop form))
-     (function-name (pop form)) ; don't walk yet: wait for the qualifiers
-     (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q env))
-                         (pop-qualifiers form)))
-     (lambda-list (pop form))
-     (body form))
-  (walk-method-definition walker operator
-                          (walk-function-name walker function-name env
-                                              :operator 'defmethod
-                                              :qualifiers qualifiers
-                                              :def t)
-                          qualifiers lambda-list body env))
-
-@ We can index function names in a |:before| method of |walk-function-name|,
-since the referring symbols will get swapped out by |walk-atomic-form|.
-
-@l
-(defmethod walk-function-name :before
-    ((walker indexing-walker) function-name env &rest args &key def)
-  (let ((index (walker-index walker)))
-    (typecase function-name
-      (symbol
-       (multiple-value-bind (symbol section) (symbol-provenance function-name)
-         (when section
-           (if def
-               (apply #'index-function-definition @+
-                      index symbol section :allow-other-keys t args)
-               (index-function-use index symbol section env)))))
-      (setf-function-name
-       (multiple-value-bind (symbol section) @+
-         (symbol-provenance (cadr function-name))
-         (when section
-           (if def
-               (apply #'index-function-definition @+
-                      index `(setf ,symbol) section :allow-other-keys t args)
-               (index-function-use index symbol section env))))))))
 
 @ The special variable-defining forms must also be walked as if they were
 special forms. Once again, we'll just skip the macro expansions.
@@ -4935,6 +4857,84 @@ about |special| declarations, so we just throw everything else away.
          '((special x y z)))
   t)
 
+@ Now we'll turn to the various \csc{clos} forms. We'll start with a little
+macro to pull off method qualifiers from a |defgeneric| form or a method
+description. Syntactically, the qualifiers are any non-list objects
+preceding the specialized \L-list.
+
+@l
+(defmacro pop-qualifiers (place)
+  `(loop until (listp (car ,place))
+         collect (pop ,place)))
+
+@ For |defgeneric| forms, we're interested in the name of the generic
+function being defined and any methods that may be specified as method
+descriptions.
+
+@l
+(define-special-form-walker defgeneric ((walker indexing-walker) form env)
+  (destructuring-bind (operator function-name lambda-list &rest options) form
+    `(,operator
+      ,(walk-function-name walker function-name env @+
+                           :operator 'defgeneric :def t)
+      ,(walk-lambda-list walker lambda-list nil env)
+      ,@(loop for form in options
+              collect (case (car form)
+                        (:method @<Walk the method description in |form|@>)
+                        (t (walk-list walker form env)))))))
+
+@ Method descriptions are very much like |defmethod| forms with an implicit
+function name; this routine walks both. The function-name (if non-null) and
+qualifiers (if any) should have been walked already; we'll walk the
+specialized \L-list and body forms here.
+
+@l
+(defun walk-method-definition (walker operator function-name qualifiers
+                               lambda-list body env)
+  (multiple-value-bind (body-forms decls doc) @+
+      (parse-body body :walker walker :env env)
+    (multiple-value-bind (lambda-list env) @+
+        (walk-specialized-lambda-list walker lambda-list decls env)
+      `(,operator
+        ,@(when function-name `(,function-name))
+        ,@qualifiers
+        ,lambda-list
+        ,@(if doc `(,doc))
+        ,@(if decls `((declare ,@decls)))
+        ,@(walk-list walker body-forms env)))))
+
+@ @<Walk the method description in |form|@>=
+(let* ((operator (pop form))
+       (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q env nil))
+                           (pop-qualifiers form)))
+       (lambda-list (pop form))
+       (body form))
+  ;; This is purely for its side-effect on the index.
+  (walk-function-name walker function-name env
+                      :operator 'defmethod
+                      :qualifiers qualifiers
+                      :def t)
+  (walk-method-definition walker operator nil qualifiers lambda-list body env))
+
+@ Walking a |defmethod| form is almost, but not quite, the same as walking
+a method description.
+
+@l
+(define-special-form-walker defmethod
+    ((walker indexing-walker) form env &aux
+     (operator (pop form))
+     (function-name (pop form)) ; don't walk yet: wait for the qualifiers
+     (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q env nil))
+                         (pop-qualifiers form)))
+     (lambda-list (pop form))
+     (body form))
+  (walk-method-definition walker operator
+                          (walk-function-name walker function-name env
+                                              :operator 'defmethod
+                                              :qualifiers qualifiers
+                                              :def t)
+                          qualifiers lambda-list body env))
+
 @ We'll walk |defclass| and |define-condition| forms in order to index the
 class names and accessor methods.
 
@@ -4951,7 +4951,7 @@ class names and accessor methods.
                                        section
                                        :def t))
                     `(,operator
-                      ,(walk-atomic-form walker symbol env)
+                      ,(walk-atomic-form walker symbol env nil)
                       ,(walk-list walker supers env)
                       ,(mapcar (lambda (spec) @+
                                  (walk-slot-specifier walker spec env)) @+
@@ -4967,15 +4967,12 @@ options.
 @l
 (defun walk-slot-specifier (walker spec env)
   (etypecase spec
-    (symbol (walk-atomic-form walker spec env))
+    (symbol (walk-atomic-form walker spec env nil))
     (cons (destructuring-bind (name &rest options) spec
-            (loop for opt = options then (cddr opt)
-                  as opt-name = (car opt) and opt-value = (cadr opt)
-                  do (case opt-name
-                       ((:reader :writer :accessor) @+
-                        @<Index |opt-value| as a slot access method@>))
-                  until (null opt))
-            `(,(walk-atomic-form walker name env)
+            (loop for (opt-name opt-value) on options by #'cddr
+                  if (member opt-name '(:reader :writer :accessor))
+                    do @<Index |opt-value| as a slot access method@>)
+            `(,(walk-atomic-form walker name env nil)
               ,@(walk-list walker options env))))))
 
 @ @<Index |opt-value| as a slot access method@>=
