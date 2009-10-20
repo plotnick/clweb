@@ -2179,6 +2179,9 @@
                                               (CAR FORM) :DEF T)))))
   (DEFINE-DEFUN-WALKER DEFUN)
   (DEFINE-DEFUN-WALKER DEFMACRO))
+(DEFMACRO POP-QUALIFIERS (PLACE)
+  `(LOOP UNTIL (LISTP (CAR ,PLACE))
+         COLLECT (POP ,PLACE)))
 (DEFINE-SPECIAL-FORM-WALKER DEFGENERIC
     ((WALKER INDEXING-WALKER) FORM ENV)
   (DESTRUCTURING-BIND
@@ -2193,10 +2196,9 @@
                         (:METHOD
                          (LET* ((OPERATOR (POP FORM))
                                 (QUALIFIERS
-                                 (LOOP UNTIL (LISTP (CAR FORM))
-                                       COLLECT (WALK-ATOMIC-FORM WALKER
-                                                                 (POP FORM)
-                                                                 ENV)))
+                                 (MAPCAR
+                                  (LAMBDA (Q) (WALK-ATOMIC-FORM WALKER Q ENV))
+                                  (POP-QUALIFIERS FORM)))
                                 (LAMBDA-LIST (POP FORM))
                                 (BODY FORM))
                            (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV
@@ -2223,12 +2225,12 @@
     ((WALKER INDEXING-WALKER) FORM ENV &AUX (OPERATOR (POP FORM))
      (FUNCTION-NAME (POP FORM))
      (QUALIFIERS
-      (LOOP UNTIL (LISTP (CAR FORM))
-            COLLECT (WALK-ATOMIC-FORM WALKER (POP FORM) ENV)))
+      (MAPCAR (LAMBDA (Q) (WALK-ATOMIC-FORM WALKER Q ENV))
+              (POP-QUALIFIERS FORM)))
      (LAMBDA-LIST (POP FORM)) (BODY FORM))
   (WALK-METHOD-DEFINITION WALKER OPERATOR
                           (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV
-                                              :OPERATOR OPERATOR :QUALIFIERS
+                                              :OPERATOR 'DEFMETHOD :QUALIFIERS
                                               QUALIFIERS :DEF T)
                           QUALIFIERS LAMBDA-LIST BODY ENV))
 (DEFMETHOD WALK-FUNCTION-NAME :BEFORE
