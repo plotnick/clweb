@@ -3804,7 +3804,7 @@ the parameters found therein.
 @l
 (deftype class-specializer () '(cons symbol (cons symbol null)))
 (deftype compound-specializer (&optional (operator 'eql))
-  `(cons symbol (cons (cons (eql ,operator) (cons symbol null)) null)))
+  `(cons symbol (cons (cons (eql ,operator) *) null)))
 
 (defun walk-specialized-lambda-list (walker lambda-list decls env)
   (let ((req-params @<Extract the required parameters from |lambda-list|@>))
@@ -4389,28 +4389,35 @@ of them to figure out what kind of heading class to instantiate.
          :allow-other-keys t
          args))
 
-@ Primary methods (i.e., methods with empty qualifier lists) are indexed as
-functions so that they'll appear as definitions of the generic function
-they're methods of; only methods with qualifiers get independent entries.
-This helps keep the index compact without significantly affecting usability.
+@ Non-|setf| primary methods (i.e., methods with empty qualifier lists) are
+indexed as functions so that they'll appear as definitions of the generic
+function they're methods of; only methods with qualifiers and |setf|
+methods get independent entries. This helps keep the index compact without
+significantly affecting usability.
 
 @<Choose an appropriate heading class...@>=
-(if qualifiers
-    (typecase function-name
-      (symbol 'method-heading)
-      (setf-function-name 'setf-method-heading))
-    'function-heading)
+(typecase function-name
+  (symbol (if qualifiers 'method-heading 'function-heading))
+  (setf-function-name 'setf-method-heading))
 
 @t@l
 (deftest make-sub-heading
   (notany #'null
-          (list (typep (make-sub-heading nil) 'function-heading)
-                (typep (make-sub-heading 'defmethod) 'function-heading)
-                (typep (make-sub-heading 'defmethod :qualifiers '(:after)) @+
+          (list (typep (make-sub-heading nil)
+                       'function-heading)
+                (typep (make-sub-heading 'defmethod)
+                       'function-heading)
+                (typep (make-sub-heading 'defmethod @+
+                                         :function-name '(setf foo))
+                       'setf-method-heading)
+                (typep (make-sub-heading 'defmethod @+
+                                         :qualifiers '(:after))
                        'method-heading)
-                (typep (make-sub-heading 'defun :function-name '(setf foo)) @+
+                (typep (make-sub-heading 'defun @+
+                                         :function-name '(setf foo))
                        'setf-function-heading)
-                (typep (make-sub-heading 'defclass) 'class-heading)))
+                (typep (make-sub-heading 'defclass)
+                       'class-heading)))
   t)
 
 @ Now let's turn our attention to the other half of index entries.
@@ -4618,7 +4625,7 @@ is then passed down to |make-sub-heading|.
     section :def t))
 
 (defun index-function-definition (index function-name section &key @+
-                                  operator local qualifiers)
+                                  operator local generic qualifiers)
   (add-index-entry
     index
     (list (typecase function-name
@@ -4627,7 +4634,8 @@ is then passed down to |make-sub-heading|.
           (make-sub-heading operator
                             :function-name function-name
                             :local local
-                            :generic (generic-function-p function-name)
+                            :generic (or generic @+
+                                         (generic-function-p function-name))
                             :qualifiers qualifiers))
     section :def t))
 
@@ -4732,6 +4740,49 @@ indexing.
 (defclass indexing-walker (walker)
   ((index :accessor walker-index :initform (make-index))))
 
+@t Here's a little routine that returns a list of all the entries in an
+index. The elements of that list are lists of the form |(heading-names
+locations)|, where each location is either a section number or a list
+|(:def section-number)|.
+
+@l
+(defun all-index-entries (index)
+  (let ((entries))
+    (maptree
+     (lambda (entry)
+       (push (list (mapcar #'heading-name (entry-heading entry))
+                   (loop for locator in (entry-locators entry)
+                         if (locator-definition-p locator)
+                           collect `(:def ,(section-number (location locator)))
+                         else
+                           collect (section-number (location locator))))
+             entries))
+     (index-entries index))
+    (nreverse entries)))
+
+@t To test our indexing walker, we'll use the following macro, which takes
+a list of section specifiers acceptable to |with-temporary-sections|,
+followed by zero or more expected index entry specifiers which should
+match the output of |all-index-entries|. It verifies that the walked forms
+match the originals and that the index contains all and only the expected
+entries.
+
+@l
+(defmacro define-indexing-test (name sections &rest expected-entries)
+  `(deftest (index ,name)
+     (with-temporary-sections ,sections
+       (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
+             (mangled-code (tangle-code-for-indexing *sections*))
+             (walker (make-instance 'indexing-walker)))
+         (loop for form in tangled-code and mangled-form in mangled-code
+               as walked-form = (walk-form walker mangled-form)
+               do (assert (tree-equal walked-form form)
+                          (walked-form mangled-form form)))
+         (tree-equal (all-index-entries (walker-index walker))
+                     ',expected-entries
+                     :test #'equal)))
+     t))
+
 @ The only atoms we care about indexing are referring symbols.
 
 @l
@@ -4743,6 +4794,11 @@ indexing.
           (index-variable-use (walker-index walker) symbol section env))
         symbol)
       form))
+
+@t@l
+(define-indexing-test atom
+  ((:section :code (*sections*)))
+  ((*sections* "special variable") (0)))
 
 @ We'll index all function calls whose |operator| is a referring symbol.
 The actual replacement of referring symbols with their referents takes place
@@ -4756,6 +4812,11 @@ not worry about it.
   (multiple-value-bind (symbol section) (symbol-provenance operator)
     (when section
       (index-function-use (walker-index walker) symbol section env))))
+
+@t@l
+(define-indexing-test funcall
+  ((:section :code ((mapappend 'identity '(1 2 3)))))
+  ((mapappend "function") (0)))
 
 @ Function names can also be indexed in a |:before| method. The walker
 methods for all of the function-defining and binding forms call down to
@@ -4775,62 +4836,51 @@ this function, passing keyword arguments that describe the context.
                (index-function-use index symbol section env)))))
       (setf-function-name
        (multiple-value-bind (symbol section) @+
-         (symbol-provenance (cadr function-name))
+           (symbol-provenance (cadr function-name))
          (when section
            (if def
                (apply #'index-function-definition @+
                       index `(setf ,symbol) section :allow-other-keys t args)
                (index-function-use index symbol section env))))))))
 
-@ We need to treat global function-defining forms like |defun| and
-|defmacro| as special forms, because otherwise they'll get macro-expanded
-before we get a chance to walk them. The indexing proper happens in the
-|walk-function-name| method we just defined.
+@t@l
+(define-indexing-test function-name
+  ((:section :code ((flet ((foo (x) x)))))
+   (:section :code ((flet (((setf foo) (y x) y))))))
+  ((foo "local function") ((:def 0)))
+  ((foo "local setf function") ((:def 1))))
 
-We won't bother macro-expanding these forms, because the
-implementation-specific expansion doesn't interest us, and we get
-everything we need with this walk.
+@ We'll treat |defun| and |defmacro| as special forms, because otherwise
+they will get macro-expanded before we get a chance to walk the function
+name. In fact, we won't even bother expanding them at all, since we don't
+care about the implementation-specific expansions, and we get everything we
+need from this simple walk.
+
+The indexing proper happens in the |walk-function-name| method we just
+defined, by way of |walk-lambda-expression|.
 
 @l
-(macrolet ((define-defun-walker (operator)
+(macrolet ((define-defun-like-walker (operator)
              `(define-special-form-walker ,operator @+
                   ((walker indexing-walker) form env)
                 `(,(car form)
-                  ,@(walk-lambda-expression walker (cdr form) env @+
-                                            :operator (car form)
-                                            :def t)))))
-  (define-defun-walker defun)
-  (define-defun-walker defmacro))
+                   ,@(walk-lambda-expression walker (cdr form) env
+                                             :operator (car form)
+                                             :def t)))))
+  (define-defun-like-walker defun)
+  (define-defun-like-walker defmacro))
 
-@t Besides testing the return value of a walk over a |defmacro| form, this
-test ensures that complex \L-lists are properly indexed and have their
-referring symbols replaced, too.
+@t@l
+(define-indexing-test defun
+  ((:section :code ((defun foo (x) x))))
+  ((foo "function") ((:def 0))))
 
-@l
-(deftest indexing-walk-defun
-  (with-temporary-sections ()
-    (let ((walker (make-instance 'indexing-walker))
-          (form '(flet ((compute-k (x y z) (+ x y z)))
-                   (defmacro foo (&whole w x y z &environemnt env &key
-                                  ((key k) (compute-k x y z) k-s-p) &body body)
-                     (declare (special k))
-                     body)))
-          (section (make-instance 'section))
-          (*index-packages* (list (find-package "CLWEB"))))
-      (values (tree-equal (walk-form walker (substitute-symbols form section))
-                          form)
-              (loop with index = (walker-index walker)
-                    for h in `((k ,(make-instance 'variable-heading :special t))
-                               (compute-k ,(make-instance 'function-heading @+
-                                                          :local t))
-                               (foo ,(make-instance 'macro-heading)))
-                    always (eql (location @+
-                                 (first (find-index-entries index h)))
-                                section)))))
-  t
-  t)
+(define-indexing-test defmacro
+  ((:section :code ((defmacro foo (&body body) (mapappend 'identity body)))))
+  ((foo "macro") ((:def 0)))
+  ((mapappend "function") (0)))
 
-@ The special variable-defining forms must also be walked as if they were
+@ The special-variable-defining forms must also be walked as if they were
 special forms. Once again, we'll just skip the macro expansions.
 
 @l
@@ -4851,6 +4901,15 @@ special forms. Once again, we'll just skip the macro expansions.
   (define-indexing-defvar-walker defparameter)
   (define-indexing-defvar-walker defconstant))
 
+@t@l
+(define-indexing-test defvar
+  ((:section :code ((defvar a t)))
+   (:section :code ((defparameter b t)))
+   (:section :code ((defconstant c t))))
+  ((a "special variable") ((:def 0)))
+  ((b "special variable") ((:def 1)))
+  ((c "constant variable") ((:def 2))))
+
 @ The default method for |walk-declaration-specifiers| just returns the
 given specifiers. That's not sufficient for our purposes here, though,
 because we need to replace referring symbols with their referents;
@@ -4867,7 +4926,7 @@ about |special| declarations, so we just throw everything else away.
           collect `(special ,@(walk-list walker data env))))
 
 @t@l
-(deftest (walk-declaration-specifiers indexing)
+(deftest indexing-walk-declaration-specifiers
   (equal (walk-declaration-specifiers (make-instance 'indexing-walker)
                                       '((type foo x)
                                         (special x y z)
@@ -4895,12 +4954,25 @@ descriptions.
   (destructuring-bind (operator function-name lambda-list &rest options) form
     `(,operator
       ,(walk-function-name walker function-name env @+
-                           :operator 'defgeneric :def t)
+                           :operator 'defgeneric
+                           :generic t
+                           :def t)
       ,(walk-lambda-list walker lambda-list nil env)
       ,@(loop for form in options
               collect (case (car form)
                         (:method @<Walk the method description in |form|@>)
                         (t (walk-list walker form env)))))))
+
+@t@l
+(define-indexing-test defgeneric
+  ((:section :code ((defgeneric foo (x y)
+                      (:documentation "foo")
+                      (:method-combination progn)
+                      (:method progn ((x t) y) x)
+                      (:method :around (x (y (eql 't))) y)))))
+  ((foo "AROUND method") ((:def 0)))
+  ((foo "generic function") ((:def 0)))
+  ((foo "PROGN method") ((:def 0))))
 
 @ Method descriptions are very much like |defmethod| forms with an implicit
 function name; this routine walks both. The function-name (if non-null) and
@@ -4931,6 +5003,7 @@ specialized \L-list and body forms here.
   ;; This is purely for its side-effect on the index.
   (walk-function-name walker function-name env
                       :operator 'defmethod
+                      :generic t
                       :qualifiers qualifiers
                       :def t)
   (walk-method-definition walker operator nil qualifiers lambda-list body env))
@@ -4950,9 +5023,17 @@ a method description.
   (walk-method-definition walker operator
                           (walk-function-name walker function-name env
                                               :operator 'defmethod
+                                              :generic t
                                               :qualifiers qualifiers
                                               :def t)
                           qualifiers lambda-list body env))
+
+@t@l
+(define-indexing-test defmethod
+  ((:section :code ((defmethod add (x y) (+ x y))))
+   (:section :code ((defmethod add :before (x y)))))
+  ((add "BEFORE method") ((:def 1)))
+  ((add "generic function") ((:def 0))))
 
 @ We'll walk |defclass| and |define-condition| forms in order to index the
 class names and accessor methods.
@@ -4979,6 +5060,19 @@ class names and accessor methods.
   (define-defclass-walker defclass)
   (define-defclass-walker define-condition))
 
+@t@l
+(define-indexing-test defclass
+  ((:section :code ((defclass foo ()
+                      ((a :reader foo-a1 :reader foo-a2)))))
+   (:section :code ((define-condition bar ()
+                      ((b :accessor foo-b))))))
+  ((bar "condition class") ((:def 1)))
+  ((foo "class") ((:def 0)))
+  ((foo-a1 "generic function") ((:def 0)))
+  ((foo-a2 "generic function") ((:def 0)))
+  ((foo-b "generic function") ((:def 1)))
+  ((foo-b "primary setf method") ((:def 1))))
+
 @ The only slot options we care about are |:reader|, |:writer|,
 and~|:accessor|. We index the methods implicitly created by those
 options.
@@ -4998,10 +5092,13 @@ options.
 (multiple-value-bind (symbol section) (symbol-provenance opt-value)
   (when section
     (index-function-definition (walker-index walker) symbol section @+
-                               :operator 'defmethod)
+                               :operator 'defmethod
+                               :generic t)
     (when (eql opt-name :accessor)
-      (index-function-definition (walker-index walker) `(setf ,symbol) @+
-                                 section :operator 'defmethod))))
+      (index-function-definition (walker-index walker) @+
+                                 `(setf ,symbol) section
+                                 :operator 'defmethod
+                                 :generic t))))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index

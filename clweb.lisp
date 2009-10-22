@@ -1732,7 +1732,7 @@
         (SETQ LAMBDA-LIST NIL)))))
 (DEFTYPE CLASS-SPECIALIZER () '(CONS SYMBOL (CONS SYMBOL NULL)))
 (DEFTYPE COMPOUND-SPECIALIZER (&OPTIONAL (OPERATOR (QUOTE EQL)))
-  `(CONS SYMBOL (CONS (CONS (EQL ,OPERATOR) (CONS SYMBOL NULL)) NULL)))
+  `(CONS SYMBOL (CONS (CONS (EQL ,OPERATOR) *) NULL)))
 (DEFUN WALK-SPECIALIZED-LAMBDA-LIST (WALKER LAMBDA-LIST DECLS ENV)
   (LET ((REQ-PARAMS
          (FLET ((AUGMENT-ENV (VAR)
@@ -1991,11 +1991,12 @@
          (ECASE OPERATOR
            ((NIL DEFGENERIC) 'FUNCTION-HEADING)
            ((DEFMETHOD)
-            (IF QUALIFIERS
-                (TYPECASE FUNCTION-NAME
-                  (SYMBOL 'METHOD-HEADING)
-                  (SETF-FUNCTION-NAME 'SETF-METHOD-HEADING))
-                'FUNCTION-HEADING))
+            (TYPECASE FUNCTION-NAME
+              (SYMBOL
+               (IF QUALIFIERS
+                   'METHOD-HEADING
+                   'FUNCTION-HEADING))
+              (SETF-FUNCTION-NAME 'SETF-METHOD-HEADING)))
            ((DEFUN FLET LABELS)
             (TYPECASE FUNCTION-NAME
               (SYMBOL 'FUNCTION-HEADING)
@@ -2109,7 +2110,7 @@
                                            CONSTANT))
                    SECTION :DEF T))
 (DEFUN INDEX-FUNCTION-DEFINITION
-       (INDEX FUNCTION-NAME SECTION &KEY OPERATOR LOCAL QUALIFIERS)
+       (INDEX FUNCTION-NAME SECTION &KEY OPERATOR LOCAL GENERIC QUALIFIERS)
   (ADD-INDEX-ENTRY INDEX
                    (LIST
                     (TYPECASE FUNCTION-NAME
@@ -2117,7 +2118,8 @@
                       (SETF-FUNCTION-NAME (CADR FUNCTION-NAME)))
                     (MAKE-SUB-HEADING OPERATOR :FUNCTION-NAME FUNCTION-NAME
                                       :LOCAL LOCAL :GENERIC
-                                      (GENERIC-FUNCTION-P FUNCTION-NAME)
+                                      (OR GENERIC
+                                          (GENERIC-FUNCTION-P FUNCTION-NAME))
                                       :QUALIFIERS QUALIFIERS))
                    SECTION :DEF T))
 (DEFUN SUBSTITUTE-SYMBOLS (FORM SECTION &AUX SYMBOLS)
@@ -2191,14 +2193,14 @@
                                `(SETF ,SYMBOL) SECTION :ALLOW-OTHER-KEYS T
                                ARGS)
                         (INDEX-FUNCTION-USE INDEX SYMBOL SECTION ENV))))))))
-(MACROLET ((DEFINE-DEFUN-WALKER (OPERATOR)
+(MACROLET ((DEFINE-DEFUN-LIKE-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
                 ,'`(,(CAR FORM)
                     ,@(WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :OPERATOR
                                               (CAR FORM) :DEF T)))))
-  (DEFINE-DEFUN-WALKER DEFUN)
-  (DEFINE-DEFUN-WALKER DEFMACRO))
+  (DEFINE-DEFUN-LIKE-WALKER DEFUN)
+  (DEFINE-DEFUN-LIKE-WALKER DEFMACRO))
 (MACROLET ((DEFINE-INDEXING-DEFVAR-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
@@ -2227,8 +2229,8 @@
       (OPERATOR FUNCTION-NAME LAMBDA-LIST &REST OPTIONS)
       FORM
     `(,OPERATOR
-      ,(WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV :OPERATOR 'DEFGENERIC :DEF
-                           T)
+      ,(WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV :OPERATOR 'DEFGENERIC
+                           :GENERIC T :DEF T)
       ,(WALK-LAMBDA-LIST WALKER LAMBDA-LIST NIL ENV)
       ,@(LOOP FOR FORM IN OPTIONS
               COLLECT (CASE (CAR FORM)
@@ -2242,8 +2244,8 @@
                                 (LAMBDA-LIST (POP FORM))
                                 (BODY FORM))
                            (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV
-                                               :OPERATOR 'DEFMETHOD :QUALIFIERS
-                                               QUALIFIERS :DEF T)
+                                               :OPERATOR 'DEFMETHOD :GENERIC T
+                                               :QUALIFIERS QUALIFIERS :DEF T)
                            (WALK-METHOD-DEFINITION WALKER OPERATOR NIL
                                                    QUALIFIERS LAMBDA-LIST BODY
                                                    ENV)))
@@ -2270,8 +2272,8 @@
      (LAMBDA-LIST (POP FORM)) (BODY FORM))
   (WALK-METHOD-DEFINITION WALKER OPERATOR
                           (WALK-FUNCTION-NAME WALKER FUNCTION-NAME ENV
-                                              :OPERATOR 'DEFMETHOD :QUALIFIERS
-                                              QUALIFIERS :DEF T)
+                                              :OPERATOR 'DEFMETHOD :GENERIC T
+                                              :QUALIFIERS QUALIFIERS :DEF T)
                           QUALIFIERS LAMBDA-LIST BODY ENV))
 (MACROLET ((DEFINE-DEFCLASS-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
@@ -2307,11 +2309,13 @@
                     (SYMBOL-PROVENANCE OPT-VALUE)
                   (WHEN SECTION
                     (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER) SYMBOL
-                                               SECTION :OPERATOR 'DEFMETHOD)
+                                               SECTION :OPERATOR 'DEFMETHOD
+                                               :GENERIC T)
                     (WHEN (EQL OPT-NAME :ACCESSOR)
                       (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER)
                                                  `(SETF ,SYMBOL) SECTION
-                                                 :OPERATOR 'DEFMETHOD)))))
+                                                 :OPERATOR 'DEFMETHOD :GENERIC
+                                                 T)))))
        `(,(WALK-ATOMIC-FORM WALKER NAME ENV NIL)
          ,@(WALK-LIST WALKER OPTIONS ENV))))))
 (DEFUN INDEX-SECTIONS (SECTIONS &KEY (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
