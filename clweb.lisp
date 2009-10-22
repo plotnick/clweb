@@ -2287,7 +2287,18 @@
                                              (MAKE-SUB-HEADING OPERATOR))
                                        SECTION :DEF T))
                     ,'`(,OPERATOR ,(WALK-ATOMIC-FORM WALKER SYMBOL ENV NIL)
-                        ,(WALK-LIST WALKER SUPERS ENV)
+                        ,(MAPCAR
+                          (LAMBDA (SUPER)
+                            (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                                (SYMBOL-PROVENANCE SUPER)
+                              (WHEN SECTION
+                                (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
+                                                 (LIST SYMBOL
+                                                       (MAKE-SUB-HEADING
+                                                        OPERATOR))
+                                                 SECTION))
+                              (WALK-ATOMIC-FORM WALKER SYMBOL ENV NIL)))
+                          SUPERS)
                         ,(MAPCAR
                           (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
                           SLOT-SPECS)

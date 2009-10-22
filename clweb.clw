@@ -5035,7 +5035,7 @@ a method description.
   ((add "generic function") ((:def 0))))
 
 @ We'll walk |defclass| and |define-condition| forms in order to index the
-class names and accessor methods.
+class names, super-classes, and~accessor methods.
 
 @l
 (macrolet ((define-defclass-walker (operator)
@@ -5051,13 +5051,23 @@ class names and accessor methods.
                                        :def t))
                     `(,operator
                       ,(walk-atomic-form walker symbol env nil)
-                      ,(walk-list walker supers env)
+                      ,(mapcar (lambda (super)
+                                 @<Index the use of the superclass |super|@>)
+                               supers)
                       ,(mapcar (lambda (spec) @+
                                  (walk-slot-specifier walker spec env)) @+
                                slot-specs)
                       ,@(walk-list walker options env)))))))
   (define-defclass-walker defclass)
   (define-defclass-walker define-condition))
+
+@ @<Index the use of the superclass |super|@>=
+(multiple-value-bind (symbol section) (symbol-provenance super)
+  (when section
+    (add-index-entry (walker-index walker)
+                     (list symbol (make-sub-heading operator))
+                     section))
+  (walk-atomic-form walker symbol env nil))
 
 @t@l
 (define-indexing-test defclass
