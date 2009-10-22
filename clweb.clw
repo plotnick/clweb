@@ -2707,14 +2707,13 @@ file.
                        (print *weave-print*)
                        (external-format :default))
   (flet ((weave (object stream)
-           (let ((*evaluating* t))
-             (write object
-                    :stream stream
-                    :case :downcase
-                    :escape nil
-                    :pretty t
-                    :pprint-dispatch *weave-pprint-dispatch*
-                    :right-margin 1000))))
+           (write object
+                  :stream stream
+                  :case :downcase
+                  :escape nil
+                  :pretty t
+                  :pprint-dispatch *weave-pprint-dispatch*
+                  :right-margin 1000)))
     (macrolet ((with-output-file ((stream filespec) &body body)
                  `(with-open-file (,stream ,filespec
                                    :direction :output
