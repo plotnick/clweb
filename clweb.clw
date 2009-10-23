@@ -4816,7 +4816,9 @@ off to the next method for the actual expansion.
              (t (call-next-method)))))
     (t form)))
 
-@ The only atoms we care about indexing are referring symbols.
+@ The only atoms we care about indexing are referring symbols. We'll return
+the referents; this is where the reverse-substitution of referring symbols
+takes place.
 
 @l
 (defmethod walk-atomic-form ((walker indexing-walker) form env &optional evalp)
@@ -4833,10 +4835,8 @@ off to the next method for the actual expansion.
   ((:section :code (*sections*)))
   ((*sections* "special variable") (0)))
 
-@ We'll index all function calls whose |operator| is a referring symbol.
-The actual replacement of referring symbols with their referents takes place
-in |walk-atomic-form|, above, so we can just use a |:before| method here and
-not worry about it.
+@ We'll index all function-call-like forms whose |operator| is a referring
+symbol.
 
 @l
 (defmethod walk-compound-form :before @+
@@ -4851,9 +4851,9 @@ not worry about it.
   ((:section :code ((mapappend 'identity '(1 2 3)))))
   ((mapappend "function") (0)))
 
-@ Function names can also be indexed in a |:before| method. The walker
-methods for all of the function-defining and binding forms call down to
-this function, passing keyword arguments that describe the context.
+@ The walker methods for all of the function-defining and binding forms
+call down to this function, passing keyword arguments that describe the
+context.
 
 @l
 (defmethod walk-function-name :before
@@ -4975,8 +4975,7 @@ preceding the specialized \L-list.
 
 @l
 (defmacro pop-qualifiers (place)
-  `(loop until (listp (car ,place))
-         collect (pop ,place)))
+  `(loop until (listp (car ,place)) collect (pop ,place)))
 
 @ For |defgeneric| forms, we're interested in the name of the generic
 function being defined and any methods that may be specified as method
@@ -5187,4 +5186,4 @@ of all of the interesting symbols so encountered.
       (pprint-exit-if-list-exhausted)
       (write-char #\Space stream))))
 
-@* Index.
+@*Index.
