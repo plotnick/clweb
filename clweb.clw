@@ -4783,6 +4783,39 @@ entries.
                      :test #'equal)))
      t))
 
+@ We have to override the walker's macro expansion function, since the
+forms that we're considering might be or contain referring symbols, which
+won't have macro definitions. There are two important cases here:
+  (1)~a form that is a referring symbol whose referrent is a symbol macro
+  in the current environment; and
+  (2)~a compound form, the operator of which is a referring symbol whose
+  referrent is a macro in the current environment.
+In both cases, we'll index the use of the (symbol) macro, then hand control
+off to the next method for the actual expansion.
+
+@l
+(defmethod macroexpand-for-walk ((walker indexing-walker) form env)
+  (typecase form
+    (symbol
+     (multiple-value-bind (symbol section) (symbol-provenance form)
+       (cond (section
+              (case (variable-information symbol env)
+                (:symbol-macro
+                 (index-variable-use (walker-index walker) symbol section env)
+                 (call-next-method walker (cons symbol (cdr form)) env))
+                (t form)))
+             (t (call-next-method)))))
+    (cons
+     (multiple-value-bind (symbol section) (symbol-provenance (car form))
+       (cond (section
+              (case (function-information symbol env)
+                (:macro
+                 (index-function-use (walker-index walker) symbol section env)
+                 (call-next-method walker (cons symbol (cdr form)) env))
+                (t form)))
+             (t (call-next-method)))))
+    (t form)))
+
 @ The only atoms we care about indexing are referring symbols.
 
 @l

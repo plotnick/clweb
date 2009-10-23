@@ -2155,6 +2155,33 @@
     (TANGLE (UNNAMED-SECTION-CODE-PARTS SECTIONS))))
 (DEFCLASS INDEXING-WALKER (WALKER)
           ((INDEX :ACCESSOR WALKER-INDEX :INITFORM (MAKE-INDEX))))
+(DEFMETHOD MACROEXPAND-FOR-WALK ((WALKER INDEXING-WALKER) FORM ENV)
+           (TYPECASE FORM
+             (SYMBOL
+              (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                  (SYMBOL-PROVENANCE FORM)
+                (COND
+                 (SECTION
+                  (CASE (VARIABLE-INFORMATION SYMBOL ENV)
+                    (:SYMBOL-MACRO
+                     (INDEX-VARIABLE-USE (WALKER-INDEX WALKER) SYMBOL SECTION
+                                         ENV)
+                     (CALL-NEXT-METHOD WALKER (CONS SYMBOL (CDR FORM)) ENV))
+                    (T FORM)))
+                 (T (CALL-NEXT-METHOD)))))
+             (CONS
+              (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                  (SYMBOL-PROVENANCE (CAR FORM))
+                (COND
+                 (SECTION
+                  (CASE (FUNCTION-INFORMATION SYMBOL ENV)
+                    (:MACRO
+                     (INDEX-FUNCTION-USE (WALKER-INDEX WALKER) SYMBOL SECTION
+                                         ENV)
+                     (CALL-NEXT-METHOD WALKER (CONS SYMBOL (CDR FORM)) ENV))
+                    (T FORM)))
+                 (T (CALL-NEXT-METHOD)))))
+             (T FORM)))
 (DEFMETHOD WALK-ATOMIC-FORM ((WALKER INDEXING-WALKER) FORM ENV &OPTIONAL EVALP)
            (DECLARE (IGNORE EVALP))
            (IF (SYMBOLP FORM)
