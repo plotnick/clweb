@@ -3293,16 +3293,16 @@ the second value returned, and what should be second is now fourth.
 Thanks, Franz!
 
 @l
-(defun reorder-env-information (fn)
-  (lambda (&rest args)
-    (multiple-value-bind (type locative declarations local) (apply fn args)
-      (declare (ignore locative))
-      (values type local declarations))))
+(defmacro reorder-env-information (fn orig)
+  `(defun ,fn (&rest args)
+     (multiple-value-bind (type locative declarations local) (apply ,orig args)
+       (declare (ignore locative))
+       (values type local declarations))))
 
 #+allegro
-(setf (fdefinition 'variable-information) (reorder-env-information #'sys:variable-information))
+(reorder-env-information variable-information #'sys:variable-information)
 #+allegro
-(setf (fdefinition 'function-information) (reorder-env-information #'sys:function-information))
+(reorder-env-information function-information #'sys:function-information)
 
 @ The main entry point for the walker is |walk-form|. The walk ordinarily
 stops after encountering an atomic or special form; otherwise, we macro
