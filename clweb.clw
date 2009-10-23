@@ -212,7 +212,7 @@ and ones with none upon thars.
 
 @ Sections that begin with \.{@@t} are {\it test sections}. They are used to
 include test cases alongside the normal code, but are treated specially by
-both the tangler and the weaver. The tangler writes them out to a seperate
+both the tangler and the weaver. The tangler writes them out to a separate
 file, and the weaver may elide them entirely.
 
 Test sections are automatically associated with the last non-test section
@@ -290,7 +290,7 @@ sections.
   (let ((*sections* *test-sections*))
     (call-next-method)))
 
-@ The test sections all get woven to a seperate output file, and we'll
+@ The test sections all get woven to a separate output file, and we'll
 need a copy of the limbo text there, too.
 
 @l
@@ -698,7 +698,7 @@ reading Lisp forms that are embedded within \TeX\ material. And finally,
 restricted mode is used for reading material in section names and a few
 other places.
 
-We use seperate readtables for each mode, which are stored in |*readtables*|
+We use separate readtables for each mode, which are stored in |*readtables*|
 and accessed via |readtable-for-mode|. We add an extra readtable with key
 |nil| that stores a virgin copy of the standard readtable.
 
@@ -3461,7 +3461,7 @@ function name.
 default method for |walk-compound-form| just defined, since their syntax is
 the same as an ordinary function call. But it's important to override
 |walk-as-special-form-p| for these operators, because ``[a]n
-implmementation is free to implement a Common Lisp special operator as a
+implementation is free to implement a Common Lisp special operator as a
 macro.'' (\csc{ansi} Common Lisp, section~3.1.2.1.2.2)
 
 @l
@@ -4611,7 +4611,7 @@ particular advantage.
         section))))
 
 @ To index definitions, we'll need more information from the walker about
-the context in which the variable or function name occured. In particular,
+the context in which the variable or function name occurred. In particular,
 we'll get the |car| of the defining form as the |operator| argument, which
 is then passed down to |make-sub-heading|.
 
@@ -4655,7 +4655,7 @@ place, we make a special kind of copy of each form, and splice that into
 place. These copies will have each interesting symbol replaced with an
 uninterned symbol whose value cell contains the symbol it replaced and
 whose |section| property contains the section in which the original symbol
-occured. We'll these uninterned symbols {\it referring symbols}.
+occurred. We'll these uninterned symbols {\it referring symbols}.
 
 First, we'll need a routine that does the substitution just described.
 The substitution is done blindly and without regard to the syntax or
@@ -4787,10 +4787,10 @@ entries.
 @ We have to override the walker's macro expansion function, since the
 forms that we're considering might be or contain referring symbols, which
 won't have macro definitions. There are two important cases here:
-  (1)~a form that is a referring symbol whose referrent is a symbol macro
+  (1)~a form that is a referring symbol whose referent is a symbol macro
   in the current environment; and
   (2)~a compound form, the operator of which is a referring symbol whose
-  referrent is a macro in the current environment.
+  referent is a macro in the current environment.
 In both cases, we'll index the use of the (symbol) macro, then hand control
 off to the next method for the actual expansion.
 
