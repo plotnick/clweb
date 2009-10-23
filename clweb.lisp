@@ -1907,6 +1907,7 @@
          (IF (LISTP PACKAGES)
              PACKAGES
              (LIST PACKAGES))))
+  "Inform the weaver that it should index the symbols in PACKAGES."
   (DOLIST (PACKAGE PACKAGES) (PUSHNEW (FIND-PACKAGE PACKAGE) *INDEX-PACKAGES*)))
 (INDEX-PACKAGE "CLWEB")
 (DEFUN ENTRY-HEADING-LESSP

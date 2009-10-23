@@ -4171,6 +4171,7 @@ package.
 @l
 (defun index-package (packages &aux
                       (packages (if (listp packages) packages (list packages))))
+  "Inform the weaver that it should index the symbols in PACKAGES."
   (dolist (package packages)
     (pushnew (find-package package) *index-packages*)))
 
