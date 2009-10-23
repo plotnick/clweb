@@ -3278,11 +3278,12 @@ implementation (post to comp.lang.lisp of 18~Oct, 2004, message-id
 implementation-specific; a portable version would be much more complex.
 
 @l
-(unless (fboundp 'parse-macro)
-  (defun parse-macro (name lambda-list body &optional env)
-    (declare (ignorable name lambda-list body env))
-    #+allegro (excl::defmacro-expander `(,name ,lambda-list ,@body) env)
-    #-allegro (error "PARSE-MACRO not implemented")))
+(eval-when  (:compile-toplevel :load-toplevel :execute)
+  (unless (fboundp 'parse-macro)
+    (defun parse-macro (name lambda-list body &optional env)
+      (declare (ignorable name lambda-list body env))
+      #+allegro (excl::defmacro-expander `(,name ,lambda-list ,@body) env)
+      #-allegro (error "PARSE-MACRO not implemented"))))
 
 @ The good people at Franz also decided that they needed an extra value
 returned from both |variable-information| and |function-information|.
