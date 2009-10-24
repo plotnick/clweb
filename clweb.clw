@@ -553,6 +553,7 @@ of the full section name.
   (:report
    (lambda (condition stream)
      (format stream "~@<Ambiguous prefix: <~A> matches both <~A> and <~A>~:@>"
+@.Ambiguous prefix...@>
              (ambiguous-prefix condition)
              (ambiguous-prefix-first-match condition)
              (ambiguous-prefix-alt-match condition)))))
@@ -2056,11 +2057,14 @@ structure definitions that are used with \.{\#S}, \etc.
          (marker-value marker)))
   t)
 
-@ Several control codes, including \.{@@<}, contain `restricted' \TeX\ text,
-called {\it control text}, that extends to the next \.{@@>}. When we first
-read control text, we ignore inner-Lisp material (that is, Lisp forms
-surrounded by \pb). During weaving, we'll re-scan it to pick up such
-material.
+@ Several control codes, including \.{@@<}, contain `restricted' \TeX\
+text, called {\it control text}, that extends to the next \.{@@>}. When
+we first read control text, we ignore inner-Lisp material (that is, Lisp
+forms surrounded by \pb). During weaving, we'll re-scan it to pick up such
+material. The reason for this two-pass approach is that control text will
+frequently be used as keys in the various binary search trees, so it's
+convenient to keep it in string form until the last possible moment (i.e.,
+right up until we need to print it out).
 
 @l
 (defvar *end-control-text* (make-symbol "@>"))
@@ -2126,12 +2130,14 @@ citations, and so are not expanded.
   ()
   (:report (lambda (condition stream)
              (format stream "Can't define a named section in Lisp mode: ~A"
+@.Can't define a named section...@>
                      (section-name condition)))))
 
 (define-condition section-name-use-error (section-name-context-error)
   ()
   (:report (lambda (condition stream)
              (format stream "Can't use a section name in TeX mode: ~A"
+@.Can't use a section...@>
                      (section-name condition)))))
 
 @ @<Signal an error about section definition in Lisp mode@>=
@@ -2183,16 +2189,24 @@ citations, and so are not expanded.
          (read-from-string "@<foo@>")))))
   "foo")
 
-@ This next control code is used to manually create index entries.
+@ These next control codes are used to manually create index entries.
+They differ only in how they are typeset in the woven output.
 @^manual index entries@>
 
 @l
 (defun index-entry-reader (stream sub-char arg)
-  (add-index-entry *index* (read-TeX-from-string (read-control-text stream)) @+
+  (declare (ignore arg))
+  (add-index-entry *index*
+                   (make-instance (ecase sub-char
+                                    (#\^ 'heading)
+                                    (#\. 'tt-heading)
+                                    (#\: 'custom-heading))
+                                  :name (read-control-text stream))
                    *current-section*)
   (values))
 
-(set-control-code #\^ #'index-entry-reader '(:lisp :TeX))
+(dolist (sub-char '(#\^ #\. #\:))
+  (set-control-code sub-char #'index-entry-reader '(:TeX :lisp)))
 
 @ When we're accumulating forms from the code part of a section, we'll
 interpret two newlines in a row as ending a paragraph, as in \TeX.
@@ -2315,6 +2329,7 @@ where we evaluate \.{@@e} forms.
 
 @ @<Complain about starting a section without a commentary part@>=
 (cerror "Start a new unnamed section with no commentary."
+@.Start a new unnamed...@>
         'section-lacks-commentary :stream stream)
 (setq form (make-instance 'section))
 @<Finish the last section...@>
@@ -2336,6 +2351,7 @@ where we evaluate \.{@@e} forms.
                (format stream
                        "~@<Can't start a section with a code part ~
 ~:[~;~:*at position ~D in file ~A.~]~:@>"
+@.Can't start a section...@>
                        position (or pathname input-stream))))))
 
 @ We won't push a newline marker if no code has been accumulated yet, and
@@ -3443,6 +3459,7 @@ function name.
   ((name :initarg :name :reader function-name))
   (:report (lambda (error stream)
              (format stream "~@<Invalid function name ~A.~:@>" @+
+@.Invalid function name...@>
                      (function-name error)))))
 
 @t@l
@@ -4243,12 +4260,19 @@ return a string designator.
                   (entry-heading-lessp (list a x) (list b y)))))
   t)
 
-@ Generally, those objects will be instances of the class |heading|, but
-we'll allow a few other types of objects, too.
+@ Generally, those objects will be instances of the class |heading| or one
+of its sub-classes, but we'll allow a few other types of objects, too.
+The two sub-classes defined here are, respectively, for headings that
+should be printed in \.{typewriter type}, and ones that should be printed
+under the control of the \TeX\ macro `\.{\\9}', which the user can define
+as desired.
 
 @l
 (defclass heading ()
   ((name :initarg :name)))
+
+(defclass tt-heading (heading) ())
+(defclass custom-heading (heading) ())
 
 @t This is just for debugging purposes; we don't use it anywhere in this
 program.
@@ -4533,7 +4557,8 @@ ordinary ones.
 @l
 (define-modify-macro orf (&rest args) or)
 
-(defmethod add-index-entry ((index index) heading (section section) &key def)
+(defmethod add-index-entry ((index index) heading (section section) &key def &aux
+                            (heading (if (listp heading) heading (list heading))))
   (flet ((make-locator ()
            (make-locator :section section :def def)))
     (if (null (index-entries index))
@@ -5203,10 +5228,11 @@ of all of the interesting symbols so encountered.
     (pprint-exit-if-list-exhausted)
     (loop
       (let ((heading (pprint-pop)))
-        (typecase heading
-          (symbol (format stream "\\(~W\\)" heading))
-          (t (format stream "{~/clweb::print-escaped/}" @+
-                     (string (heading-name heading))))))
+        (cond ((symbolp heading) (format stream "\\(~W\\)" heading))
+              (t (format stream "~[\\.~;\\9~]{~/clweb::print-TeX/}"
+                         (position (type-of heading) @+
+                                   '(tt-heading custom-heading))
+                         (read-TeX-from-string (heading-name heading))))))
       (pprint-exit-if-list-exhausted)
       (write-char #\Space stream))))
 
