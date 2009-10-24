@@ -2183,6 +2183,17 @@ citations, and so are not expanded.
          (read-from-string "@<foo@>")))))
   "foo")
 
+@ This next control code is used to manually create index entries.
+@^manual index entries@>
+
+@l
+(defun index-entry-reader (stream sub-char arg)
+  (add-index-entry *index* (read-TeX-from-string (read-control-text stream)) @+
+                   *current-section*)
+  (values))
+
+(set-control-code #\^ #'index-entry-reader '(:lisp :TeX))
+
 @ When we're accumulating forms from the code part of a section, we'll
 interpret two newlines in a row as ending a paragraph, as in \TeX.
 
@@ -2740,7 +2751,7 @@ file.
             (maptree (lambda (section)
                        (weave (make-instance 'section-name-index-entry @+
                                              :named-section section) @+
-                                             scn))
+                              scn))
                      *named-sections*))
           (format out "~&\\inx~%\\fin~%\\con~%"))
         (format out "~&\\end~%")
@@ -4505,6 +4516,15 @@ with the given heading.
 (defgeneric add-index-entry (index heading locator &key))
 (defgeneric find-index-entries (index heading))
 
+@ We'll keep a global index around so that we can add `manual' entries (i.e.,
+entries not automatically generated via the code walk) during reading.
+
+@<Global variables@>=
+(defvar *index* nil)
+
+@ @<Initialize global variables@>=
+(setq *index* (make-index))
+
 @ This method adds an index entry for |heading| with location |section|. A
 new locator is constructed only when necessary, and duplicate locators are
 automatically suppressed. Definitional locators are also made to supersede
@@ -4739,7 +4759,7 @@ indexing.
 
 @l
 (defclass indexing-walker (walker)
-  ((index :accessor walker-index :initform (make-index))))
+  ((index :accessor walker-index :initarg :index :initform (make-index))))
 
 @t Here's a little routine that returns a list of all the entries in an
 index. The elements of that list are lists of the form |(heading-names
@@ -5148,7 +5168,9 @@ tangled, symbol-replaced code of the given sections and returns an index
 of all of the interesting symbols so encountered.
 
 @l
-(defun index-sections (sections &key (walker (make-instance 'indexing-walker)))
+(defun index-sections (sections &key
+                       (index *index*)
+                       (walker (make-instance 'indexing-walker :index index)))
   (let ((*evaluating* t))
     (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
       (walk-form walker form))))
@@ -5183,7 +5205,8 @@ of all of the interesting symbols so encountered.
       (let ((heading (pprint-pop)))
         (typecase heading
           (symbol (format stream "\\(~W\\)" heading))
-          (t (write-string (string (heading-name heading)) stream))))
+          (t (format stream "{~/clweb::print-escaped/}" @+
+                     (string (heading-name heading))))))
       (pprint-exit-if-list-exhausted)
       (write-char #\Space stream))))
 
