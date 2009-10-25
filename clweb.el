@@ -58,11 +58,11 @@ otherwise, it will be replaced."
 	  (font-lock-syntactic-face-function
 	   . lisp-font-lock-syntactic-face-function)
           (font-lock-syntactic-keywords
-           . (("\\(^\\|\\s-\\)\\(@\\)[ *t]" 2 "< b")
-              ("@\\([LlPp]\\)" 1 "> b")
-              ("\\(@\\)<" 1 "< b")
-              ("@\\(>\\)[^=]" 1 "> b")
-              ("@>\\(=\\)" 1 "> b"))))))
+           . (("\\(^\\|[^@,]\\)\\(@\\)[ *t]" 2 "< b")
+              ("\\(^\\|[^@]\\)@\\([LlPp]\\)" 2 "> b")
+              ("\\(^\\|[^@]\\)\\(@\\)<" 2 "< b")
+              ("\\(^\\|[^@]\\)@\\(>\\)[^=]" 2 "> b")
+              ("\\(^\\|[^@]\\)@>\\(=\\)" 2 "> b"))))))
 
 (define-key clweb-mode-map "\M-n" 'forward-section)
 (define-key clweb-mode-map "\M-p" 'backward-section)
