@@ -5225,7 +5225,6 @@ of all of the interesting symbols so encountered.
             (locator-definition-p loc)
             (section-number (location loc)))))
 
-@ @l
 (defun print-entry-heading (stream heading &rest args)
   (declare (ignore args))
   (pprint-logical-block (stream heading)
