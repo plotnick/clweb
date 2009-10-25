@@ -2191,7 +2191,7 @@ citations, and so are not expanded.
 
 @ These next control codes are used to manually create index entries.
 They differ only in how they are typeset in the woven output.
-@^manual index entries@>
+@^manual index entry@>
 
 @l
 (defun index-entry-reader (stream sub-char arg)
@@ -2207,6 +2207,25 @@ They differ only in how they are typeset in the woven output.
 
 (dolist (sub-char '(#\^ #\. #\:))
   (set-control-code sub-char #'index-entry-reader '(:TeX :lisp)))
+
+@ The indexer tries to determine when the object denoted by an index
+heading is being defined or just used. But sometimes it doesn't have enough
+information, such as when the entry was manually created. This control code
+sets a global flag so that the next entry added to the index will appear as
+a definition.
+
+@l
+(set-control-code #\! (lambda (stream sub-char arg)
+                        (declare (ignore stream sub-char arg))
+                        (setq *index-definition* t)
+                        (values))
+                  '(:TeX :lisp))
+
+@ @<Global...@>=
+(defvar *index-definition* nil)
+
+@ @<Initialize glob...@>=
+(setq *index-definition* nil)
 
 @ When we're accumulating forms from the code part of a section, we'll
 interpret two newlines in a row as ending a paragraph, as in \TeX.
@@ -4557,8 +4576,10 @@ ordinary ones.
 @l
 (define-modify-macro orf (&rest args) or)
 
-(defmethod add-index-entry ((index index) heading (section section) &key def &aux
-                            (heading (if (listp heading) heading (list heading))))
+(defmethod add-index-entry
+    ((index index) heading (section section) &key def &aux
+     (heading (if (listp heading) heading (list heading)))
+     (def (prog1 (or def *index-definition*) (setq *index-definition* nil))))
   (flet ((make-locator ()
            (make-locator :section section :def def)))
     (if (null (index-entries index))
