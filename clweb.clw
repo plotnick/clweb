@@ -4935,6 +4935,10 @@ name. In fact, we won't even bother expanding them at all, since we don't
 care about the implementation-specific expansions, and we get everything we
 need from this simple walk.
 
+Note in particular that we don't record the macro definition when we walk a
+|defmacro| form. For the macro definition to be available during the walk,
+it must have been previously evaluated.
+
 The indexing proper happens in the |walk-function-name| method we just
 defined, by way of |walk-lambda-expression|.
 
