@@ -4806,7 +4806,7 @@ locations)|, where each location is either a section number or a list
      (index-entries index))
     (nreverse entries)))
 
-@t To test our indexing walker, we'll use the following macro, which takes
+@t To test our indexing walker, we'll use the following macro. It takes
 a list of section specifiers acceptable to |with-temporary-sections|,
 followed by zero or more expected index entry specifiers which should
 match the output of |all-index-entries|. It verifies that the walked forms
