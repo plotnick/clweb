@@ -2595,7 +2595,8 @@ sections' code should be written.
              (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT." @+
                      input-file)
              (let ((*evaluating* nil)
-                   (*print-marker* t))
+                   (*print-marker* t)
+                   (*print-level* nil))
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
     (when (and tests-file
@@ -2738,6 +2739,7 @@ file.
                   :stream stream
                   :case :downcase
                   :escape nil
+                  :level nil
                   :pretty t
                   :pprint-dispatch *weave-pprint-dispatch*
                   :right-margin 1000)))
