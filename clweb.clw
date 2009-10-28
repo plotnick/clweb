@@ -552,7 +552,7 @@ of the full section name.
    (alt-match :reader ambiguous-prefix-alt-match :initarg :alt-match))
   (:report
    (lambda (condition stream)
-     (format stream "~@<Ambiguous prefix: <~A> matches both <~A> and <~A>~:@>"
+     (format stream "~@<Ambiguous prefix: <~A> matches both <~A> and <~A>~:@>" @+
 @.Ambiguous prefix...@>
              (ambiguous-prefix condition)
              (ambiguous-prefix-first-match condition)
@@ -2129,14 +2129,14 @@ citations, and so are not expanded.
 (define-condition section-name-definition-error (section-name-context-error)
   ()
   (:report (lambda (condition stream)
-             (format stream "Can't define a named section in Lisp mode: ~A"
+             (format stream "Can't define a named section in Lisp mode: ~A" @+
 @.Can't define a named section...@>
                      (section-name condition)))))
 
 (define-condition section-name-use-error (section-name-context-error)
   ()
   (:report (lambda (condition stream)
-             (format stream "Can't use a section name in TeX mode: ~A"
+             (format stream "Can't use a section name in TeX mode: ~A" @+
 @.Can't use a section...@>
                      (section-name condition)))))
 
@@ -2328,7 +2328,7 @@ where we evaluate \.{@@e} forms.
       (t (push form code)))))
 
 @ @<Complain about starting a section without a commentary part@>=
-(cerror "Start a new unnamed section with no commentary."
+(cerror "Start a new unnamed section with no commentary." @+
 @.Start a new unnamed...@>
         'section-lacks-commentary :stream stream)
 (setq form (make-instance 'section))
@@ -2350,7 +2350,7 @@ where we evaluate \.{@@e} forms.
                                 (pathname input-stream))))
                (format stream
                        "~@<Can't start a section with a code part ~
-~:[~;~:*at position ~D in file ~A.~]~:@>"
+~:[~;~:*at position ~D in file ~A.~]~:@>" @+
 @.Can't start a section...@>
                        position (or pathname input-stream))))))
 
