@@ -446,15 +446,16 @@ inasmuch as they have specialized |section-name|, |section-code|, and
 that comprise a given named section: references to those sections are
 stored in the |sections| slot.
 
-The weaver uses the last slot, |used-by|, to generate cross-references.
-It will be populated during reading with a list of all the sections that
-reference this named section.
+The weaver uses the last two slots, |used-by| and~|cited-by|, to generate
+cross-references. They will be populated during reading with lists of all
+the sections that reference this named section.
 
 @l
 (defclass named-section (binary-search-tree)
   ((key :accessor section-name :initarg :name)
    (sections :accessor named-section-sections :initform '())
-   (used-by :accessor used-by :initform '())))
+   (used-by :accessor used-by :initform '())
+   (cited-by :accessor cited-by :initform '())))
 
 (defmethod named-section-sections :around ((section named-section))
   (sort (copy-list (call-next-method)) #'< :key #'section-number))
@@ -2102,7 +2103,7 @@ the code defined for that section. References in inner-Lisp mode are only
 citations, and so are not expanded.
 
 @l
-(defun make-section-name-reader (definition-allowed-p)
+(defun make-section-name-reader (definition-allowed-p use)
   (lambda (stream sub-char arg)
     (declare (ignore sub-char arg))
     (let* ((name (read-control-text stream t nil t))
@@ -2116,11 +2117,14 @@ citations, and so are not expanded.
           (if definition-allowed-p
                @<Signal an error about section name use in \TeX\ mode@>
                (let ((named-section (find-section name)))
-                 (pushnew *current-section* (used-by named-section))
+                 (if use
+                     (pushnew *current-section* (used-by named-section))
+                     (pushnew *current-section* (cited-by named-section)))
                  named-section))))))
 
-(set-control-code #\< (make-section-name-reader t) :TeX)
-(set-control-code #\< (make-section-name-reader nil) '(:lisp :inner-lisp))
+(set-control-code #\< (make-section-name-reader t nil) :TeX)
+(set-control-code #\< (make-section-name-reader nil t) :lisp)
+(set-control-code #\< (make-section-name-reader nil nil) :inner-lisp)
 
 @ @<Condition classes@>=
 (define-condition section-name-context-error (error)
@@ -2855,7 +2859,9 @@ re-reads such strings and picks up any inner-Lisp material.
       (print-xrefs stream #\A
                    (remove section (named-section-sections named-section)))
       (print-xrefs stream #\U
-                   (remove section (used-by named-section)))))
+                   (remove section (used-by named-section)))
+      (print-xrefs stream #\Q
+                   (remove section (cited-by named-section)))))
   (format stream "\\fi~%"))
 
 (set-weave-dispatch 'section #'print-section)
@@ -2900,7 +2906,8 @@ in a |section-name-index| instance so that we can dispatch on that type.
   (lambda (stream section-name &aux (section (named-section section-name)))
     (print-section-name stream section :indexing t)
     (terpri stream)
-    (print-xrefs stream #\U (remove section (used-by section)))))
+    (print-xrefs stream #\U (remove section (used-by section)))
+    (print-xrefs stream #\Q (remove section (cited-by section)))))
 
 @ Because we're outputting \TeX, we need to carefully escape characters
 that \TeX\ treats as special. Unfortunately, because \TeX's syntax is so
