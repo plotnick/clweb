@@ -41,8 +41,8 @@
   \let\!=\cleartabs
   \IB}
 \def\IB{\activeparens\activestar\codefont\obeyspaces} % (inner-)Lisp mode
-\def\({\bgroup\IB} % go into inner-Lisp mode
-\def\){\egroup} % end inner-Lisp mode
+\def\({\bgroup\IB\it} % go into inner-Lisp mode
+\def\){\/\egroup} % end inner-Lisp mode
 \def\C#1{{\cmntfont #1}} % comment
 \def\CH#1{\leavevmode$\backslash$\.{#1}} % character
 \def\CO#1{\leavevmode,#1\kern.025em} % comma(-at, -dot)
