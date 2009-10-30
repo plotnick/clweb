@@ -776,13 +776,14 @@ or not. This function answers that question, but only approximately---if
 the user has frobbed the current readtable and set non-standard characters
 to whitespace syntax, {\it this routine will not yield the correct
 result}. There's unfortunately nothing that we can do about it portably,
-since there's no way of determining the syntax of a character or of
-obtaining a list of all the characters with a given syntax.
+since there's no standard way of determining the syntax of a character or
+of obtaining a list of all the characters with a given syntax.
 
 @l
 (defun token-delimiter-p (char)
+  (declare (type character char))
   (or (whitespacep char)
-      (multiple-value-bind (function non-terminating-p)
+      (multiple-value-bind (function non-terminating-p) @+
           (get-macro-character char)
         (and function (not non-terminating-p)))))
 
