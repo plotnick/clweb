@@ -49,7 +49,8 @@ otherwise, it will be replaced."
   (set (make-local-variable 'parse-sexp-lookup-properties) t)
   (setq font-lock-defaults
 	'((lisp-font-lock-keywords
-	   lisp-font-lock-keywords-1 lisp-font-lock-keywords-2)
+	   lisp-font-lock-keywords-1
+           lisp-font-lock-keywords-2)
 	  nil
           nil
           (("+-/.!?$%_&~^:" . "w"))
