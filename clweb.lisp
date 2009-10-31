@@ -271,6 +271,28 @@
       (MULTIPLE-VALUE-BIND #'NON-TERMINATING-P
           (GET-MACRO-CHARACTER CHAR)
         (AND FUNCTION (NOT NON-TERMINATING-P)))))
+(DEFUN %READ-MAYBE-NOTHING (READER STREAM EOF-ERROR-P EOF-VALUE RECURSIVE-P)
+  (MULTIPLE-VALUE-LIST
+   (LET* ((NEXT-CHAR (PEEK-CHAR NIL STREAM NIL NIL RECURSIVE-P))
+          (MACRO-FUN (AND NEXT-CHAR (GET-MACRO-CHARACTER NEXT-CHAR))))
+     (COND
+      (MACRO-FUN (READ-CHAR STREAM)
+       (CALL-READER-MACRO-FUNCTION MACRO-FUN STREAM NEXT-CHAR))
+      (T (FUNCALL READER STREAM EOF-ERROR-P EOF-VALUE RECURSIVE-P))))))
+(DEFUN READ-MAYBE-NOTHING
+       (STREAM &OPTIONAL (EOF-ERROR-P T) EOF-VALUE RECURSIVE-P)
+  (%READ-MAYBE-NOTHING #'READ STREAM EOF-ERROR-P EOF-VALUE RECURSIVE-P))
+(DEFUN READ-MAYBE-NOTHING-PRESERVING-WHITESPACE
+       (STREAM &OPTIONAL (EOF-ERROR-P T) EOF-VALUE RECURSIVE-P)
+  (%READ-MAYBE-NOTHING #'READ-PRESERVING-WHITESPACE STREAM EOF-ERROR-P
+                       EOF-VALUE RECURSIVE-P))
+(DEFMACRO WITH-READ-BUFFER ((&REST ARGS) &BODY BODY)
+  (DECLARE (IGNORABLE ARGS))
+  #+:SBCL `(sb-impl::with-read-buffer ,args ,@body)
+  #-:SBCL `(progn ,@body))
+(DEFUN CALL-READER-MACRO-FUNCTION (FN STREAM CHAR)
+  (WITH-READ-BUFFER NIL
+    (FUNCALL FN STREAM CHAR)))
 (DEFCLASS CHARPOS-STREAM NIL
           ((CHARPOS :INITARG :CHARPOS)
            (PROXY-STREAM :ACCESSOR CHARPOS-PROXY-STREAM :INITARG :PROXY))
@@ -458,23 +480,29 @@
   (DECLARE (IGNORE CHAR))
   (LOOP WITH LIST = 'NIL
         WITH CHARPOS-LIST = 'NIL
-        FOR N FROM 0
-        FOR FIRST-CHAR = (PEEK-CHAR T STREAM T NIL
-                                    T) AS CHARPOS = (STREAM-CHARPOS STREAM)
-        UNTIL (CHAR= FIRST-CHAR #\))
-        IF (CHAR= FIRST-CHAR #\.)
+        FOR N UPFROM 0
+        AND NEXT-CHAR = (PEEK-CHAR T STREAM T NIL
+                                   T) AS CHARPOS = (STREAM-CHARPOS STREAM)
+        UNTIL (CHAR= #\) NEXT-CHAR)
+        IF (CHAR= #\. NEXT-CHAR)
         DO (WITH-REWIND-STREAM (STREAM STREAM)
-             (READ-CHAR STREAM T)
-             (LET ((NEXT-CHAR (READ-CHAR STREAM T)))
+             (READ-CHAR STREAM T NIL T)
+             (LET ((FOLLOWING-CHAR (READ-CHAR STREAM T NIL T)))
                (COND
-                ((TOKEN-DELIMITER-P NEXT-CHAR)
+                ((TOKEN-DELIMITER-P FOLLOWING-CHAR)
                  (UNLESS (OR LIST *READ-SUPPRESS*)
                    (SIMPLE-READER-ERROR STREAM
                                         "Nothing appears before . in list."))
                  (PUSH *CONSING-DOT* LIST) (PUSH CHARPOS CHARPOS-LIST))
-                (T (REWIND) (PUSH (READ STREAM T NIL T) LIST)
-                 (PUSH CHARPOS CHARPOS-LIST))))) ELSE
-        DO (PUSH (READ STREAM T NIL T) LIST) (PUSH CHARPOS CHARPOS-LIST)
+                (T (REWIND)
+                 (LET ((VALUES (READ-MAYBE-NOTHING STREAM T NIL T)))
+                   (WHEN VALUES
+                     (PUSH (CAR VALUES) LIST)
+                     (PUSH CHARPOS CHARPOS-LIST))))))) ELSE
+        DO (LET ((VALUES (READ-MAYBE-NOTHING STREAM T NIL T)))
+             (WHEN VALUES
+               (PUSH (CAR VALUES) LIST)
+               (PUSH CHARPOS CHARPOS-LIST)))
         FINALLY (READ-CHAR STREAM T NIL T) (RETURN
                                             (MAKE-INSTANCE 'LIST-MARKER :LENGTH
                                                            N :LIST
@@ -754,7 +782,7 @@
           DO (WRITE-CHAR (READ-CHAR STREAM) STRING))))
 (DEFUN READ-INNER-LISP (STREAM CHAR)
   (WITH-MODE :INNER-LISP
-    (READ-DELIMITED-LIST CHAR STREAM T)))
+    (READ-DELIMITED-LIST CHAR STREAM)))
 (DOLIST (MODE '(:TEX :RESTRICTED))
   (SET-MACRO-CHARACTER #\| #'READ-INNER-LISP NIL (READTABLE-FOR-MODE MODE)))
 (SET-MACRO-CHARACTER #\| (GET-MACRO-CHARACTER #\) NIL) NIL
@@ -904,11 +932,14 @@
         (SETQ SECTION (MAKE-INSTANCE 'LIMBO-SECTION))
         (WITH-MODE :LIMBO
           (LOOP (MAYBE-PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM #\@) COMMENTARY)
-                (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
-                (TYPECASE FORM
-                  (EOF (GO EOF))
-                  (SECTION (GO COMMENTARY))
-                  (T (PUSH FORM COMMENTARY)))))
+                (LET ((NEXT-INPUT
+                       (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL
+                                                                 *EOF* NIL)))
+                  (WHEN NEXT-INPUT
+                    (TYPECASE (SETQ FORM (CAR NEXT-INPUT))
+                      (EOF (GO EOF))
+                      (SECTION (GO COMMENTARY))
+                      (T (PUSH FORM COMMENTARY)))))))
        COMMENTARY
         (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
         (CHECK-TYPE FORM SECTION)
@@ -918,41 +949,48 @@
         (WITH-MODE :TEX
           (LOOP
            (MAYBE-PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM '(#\@ #\|)) COMMENTARY)
-           (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
-           (TYPECASE FORM
-             (EOF (GO EOF))
-             (SECTION (GO COMMENTARY))
-             (START-CODE-MARKER
-              (SETF (SECTION-NAME SECTION) (SECTION-NAME FORM))
-              (GO LISP))
-             (T (PUSH FORM COMMENTARY)))))
+           (LET ((NEXT-INPUT
+                  (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL *EOF*
+                                                            NIL)))
+             (WHEN NEXT-INPUT
+               (TYPECASE (SETQ FORM (CAR NEXT-INPUT))
+                 (EOF (GO EOF))
+                 (SECTION (GO COMMENTARY))
+                 (START-CODE-MARKER
+                  (SETF (SECTION-NAME SECTION) (SECTION-NAME FORM))
+                  (GO LISP))
+                 (T (PUSH FORM COMMENTARY)))))))
        LISP
         (CHECK-TYPE FORM START-CODE-MARKER)
         (WITH-MODE :LISP
-          (LOOP (SETQ FORM (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL))
-                (TYPECASE FORM
-                  (EOF (GO EOF))
-                  (SECTION (GO COMMENTARY))
-                  (START-CODE-MARKER
-                   (CERROR "Start a new unnamed section with no commentary."
-                           'SECTION-LACKS-COMMENTARY :STREAM STREAM)
-                   (SETQ FORM (MAKE-INSTANCE 'SECTION))
-                   (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
-                   (CHECK-TYPE FORM SECTION)
-                   (SETQ SECTION FORM
-                         COMMENTARY 'NIL
-                         CODE 'NIL))
-                  (NEWLINE-MARKER
-                   (UNLESS (NULL CODE)
-                     (COND ((NEWLINEP (CAR CODE)) (POP CODE) (PUSH *PAR* CODE))
-                           (T (PUSH FORM CODE)))))
-                  (EVALUATED-FORM-MARKER
-                   (LET ((FORM (MARKER-VALUE FORM)))
-                     (LET ((*EVALUATING* T)
-                           (*READTABLE* (READTABLE-FOR-MODE NIL)))
-                       (EVAL (TANGLE FORM)))
-                     (PUSH FORM CODE)))
-                  (T (PUSH FORM CODE)))))
+          (LOOP
+           (LET ((NEXT-INPUT
+                  (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL *EOF*
+                                                            NIL)))
+             (WHEN NEXT-INPUT
+               (TYPECASE (SETQ FORM (CAR NEXT-INPUT))
+                 (EOF (GO EOF))
+                 (SECTION (GO COMMENTARY))
+                 (START-CODE-MARKER
+                  (CERROR "Start a new unnamed section with no commentary."
+                          'SECTION-LACKS-COMMENTARY :STREAM STREAM)
+                  (SETQ FORM (MAKE-INSTANCE 'SECTION))
+                  (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
+                  (CHECK-TYPE FORM SECTION)
+                  (SETQ SECTION FORM
+                        COMMENTARY 'NIL
+                        CODE 'NIL))
+                 (NEWLINE-MARKER
+                  (UNLESS (NULL CODE)
+                    (COND ((NEWLINEP (CAR CODE)) (POP CODE) (PUSH *PAR* CODE))
+                          (T (PUSH FORM CODE)))))
+                 (EVALUATED-FORM-MARKER
+                  (LET ((FORM (MARKER-VALUE FORM)))
+                    (LET ((*EVALUATING* T)
+                          (*READTABLE* (READTABLE-FOR-MODE NIL)))
+                      (EVAL (TANGLE FORM)))
+                    (PUSH FORM CODE)))
+                 (T (PUSH FORM CODE)))))))
        EOF
         (PUSH (FINISH-SECTION SECTION COMMENTARY CODE) SECTIONS)
         (RETURN (NREVERSE SECTIONS))))))

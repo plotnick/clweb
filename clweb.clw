@@ -791,6 +791,68 @@ of obtaining a list of all the characters with a given syntax.
 (deftest (token-delimiter-p 1) (not (token-delimiter-p #\Space)) nil)
 (deftest (token-delimiter-p 2) (not (token-delimiter-p #\))) nil)
 
+@ In some of the reading routines we'll define below, we need to be
+careful about reader macro functions that don't return any values. For
+example, if the input file contains `\.{(\#\v...\v\#)}', and we na{\"\i}vely
+call |read| in the reader macro function for `|#\(|'\thinspace, an error
+will be signaled, since |read| will skip over the comment and invoke the
+reader macro function for `|#\)|'\thinspace.
+
+The solution is to peek at the next character in the input stream and
+manually invoke the associated reader macro function (if any), returning a
+list of the values returned by that function. If the next character is not
+a macro character, we just call |read| or |read-preserving-whitespace|,
+returning a list containing the single object so read.
+
+@l
+(defun %read-maybe-nothing (reader stream eof-error-p eof-value recursive-p)
+  (multiple-value-list
+   (let* ((next-char (peek-char nil stream nil nil recursive-p))
+          (macro-fun (and next-char (get-macro-character next-char))))
+     (cond (macro-fun
+            (read-char stream)
+            (call-reader-macro-function macro-fun stream next-char))
+           (t (funcall reader stream eof-error-p eof-value recursive-p))))))
+
+(defun read-maybe-nothing (stream &optional @+
+                           (eof-error-p t) eof-value recursive-p)
+  (%read-maybe-nothing #'read stream eof-error-p eof-value recursive-p))
+
+(defun read-maybe-nothing-preserving-whitespace @+
+    (stream &optional (eof-error-p t) eof-value recursive-p)
+  (%read-maybe-nothing #'read-preserving-whitespace @+
+                       stream eof-error-p eof-value recursive-p))
+
+@t@l
+(deftest (read-maybe-nothing 1)
+  (with-input-from-string (s "123") (read-maybe-nothing s))
+  (123))
+
+(deftest (read-maybe-nothing 2)
+  (with-input-from-string (s "#|x|#") (read-maybe-nothing s))
+  nil)
+
+(deftest (read-maybe-nothing-preserving-whitespace)
+  (with-input-from-string (s "x y")
+    (read-maybe-nothing-preserving-whitespace s t nil nil)
+    (peek-char nil s))
+  #\Space)
+
+@ In SBCL, most of the standard reader macro functions assume that they're
+being called in an environment where the global read buffer is bound and
+initialized. It would be nice if that wasn't the case and we could elide
+the following nonsense.
+
+@l
+(defmacro with-read-buffer ((&rest args) &body body)
+  (declare (ignorable args))
+  #+sbcl `(sb-impl::with-read-buffer ,args ,@body)
+  #-sbcl `(progn ,@body))
+
+(defun call-reader-macro-function (fn stream char)
+  (with-read-buffer ()
+    (funcall fn stream char)))
+
 @ We want the weaver to output properly indented code, but it's basically
 impossible to automatically indent Common Lisp code without a complete
 static analysis. And so we don't try. What we do instead is assume that the
@@ -1148,6 +1210,27 @@ and~|#\"| (the former because the standard reader macro function just
 signals an error, which is fine, and the latter because we don't need
 markers for strings).
 
+@t When we're testing the reader macro functions, we'll often want to read
+from a string-stream that tracks character positions. In fact, most of the
+reader tests will involve reading a single form in Lisp mode.
+
+@l
+(defmacro read-from-string-with-charpos (string &optional
+                                         (eof-error-p t)
+                                         (eof-value nil) &key
+                                         (preserve-whitespace nil) &aux
+                                         (string-stream (gensym))
+                                         (charpos-stream (gensym)))
+  `(with-open-stream (,string-stream (make-string-input-stream ,string))
+     (with-charpos-input-stream (,charpos-stream ,string-stream)
+       (if ,preserve-whitespace
+           (read-preserving-whitespace ,charpos-stream ,eof-error-p ,eof-value)
+           (read ,charpos-stream ,eof-error-p ,eof-value)))))
+
+(defun read-form-from-string (string &key (mode :lisp))
+  (with-mode mode
+    (read-from-string-with-charpos string)))
+
 @ {\it Left-Parenthesis.} We have two different kinds of markers for lists.
 The first is one for empty lists, so that we can maintain a distinction
 that the standard Lisp reader does not: between the empty list and |nil|.
@@ -1207,7 +1290,7 @@ The function |make-list-reader| returns a closure that peeks ahead in the
 given stream looking for a closing parenthesis, and either returns an
 empty-list marker or invokes a full list-reading function, which is stored
 in the variable |next|. For inner-Lisp mode, that function is the standard
-reader macro function for |#\(|.
+reader macro function for `|#\(|'\thinspace.
 
 @l
 (defun make-list-reader (next)
@@ -1219,8 +1302,21 @@ reader macro function for |#\(|.
 (set-macro-character #\( (make-list-reader (get-macro-character #\( nil))
                      nil (readtable-for-mode :inner-lisp))
 
+@t@l
+(deftest (read-empty-list :inner-lisp)
+  (typep (read-form-from-string "()" :mode :inner-lisp) 'empty-list-marker)
+  t)
+
+(deftest (read-list :inner-lisp)
+  (listp (read-form-from-string "(:a :b :c)" :mode :inner-lisp))
+  t)
+
+(deftest read-empty-list
+  (typep (read-form-from-string "()") 'empty-list-marker)
+  t)
+
 @ In Lisp mode, we need a full list reader that records character positions
-of the list elements. This would be perfectly straightforward if not for the
+of the list elements. This would be almost straightforward if not for the
 consing dot.
 
 @l
@@ -1228,14 +1324,14 @@ consing dot.
   (declare (ignore char))
   (loop with list = '()
         with charpos-list = '()
-        for n from 0
-        for first-char = (peek-char t stream t nil t)
+        for n upfrom 0
+        and next-char = (peek-char t stream t nil t)
         as charpos = (stream-charpos stream)
-        until (char= first-char #\) )
-        if (char= first-char #\.)
+        until (char= #\) next-char)
+        if (char= #\. next-char)
           do @<Read the next token from |stream|, which might be a consing dot@>
-        else do (push (read stream t nil t) list)
-                (push charpos charpos-list)
+        else
+          do @<Read the next object from |stream| and push it onto |list|@>
         finally (read-char stream t nil t)
                 (return (make-instance 'list-marker
                                        :length n
@@ -1245,67 +1341,56 @@ consing dot.
 (set-macro-character #\( (make-list-reader #'list-reader)
                      nil (readtable-for-mode :lisp))
 
-@ @<Read the next token from |stream|...@>=
+@t@l
+(defmacro define-list-reader-test (name string expected-list expected-charpos)
+  `(deftest ,name
+     (let* ((marker (read-form-from-string ,string))
+            (list (marker-value marker))
+            (charpos (list-marker-charpos marker)))
+       (and (equal list ',expected-list)
+            (equal charpos ',expected-charpos)))
+     t))
+
+(define-list-reader-test (list-reader 1) "(a b c)" (a b c) (1 3 5))
+(define-list-reader-test (list-reader 2) "(a b . c)" (a b . c) (1 3 5 7))
+(define-list-reader-test (list-reader 3) "(a b .c)" (a b .c) (1 3 5))
+(define-list-reader-test (list-reader 4) "(a b #|c|#)" (a b) (1 3))
+(define-list-reader-test (list-reader 5) "(#|foo|#)" () ())
+
+@ If the next character is a dot, it could either be a consing dot, or the
+beginning of a token that happens to start with a dot. We decide by looking
+at the character {\it after\/} the dot: if it's a delimiter, then it
+{\it was\/} a consing dot; otherwise, we rewind and carefully read in the
+next object.
+
+@<Read the next token from |stream|...@>=
 (with-rewind-stream (stream stream)
-  (read-char stream t) ; consume dot
-  (let ((next-char (read-char stream t)))
-    (cond ((token-delimiter-p next-char)
+  (read-char stream t nil t) ; consume dot
+  (let ((following-char (read-char stream t nil t)))
+    (cond ((token-delimiter-p following-char)
            (unless (or list *read-suppress*)
              (simple-reader-error stream "Nothing appears before . in list."))
            (push *consing-dot* list)
            (push charpos charpos-list))
           (t (rewind)
-             (push (read stream t nil t) list)
-             (push charpos charpos-list)))))
-
-@t When we're testing the reader functions, we'll often want to read from
-a string-stream that tracks character positions.
-
-@l
-(defmacro read-from-string-with-charpos (string &optional
-                                         (eof-error-p t)
-                                         (eof-value nil) &key
-                                         (preserve-whitespace nil) &aux
-                                         (string-stream (gensym))
-                                         (charpos-stream (gensym)))
-  `(with-open-stream (,string-stream (make-string-input-stream ,string))
-     (with-charpos-input-stream (,charpos-stream ,string-stream)
-       (if ,preserve-whitespace
-           (read-preserving-whitespace ,charpos-stream ,eof-error-p ,eof-value)
-           (read ,charpos-stream ,eof-error-p ,eof-value)))))
-
-@t In fact, most of the reader tests will involve reading a single form in
-Lisp mode.
-
-@l
-(defun read-form-from-string (string &key (mode :lisp))
-  (with-mode mode
-    (read-from-string-with-charpos string)))
+             @<Read the next object...@>))))
 
 @t@l
-(deftest read-empty-list-inner-lisp
-  (typep (read-form-from-string "()" :mode :inner-lisp) 'empty-list-marker)
-  t)
+(deftest read-list-error
+  (handler-case (read-form-from-string "(. a)")
+    (reader-error () :error))
+  :error)
 
-(deftest read-empty-list
-  (typep (read-form-from-string "()") 'empty-list-marker)
-  t)
+@ We have to be careful when reading in a list, because the next character
+might be a macro character whose associated reader macro function returns
+zero values, and we don't want to accidentally read the closing
+`|#\)|'\thinspace.
 
-(deftest read-list-inner-lisp
-  (listp (read-form-from-string "(:a :b :c)" :mode :inner-lisp))
-  t)
-
-(deftest read-list
-  (marker-value (read-form-from-string "(:a :b :c)"))
-  (:a :b :c))
-
-(deftest read-dotted-list
-  (marker-value (read-form-from-string "(:a :b . :c)"))
-  (:a :b . :c))
-
-(deftest list-marker-charpos
-  (list-marker-charpos (read-form-from-string "(1 2 3)"))
-  (1 3 5))
+@<Read the next object...@>=
+(let ((values (read-maybe-nothing stream t nil t)))
+  (when values
+    (push (car values) list)
+    (push charpos charpos-list)))
 
 @ {\it Single-Quote.} We want to distinguish between a form quoted with
 a single-quote and one quoted (for whatever reason) with |quote|, another
@@ -1885,7 +1970,7 @@ code to be surrounded by \pb, where it is read in inner-Lisp mode.
 @l
 (defun read-inner-lisp (stream char)
   (with-mode :inner-lisp
-    (read-delimited-list char stream t)))
+    (read-delimited-list char stream)))
 
 (dolist (mode '(:TeX :restricted))
   (set-macro-character #\| #'read-inner-lisp nil (readtable-for-mode mode)))
@@ -2280,11 +2365,13 @@ inner-Lisp material is not recognized in limbo text.
 (with-mode :limbo
   (loop
     (maybe-push (snarf-until-control-char stream #\@) commentary)
-    (setq form (read-preserving-whitespace stream nil *eof* nil))
-    (typecase form
-      (eof (go eof))
-      (section (go commentary))
-      (t (push form commentary)))))
+    (let ((next-input (read-maybe-nothing-preserving-whitespace @+
+                       stream nil *eof* nil)))
+      (when next-input
+        (typecase (setq form (car next-input))
+          (eof (go eof))
+          (section (go commentary))
+          (t (push form commentary)))))))
 
 @ @<Finish the last section and initialize section variables@>=
 (push (finish-section section commentary code) sections)
@@ -2302,13 +2389,15 @@ is detected, we also set the name of the current section, which may be |nil|.
 (with-mode :TeX
   (loop
     (maybe-push (snarf-until-control-char stream '(#\@ #\|)) commentary)
-    (setq form (read-preserving-whitespace stream nil *eof* nil))
-    (typecase form
-      (eof (go eof))
-      (section (go commentary))
-      (start-code-marker (setf (section-name section) (section-name form))
-                         (go lisp))
-      (t (push form commentary)))))
+    (let ((next-input (read-maybe-nothing-preserving-whitespace @+
+                       stream nil *eof* nil)))
+      (when next-input
+        (typecase (setq form (car next-input))
+          (eof (go eof))
+          (section (go commentary))
+          (start-code-marker (setf (section-name section) (section-name form))
+                             (go lisp))
+          (t (push form commentary)))))))
 
 @ The code part of a section consists of zero or more Lisp forms and is
 terminated by either \EOF\ or the start of a new section. This is also
@@ -2318,19 +2407,21 @@ where we evaluate \.{@@e} forms.
 (check-type form start-code-marker)
 (with-mode :lisp
   (loop
-    (setq form (read-preserving-whitespace stream nil *eof* nil))
-    (typecase form
-      (eof (go eof))
-      (section (go commentary))
-      (start-code-marker @+
-       @<Complain about starting a section without a commentary part@>)
-      (newline-marker @<Maybe push the newline marker@>)
-      (evaluated-form-marker (let ((form (marker-value form)))
-                               (let ((*evaluating* t)
-                                     (*readtable* (readtable-for-mode nil)))
-                                 (eval (tangle form)))
-                               (push form code)))
-      (t (push form code)))))
+    (let ((next-input (read-maybe-nothing-preserving-whitespace @+
+                       stream nil *eof* nil)))
+      (when next-input
+        (typecase (setq form (car next-input))
+          (eof (go eof))
+          (section (go commentary))
+          (start-code-marker @+
+           @<Complain about starting a section without a commentary part@>)
+          (newline-marker @<Maybe push the newline marker@>)
+          (evaluated-form-marker (let ((form (marker-value form)))
+                                   (let ((*evaluating* t)
+                                         (*readtable* (readtable-for-mode nil)))
+                                     (eval (tangle form)))
+                                   (push form code)))
+          (t (push form code)))))))
 
 @ @<Complain about starting a section without a commentary part@>=
 (cerror "Start a new unnamed section with no commentary." @+
