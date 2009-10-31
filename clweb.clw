@@ -2159,10 +2159,8 @@ and~\.{@@@@}.
 (defvar *end-control-text* (make-symbol "@>"))
 (set-control-code #\> (constantly *end-control-text*) :restricted)
 
-(defun read-control-text (stream &optional
-                          (eof-error-p t)
-                          (eof-value nil)
-                          (recursive-p nil))
+(defun read-control-text (stream &optional @+
+                          (eof-error-p t) eof-value recursive-p)
   (with-output-to-string (string)
     (with-mode :restricted
       (loop for text = (snarf-until-control-char stream #\@)
