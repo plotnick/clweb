@@ -160,6 +160,23 @@ but we'd like them to appear near the top of the tangled output.
 @<Global variables@>
 @<Condition classes@>
 
+@ Here's a little utility function that we'll use often. It's particularly
+useful for functions that accept a list desginator.
+
+@l
+(defun ensure-list (object)
+  (if (listp object) object (list object)))
+
+@ And here's one taken from \csc{pcl}: |mapappend| is like |mapcar| except
+that the results are appended together.
+
+@l
+(defun mapappend (function &rest args)
+  (if (some #'null args)
+      ()
+      (append (apply function (mapcar #'car args))
+              (apply #'mapappend function (mapcar #'cdr args)))))
+
 @*Sections. The fundamental unit of a web is the {\it section}, which may
 be either {\it named\/} or~{\it unnamed\/}. Named sections are conceptually
 very much like parameterless macros, except that they can be defined
@@ -422,16 +439,6 @@ to traverse it in-order, applying some function to each node.
   (let ((tree (make-instance 'binary-search-tree :key 0)))
     (find-or-insert -1 tree :insert-if-not-found nil))
   nil nil)
-
-@ Here's a little utility routine taken from \csc{pcl}: |mapappend| is like
-|mapcar| except that the results are appended together.
-
-@l
-(defun mapappend (fun &rest args)
-  (if (some #'null args)
-      ()
-      (append (apply fun (mapcar #'car args))
-              (apply #'mapappend fun (mapcar #'cdr args)))))
 
 @ As mentioned above, named sections can be defined piecemeal, with the
 code spread out over several sections in the \CLWEB\ source. We might think
@@ -1946,10 +1953,8 @@ from |stream| until encountering either \EOF\ or an element of the
  characters.
 
 @l
-(defun snarf-until-control-char (stream control-chars &aux
-                                 (control-chars (if (listp control-chars)
-                                                    control-chars
-                                                    (list control-chars))))
+(defun snarf-until-control-char (stream control-chars &aux @+
+                                 (control-chars (ensure-list control-chars)))
   (with-output-to-string (string)
     (loop for char = (peek-char nil stream nil *eof* nil)
           until (or (eof-p char) (member char control-chars))
@@ -2004,7 +2009,7 @@ reader macro functions that implement the control codes.
   (get-dispatch-macro-character #\@ sub-char (readtable-for-mode mode)))
 
 (defun set-control-code (sub-char function &optional (modes *modes*))
-  (dolist (mode (if (listp modes) modes (list modes)))
+  (dolist (mode (ensure-list modes))
     (set-dispatch-macro-character #\@ sub-char function @+
                                   (readtable-for-mode mode))))
 
@@ -4010,7 +4015,7 @@ environment, and simply returns |symbols| if the checks are all successful.
                    "~@(~A~) binding of ~A not of type ~A."
                    namespace name type)))
    (destructuring-bind (symbols namespace type) (cdr form)
-     (loop with symbols = (if (listp symbols) symbols (list symbols))
+     (loop with symbols = (ensure-list symbols)
            for symbol in symbols
            do (check-binding symbol namespace env type))
      (if (listp symbols)
@@ -4299,8 +4304,7 @@ In this program, we want to index all and only the symbols in the |"CLWEB"|
 package.
 
 @l
-(defun index-package (packages &aux
-                      (packages (if (listp packages) packages (list packages))))
+(defun index-package (packages &aux (packages (ensure-list packages)))
   "Inform the weaver that it should index the symbols in PACKAGES."
   (dolist (package packages)
     (pushnew (find-package package) *index-packages*)))
@@ -4328,18 +4332,18 @@ objects that have a specialized |heading-name| method, which method should
 return a string designator.
 
 @l
-(defun entry-heading-lessp (h1 h2 &aux
-                            (h1 (if (listp h1) h1 (list h1)))
-                            (h2 (if (listp h2) h2 (list h2))))
+(defun entry-heading-lessp (h1 h2 &aux @+
+                            (h1 (ensure-list h1)) @+
+                            (h2 (ensure-list h2)))
   (or (and (null h1) h2)
       (string-lessp (heading-name (car h1)) (heading-name (car h2)))
       (and (string-equal (heading-name (car h1)) (heading-name (car h2)))
            (cdr h2)
            (entry-heading-lessp (cdr h1) (cdr h2)))))
 
-(defun entry-heading-equalp (h1 h2 &aux
-                             (h1 (if (listp h1) h1 (list h1)))
-                             (h2 (if (listp h2) h2 (list h2))))
+(defun entry-heading-equalp (h1 h2 &aux @+
+                             (h1 (ensure-list h1)) @+
+                             (h2 (ensure-list h2)))
   (and (= (length h1) (length h2))
        (every #'string-equal
               (mapcar #'heading-name h1)
@@ -4659,7 +4663,7 @@ ordinary ones.
 (define-modify-macro orf (&rest args) or)
 
 (defmethod add-index-entry ((index index) heading (section section) &key def &aux
-                            (heading (if (listp heading) heading (list heading))))
+                            (heading (ensure-list heading)))
   (flet ((make-locator ()
            (make-locator :section section :def def)))
     (if (null (index-entries index))

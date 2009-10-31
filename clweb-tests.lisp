@@ -439,9 +439,7 @@
     (DESTRUCTURING-BIND
         (SYMBOLS NAMESPACE TYPE)
         (CDR FORM)
-      (LOOP WITH SYMBOLS = (IF (LISTP SYMBOLS)
-                               SYMBOLS
-                               (LIST SYMBOLS))
+      (LOOP WITH SYMBOLS = (ENSURE-LIST SYMBOLS)
             FOR SYMBOL IN SYMBOLS
             DO (CHECK-BINDING SYMBOL NAMESPACE ENV TYPE))
       (IF (LISTP SYMBOLS)
