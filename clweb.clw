@@ -812,23 +812,24 @@ a macro character, we just call |read| or |read-preserving-whitespace|,
 returning a list containing the single object so read.
 
 @l
-(defun %read-maybe-nothing (reader stream eof-error-p eof-value recursive-p)
+(defun read-maybe-nothing-internal (read stream ;
+                                    eof-error-p eof-value recursive-p)
   (multiple-value-list
    (let* ((next-char (peek-char nil stream nil nil recursive-p))
           (macro-fun (and next-char (get-macro-character next-char))))
      (cond (macro-fun
             (read-char stream)
             (call-reader-macro-function macro-fun stream next-char))
-           (t (funcall reader stream eof-error-p eof-value recursive-p))))))
+           (t (funcall read stream eof-error-p eof-value recursive-p))))))
 
 (defun read-maybe-nothing (stream &optional ;
                            (eof-error-p t) eof-value recursive-p)
-  (%read-maybe-nothing #'read stream eof-error-p eof-value recursive-p))
+  (read-maybe-nothing-internal #'read stream eof-error-p eof-value recursive-p))
 
 (defun read-maybe-nothing-preserving-whitespace ;
     (stream &optional (eof-error-p t) eof-value recursive-p)
-  (%read-maybe-nothing #'read-preserving-whitespace ;
-                       stream eof-error-p eof-value recursive-p))
+  (read-maybe-nothing-internal #'read-preserving-whitespace ;
+                               stream eof-error-p eof-value recursive-p))
 
 @t@l
 (deftest (read-maybe-nothing 1)
