@@ -216,6 +216,11 @@
          (LET ((MARKER (READ-FORM-FROM-STRING "; foo")))
            (VALUES (COMMENT-TEXT MARKER) (MARKER-BOUNDP MARKER)))
          "; foo" NIL)
+(DEFTEST READ-EMPTY-COMMENT
+         (WITH-INPUT-FROM-STRING (S (FORMAT NIL ";~%"))
+           (WITH-MODE :LISP
+             (READ-MAYBE-NOTHING S)))
+         NIL)
 (DEFTEST READ-BACKQUOTE
          (LET ((MARKER (READ-FORM-FROM-STRING "`(:a :b :c)")))
            (AND (TYPEP MARKER 'BACKQUOTE-MARKER) (MARKER-VALUE MARKER)))
@@ -279,10 +284,6 @@
          (WITH-MODE :TEX
            (VALUES (READ-FROM-STRING "@@")))
          "@")
-(DEFTEST SUPPRESS-LINE-BREAK
-         (WITH-MODE :LISP
-           (VALUES (READ-FROM-STRING (FORMAT NIL "@+~%:foo"))))
-         :FOO)
 (DEFTEST START-TEST-SECTION-READER
          (LET ((*TEST-SECTIONS* (MAKE-ARRAY 2 :FILL-POINTER 0)))
            (WITH-INPUT-FROM-STRING (S (FORMAT NIL "@t~%:foo @t* :bar"))
