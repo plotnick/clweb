@@ -146,13 +146,13 @@
                    (PROGN (REWIND) (READ-LINE S))))
          #\a #\b #\c #\a "bcdef")
 (DEFTEST READ-WITH-ECHO
-         (READ-WITH-ECHO ((MAKE-STRING-INPUT-STREAM ":foo :bar") VALUES CHARS)
-           (VALUES VALUES CHARS))
-         (:FOO) ":foo ")
+         (READ-WITH-ECHO ((MAKE-STRING-INPUT-STREAM ":foo :bar") OBJECT CHARS)
+           (VALUES OBJECT CHARS))
+         :FOO ":foo ")
 (DEFTEST READ-WITH-ECHO-TO-EOF
-         (READ-WITH-ECHO ((MAKE-STRING-INPUT-STREAM ":foo") VALUES CHARS)
-           (VALUES VALUES CHARS))
-         (:FOO) ":foo")
+         (READ-WITH-ECHO ((MAKE-STRING-INPUT-STREAM ":foo") OBJECT CHARS)
+           (VALUES OBJECT CHARS))
+         :FOO ":foo")
 (DEFTEST PRINT-MARKER
          (LET ((*PRINT-MARKER* T))
            (FORMAT NIL "~A" (MAKE-INSTANCE 'MARKER :VALUE :FOO)))

@@ -1055,13 +1055,13 @@ state prior to any reads executed in the body.
 
 @ And sometimes, we'll want to call |read| on a stream, and keep a copy of
 the characters that |read| actually scans. This macro reads from |stream|,
-then executes the |body| forms with |values| bound to a list of the values
-returned by |read|, and |echoed| bound to a variable containing the
-characters so consumed. If |prefix| is supplied, it should be a string that
-will be concatenated onto the front of |stream| prior to reading.
+then executes the |body| forms with |object| bound to the object returned
+by |read| and |echoed| bound to a variable containing the characters so
+consumed. If |prefix| is supplied, it should be a string that will be
+concatenated onto the front of |stream| prior to reading.
 
 @l
-(defmacro read-with-echo ((stream values echoed &key prefix) &body body &aux
+(defmacro read-with-echo ((stream object echoed &key prefix) &body body &aux
                           (out (gensym)) (echo (gensym)) (rewind (gensym))
                           (raw-output (gensym)) (length (gensym)))
   `(with-open-stream (,out (make-string-output-stream))
@@ -1070,8 +1070,7 @@ will be concatenated onto the front of |stream| prior to reading.
                                    ,@(when prefix
                                        `((make-string-input-stream ,prefix)))
                                    ,echo))
-         (let* ((,values (multiple-value-list @+
-                          (read-preserving-whitespace ,rewind)))
+         (let* ((,object (read-preserving-whitespace ,rewind))
                 (,raw-output (get-output-stream-string ,out))
                 (,length (length ,raw-output))
                 (,echoed (subseq ,raw-output
@@ -1082,19 +1081,19 @@ will be concatenated onto the front of |stream| prior to reading.
                                           (elt ,raw-output (1- ,length))))
                                      ,length
                                      (1- ,length)))))
-           (declare (ignorable ,values ,echoed))
+           (declare (ignorable ,object ,echoed))
            ,@body)))))
 
 @t@l
 (deftest read-with-echo
-  (read-with-echo ((make-string-input-stream ":foo :bar") values chars)
-    (values values chars))
-  (:foo) ":foo ")
+  (read-with-echo ((make-string-input-stream ":foo :bar") object chars)
+    (values object chars))
+  :foo ":foo ")
 
 (deftest read-with-echo-to-eof
-  (read-with-echo ((make-string-input-stream ":foo") values chars)
-    (values values chars))
-  (:foo) ":foo")
+  (read-with-echo ((make-string-input-stream ":foo") object chars)
+    (values object chars))
+  :foo ":foo")
 
 @ Next, we define a class of objects called {\it markers\/} that denote
 abstract objects in source code. Some of these objects, such as newlines
@@ -1678,7 +1677,7 @@ the echoed characters.
 (defun simple-bit-vector-reader (stream sub-char arg)
   (declare (ignore sub-char))
   (let ((*readtable* (readtable-for-mode nil)))
-    (read-with-echo (stream values bits :prefix (format nil "#~@[~D~]*" arg))
+    (read-with-echo (stream vector bits :prefix (format nil "#~@[~D~]*" arg))
       (apply #'make-instance 'bit-vector-marker
              :elements @<Build a bit vector...@>
              (if arg (list :length arg))))))
@@ -1906,10 +1905,10 @@ characters that the reader scans, and use that to reconstruct the form.
                  (read stream t nil t)))
          (*read-suppress* (if plusp (not (featurep test)) (featurep test))))
     (peek-char t stream t nil t)
-    (read-with-echo (stream values form)
+    (read-with-echo (stream value form)
       (apply #'make-instance 'read-time-conditional-marker
              :plusp plusp :test test :form form
-             (and (not *read-suppress*) values (list :value (car values)))))))
+             (and (not *read-suppress*) (list :value value))))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\+ #'read-time-conditional-reader @+
