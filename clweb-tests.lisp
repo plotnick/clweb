@@ -305,8 +305,9 @@
            (AND (TYPEP MARKER 'EVALUATED-FORM-MARKER) (MARKER-VALUE MARKER)))
          T)
 (DEFTEST READ-CONTROL-TEXT
-         (WITH-INPUT-FROM-STRING (S "frob |foo|@>") (READ-CONTROL-TEXT S))
-         "frob |foo|")
+         (WITH-INPUT-FROM-STRING (S "frob |foo| and tweak |bar|@>")
+           (READ-CONTROL-TEXT S))
+         "frob |foo| and tweak |bar|")
 (DEFTEST (READ-SECTION-NAME :TEX)
          (WITH-MODE :TEX
            (SECTION-NAME (READ-FROM-STRING "@<foo@>=")))

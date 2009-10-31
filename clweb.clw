@@ -2152,6 +2152,9 @@ frequently be used as keys in the various binary search trees, so it's
 convenient to keep it in string form until the last possible moment (i.e.,
 right up until we need to print it out).
 
+The only control codes that are valid in restricted mode are \.{@@>}
+and~\.{@@@@}.
+
 @l
 (defvar *end-control-text* (make-symbol "@>"))
 (set-control-code #\> (constantly *end-control-text*) :restricted)
@@ -2160,21 +2163,21 @@ right up until we need to print it out).
                           (eof-error-p t)
                           (eof-value nil)
                           (recursive-p nil))
-  (with-mode :restricted
-    (apply #'concatenate 'string
-           (loop for text = (snarf-until-control-char stream #\@)
-                 as x = (read-preserving-whitespace stream
-                                                    eof-error-p eof-value
-                                                    recursive-p)
-                 collect text
-                 if (eq x *end-control-text*) do (loop-finish)
-                 else collect x))))
+  (with-output-to-string (string)
+    (with-mode :restricted
+      (loop for text = (snarf-until-control-char stream #\@)
+            for next = (read-preserving-whitespace stream @+
+                                                   eof-error-p eof-value @+
+                                                   recursive-p)
+            do (write-string text string)
+            if (eq next *end-control-text*) do (loop-finish)
+            else do (write-string next string)))))
 
 @t@l
 (deftest read-control-text
-  (with-input-from-string (s "frob |foo|@>")
+  (with-input-from-string (s "frob |foo| and tweak |bar|@>")
     (read-control-text s))
-  "frob |foo|")
+  "frob |foo| and tweak |bar|")
 
 @ The control code \.{@@<} introduces a section name, which extends to the
 closing \.{@@>}. Its meaning is context-dependent.

@@ -842,18 +842,15 @@
 (SET-CONTROL-CODE #\> (CONSTANTLY *END-CONTROL-TEXT*) :RESTRICTED)
 (DEFUN READ-CONTROL-TEXT
        (STREAM &OPTIONAL (EOF-ERROR-P T) (EOF-VALUE NIL) (RECURSIVE-P NIL))
-  (WITH-MODE :RESTRICTED
-    (APPLY #'CONCATENATE 'STRING
-           (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM
-                                                      #\@) AS X = (READ-PRESERVING-WHITESPACE
-                                                                   STREAM
-                                                                   EOF-ERROR-P
-                                                                   EOF-VALUE
-                                                                   RECURSIVE-P)
-                 COLLECT TEXT
-                 IF (EQ X *END-CONTROL-TEXT*)
-                 DO (LOOP-FINISH) ELSE
-                 COLLECT X))))
+  (WITH-OUTPUT-TO-STRING (STRING)
+    (WITH-MODE :RESTRICTED
+      (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM #\@)
+            FOR NEXT = (READ-PRESERVING-WHITESPACE STREAM EOF-ERROR-P EOF-VALUE
+                                                   RECURSIVE-P)
+            DO (WRITE-STRING TEXT STRING)
+            IF (EQ NEXT *END-CONTROL-TEXT*)
+            DO (LOOP-FINISH) ELSE
+            DO (WRITE-STRING NEXT STRING)))))
 (DEFUN MAKE-SECTION-NAME-READER (DEFINITION-ALLOWED-P USE)
   (LAMBDA (STREAM SUB-CHAR ARG)
     (DECLARE (IGNORE SUB-CHAR ARG))
