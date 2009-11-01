@@ -3,29 +3,33 @@
 (defvar *start-section-regexp* "^@[ *\nTt]")
 (defvar *start-non-test-section-regexp* "^@[ *\n]")
 
+(defun move-by-sections (arg)
+  "Move forward or backward ARG sections."
+  (cond ((> arg 0)
+         (condition-case nil
+             (re-search-forward *start-section-regexp* nil nil
+                                (if (looking-at *start-section-regexp*)
+                                    (1+ arg)
+                                    arg))
+           (search-failed (signal 'end-of-buffer nil)))
+         (goto-char (match-beginning 0)))
+        ((< arg 0)
+         (condition-case nil
+             (re-search-backward *start-section-regexp* nil nil (- arg))
+           (search-failed (signal 'beginning-of-buffer nil)))
+         (point))))
+
 (defun forward-section (arg)
   "Move forward to the beginning of the next web section.
 With argument, do this that many times."
   (interactive "p")
-  (when (looking-at *start-section-regexp*)
-    (setq arg (1+ arg)))
-  (while (> arg 0)
-    (condition-case nil
-        (re-search-forward *start-section-regexp*)
-      (search-failed (signal 'end-of-buffer nil)))
-    (setq arg (1- arg)))
-  (goto-char (match-beginning 0)))
+  (move-by-sections arg))
 
 (defun backward-section (arg)
   "Move backward to the beginning of a web section.
 With argument, do this that many times."
   (interactive "p")
-  (while (> arg 0)
-    (condition-case nil
-        (re-search-backward *start-section-regexp*)
-      (search-failed (signal 'beginning-of-buffer nil)))
-    (setq arg (1- arg)))
-  (point))
+  (move-by-sections (- arg)))
 
 (defun goto-section (arg)
   "Move to the section whose number is the given argument."
@@ -43,10 +47,10 @@ any existing code for that section; otherwise, it will be replaced."
     (let* ((start (condition-case nil
                       (if (looking-at *start-section-regexp*)
                           (point)
-                          (backward-section 1))
+                          (move-by-sections -1))
                     (beginning-of-buffer (error "In limbo"))))
            (end (condition-case nil
-                    (forward-section 1)
+                    (move-by-sections 1)
                   (end-of-buffer (point-max))))
            (temp-file (make-temp-file "clweb")))
       (write-region start end temp-file t 'nomsg)
