@@ -2,45 +2,49 @@
 
 (defvar *start-section-regexp* "@ \\|@\\*\\|@\n\\|@t\\*?")
 
-(defun move-to-section (arg)
-  (condition-case nil
-      (progn
-        (while (> arg 0)
-          (re-search-forward *start-section-regexp*)
-          (setq arg (1- arg)))
-        (while (< arg 0)
-          (re-search-backward *start-section-regexp*)
-          (setq arg (1+ arg))))
-    (search-failed (message "Can't find section boundary"))))
-
 (defun forward-section (arg)
-  "Advance past next WEB section beginning; with ARG, repeat ARG times."
+  "Move forward to the beginning of the next web section.
+With argument, do this that many times."
   (interactive "p")
-  (move-to-section (if (looking-at *start-section-regexp*) (1+ arg) arg)))
+  (when (looking-at *start-section-regexp*)
+    (setq arg (1+ arg)))
+  (while (> arg 0)
+    (condition-case nil
+        (re-search-forward *start-section-regexp*)
+      (search-failed (signal 'end-of-buffer nil)))
+    (setq arg (1- arg)))
+  (goto-char (match-beginning 0)))
 
 (defun backward-section (arg)
-  "Advance to previous WEB section beginning; with ARG, repeat ARG times."
+  "Move backward to the beginning of a web section.
+With argument, do this that many times."
   (interactive "p")
-  (move-to-section (- arg)))
+  (while (> arg 0)
+    (condition-case nil
+        (re-search-backward *start-section-regexp*)
+      (search-failed (signal 'beginning-of-buffer nil)))
+    (setq arg (1- arg)))
+  (point))
 
 (defun eval-section (arg)
-  "Evaluate the (named or unnamed) section around point.  If ARG is supplied,
-code for named sections will be appended to any existing code for that section;
-otherwise, it will be replaced."
+  "Evaluate the (named or unnamed) section around point.
+If an argument is supplied, code for named sections will be appended to
+any existing code for that section; otherwise, it will be replaced."
   (interactive "P")
-  (let* ((tmp (make-temp-file "clweb"))
-         (on-start-section (looking-at *start-section-regexp*))
-         (start (save-excursion
-                  (unless on-start-section (move-to-section -1))
-                  (point)))
-         (end (save-excursion
-                (when on-start-section (forward-char 2))
-                (move-to-section 1)
-                (- (point) 2))))
-    (write-region start end tmp t 'nomsg)
-    (comint-simple-send (inferior-lisp-proc)
-                        (format "(load-sections-from-temp-file %S %S)"
-                                tmp (not (null arg))))))
+  (save-excursion
+    (let* ((start (condition-case nil
+                      (if (looking-at *start-section-regexp*)
+                          (point)
+                          (backward-section 1))
+                    (beginning-of-buffer (error "In limbo"))))
+           (end (condition-case nil
+                    (forward-section 1)
+                  (end-of-buffer (point-max))))
+           (temp-file (make-temp-file "clweb")))
+      (write-region start end temp-file t 'nomsg)
+      (comint-simple-send (inferior-lisp-proc)
+                          (format "(load-sections-from-temp-file %S %S)"
+                                  temp-file (not (null arg)))))))
 
 (define-derived-mode clweb-mode lisp-mode "CLWEB"
   "Major mode for editing CLWEB programs.
