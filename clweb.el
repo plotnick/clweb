@@ -3,21 +3,24 @@
 (defvar *start-section-regexp* "^@[ *\nTt]")
 (defvar *start-non-test-section-regexp* "^@[ *\n]")
 
-(defun move-by-sections (arg)
+(defun move-by-sections (arg &optional skip-test-sections)
   "Move forward or backward ARG sections."
-  (cond ((> arg 0)
-         (condition-case nil
-             (re-search-forward *start-section-regexp* nil nil
-                                (if (looking-at *start-section-regexp*)
-                                    (1+ arg)
-                                    arg))
-           (search-failed (signal 'end-of-buffer nil)))
-         (goto-char (match-beginning 0)))
-        ((< arg 0)
-         (condition-case nil
-             (re-search-backward *start-section-regexp* nil nil (- arg))
-           (search-failed (signal 'beginning-of-buffer nil)))
-         (point))))
+  (let ((regexp (if skip-test-sections
+                    *start-non-test-section-regexp*
+                    *start-section-regexp*)))
+    (cond ((> arg 0)
+           (condition-case nil
+               (re-search-forward regexp nil nil
+                                  (if (looking-at *start-section-regexp*)
+                                      (1+ arg)
+                                      arg))
+             (search-failed (signal 'end-of-buffer nil)))
+           (goto-char (match-beginning 0)))
+          ((< arg 0)
+           (condition-case nil
+               (re-search-backward regexp nil nil (- arg))
+             (search-failed (signal 'beginning-of-buffer nil)))
+           (point)))))
 
 (defun forward-section (arg)
   "Move forward to the beginning of the next web section.
@@ -35,8 +38,23 @@ With argument, do this that many times."
   "Move to the section whose number is the given argument."
   (interactive "NSection number: ")
   (goto-char 1)
-  (re-search-forward *start-non-test-section-regexp* nil 'end arg)
-  (goto-char (match-beginning 0)))
+  (condition-case nil
+      (move-by-sections arg t)
+    (end-of-buffer (goto-char (point-max)))))
+
+(defun what-section ()
+  "Print the section number containing point."
+  (interactive)
+  (let ((p (point))
+        (n -1))
+    (save-excursion
+      (goto-char 1)
+      (condition-case nil
+          (while (<= (point) p)
+            (setq n (1+ n))
+            (move-by-sections 1 t))
+        (end-of-buffer)))
+    (message "%d" n)))
 
 (defun eval-section (arg)
   "Evaluate the (named or unnamed) section around point.
