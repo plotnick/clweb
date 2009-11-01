@@ -95,16 +95,14 @@ The weaver has a single entry point: |weave| takes a web as input and
 generates a file that can be fed to \TeX\ to generate a pretty-printed
 version of that web.
 
-@ We'll start by setting up a package for the system. In addition to
-the top-level tangler and weaver functions mentioned above, there's
-|index-package|, which tells the weaver which packages' symbols to
-index, and, |load-sections-from-temp-file|, which is conceptually
-part of the tangler, but is a special-purpose routine designed to be used
-in conjunction with an editor such as Emacs to provide incremental
-redefinition of sections; the user will generally never need to call it
-directly. The remainder of the exported symbols are condition classes for
-the various errors and warnings that may be generated while processing a
-web.
+@ We'll start by setting up a package for the system. In addition to the
+top-level tangler and weaver functions mentioned above, there's also
+|load-sections-from-temp-file|, which is conceptually part of the tangler,
+but is a special-purpose routine designed to be used in conjunction with an
+editor such as Emacs to provide incremental redefinition of sections; the
+user will generally never need to call it directly. The remainder of the
+exported symbols are condition classes for the various errors and warnings
+that might be signaled while processing a web.
 
 @l
 (provide "CLWEB")
@@ -113,14 +111,13 @@ web.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   #+sbcl (require 'sb-cltl2))
 @e
-(defpackage "CLWEB"
+(defpackage @x"CLWEB"
   (:use "COMMON-LISP"
         #+sbcl "SB-CLTL2"
         #+allegro "SYS")
   (:export "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
-           "INDEX-PACKAGE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
            "AMBIGUOUS-PREFIX-ERROR"
            "SECTION-NAME-CONTEXT-ERROR"
@@ -2275,6 +2272,33 @@ citations, and so are not expanded.
          (read-from-string "@<foo@>")))))
   "foo")
 
+@ The control code \.{@@x} reads the following form, which should be a
+designator for a list of packages, and informs the indexing sub-system
+that symbols in those packages are to be indexed. It returns the form.
+
+The usual idiom is to use this control code in a |defpackage| form; e.g.,
+\((defpackage @@x\.{"FOO"} $\ldots$)\) will index the symbols in the package
+named \.{FOO}.
+
+Note that this is {\it completely different\/} than the \.{@@x} control
+code of \WEB\ and \CWEB, which is part of their change-file system.
+
+@l
+(defun index-package-reader (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (let ((form (read stream)))
+    (index-package form)
+    form))
+
+(set-control-code #\x #'index-package-reader :lisp)
+
+@t@l
+(deftest index-package-reader
+  (let ((*index-packages* nil))
+    (read-form-from-string "@x\"CLWEB\"")
+    (eql (car *index-packages*) (find-package "CLWEB")))
+  t)
+
 @ These next control codes are used to manually create index entries.
 They differ only in how they are typeset in the woven output.
 @^manual index entries@>
@@ -4286,22 +4310,16 @@ the walker classes defined in this program.
 @*Indexing. Having constructed our code walker, we can now use it to
 produce an index of the interesting symbols in a web. We'll say a symbol
 is {\it interesting\/} if it is interned in one of the packages listed
-in |*index-packages*|. The user should manually add packages to this list
-using an \.{@@e} form containing a call to the following function, which
-takes a designator for a list of package designators, and adds each package
+in |*index-packages*|. The user should add packages to this list using
+the \.{@@x} control code, which calls the following function. It takes
+a designator for a list of package designators, and adds each package
 to |*index-packages*|.
-
-In this program, we want to index all and only the symbols in the |"CLWEB"|
-package.
 
 @l
 (defun index-package (packages &aux (packages (ensure-list packages)))
   "Inform the weaver that it should index the symbols in PACKAGES."
   (dolist (package packages)
     (pushnew (find-package package) *index-packages*)))
-
-@e
-(index-package "CLWEB")
 
 @ @<Global variables@>=
 (defvar *index-packages* nil)

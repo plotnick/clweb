@@ -338,6 +338,11 @@
               (WITH-MODE :TEX
                 (READ-FROM-STRING "@<foo@>")))))
          "foo")
+(DEFTEST INDEX-PACKAGE-READER
+         (LET ((*INDEX-PACKAGES* NIL))
+           (READ-FORM-FROM-STRING "@x\"CLWEB\"")
+           (EQL (CAR *INDEX-PACKAGES*) (FIND-PACKAGE "CLWEB")))
+         T)
 (DEFTEST MAYBE-PUSH
          (LET ((LIST 'NIL))
            (MAYBE-PUSH 'A LIST)
