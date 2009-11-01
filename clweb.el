@@ -1,6 +1,7 @@
 ;;;; A major-mode for editing CLWEB programs.
 
-(defvar *start-section-regexp* "\\(^\\|[^@,]\\)\\(@[ *\nTt]\\)")
+(defvar *start-section-regexp* "^@[ *\nTt]")
+(defvar *start-non-test-section-regexp* "^@[ *\n]")
 
 (defun forward-section (arg)
   "Move forward to the beginning of the next web section.
@@ -13,7 +14,7 @@ With argument, do this that many times."
         (re-search-forward *start-section-regexp*)
       (search-failed (signal 'end-of-buffer nil)))
     (setq arg (1- arg)))
-  (goto-char (match-beginning 2)))
+  (goto-char (match-beginning 0)))
 
 (defun backward-section (arg)
   "Move backward to the beginning of a web section.
@@ -25,6 +26,13 @@ With argument, do this that many times."
       (search-failed (signal 'beginning-of-buffer nil)))
     (setq arg (1- arg)))
   (point))
+
+(defun goto-section (arg)
+  "Move to the section whose number is the given argument."
+  (interactive "NSection number: ")
+  (goto-char 1)
+  (re-search-forward *start-non-test-section-regexp* nil 'end arg)
+  (goto-char (match-beginning 0)))
 
 (defun eval-section (arg)
   "Evaluate the (named or unnamed) section around point.
