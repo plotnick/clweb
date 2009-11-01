@@ -222,12 +222,14 @@
              (READ-MAYBE-NOTHING S)))
          NIL)
 (DEFTEST READ-BACKQUOTE
-         (LET ((MARKER (READ-FORM-FROM-STRING "`(:a :b :c)")))
-           (AND (TYPEP MARKER 'BACKQUOTE-MARKER) (MARKER-VALUE MARKER)))
-         #.(READ-FROM-STRING "`(:a :b :c)"))
+         (LET ((MARKER (READ-FORM-FROM-STRING "`(a b c)")))
+           (AND (TYPEP MARKER 'BACKQUOTE-MARKER)
+                (EQUAL (EVAL (MARKER-VALUE MARKER)) '(A B C))))
+         T)
 (DEFTEST READ-COMMA
-         (EVAL (MARKER-VALUE (READ-FORM-FROM-STRING "`(:a ,@'(:b :c) :d)")))
-         (:A :B :C :D))
+         (EQUAL (EVAL (MARKER-VALUE (READ-FORM-FROM-STRING "`(a ,@'(b c) d)")))
+                '(A B C D))
+         T)
 (DEFTEST READ-FUNCTION
          (LET ((MARKER (READ-FORM-FROM-STRING "#'identity")))
            (VALUES (QUOTED-FORM MARKER) (MARKER-VALUE MARKER)))
@@ -583,6 +585,7 @@
            ((WALKER TRACING-WALKER) OPERATOR FORM ENV)
            (DECLARE (IGNORE OPERATOR ENV))
            (FORMAT T "~<; ~@;walking compound form ~W~:>~%" (LIST FORM)))
+(INDEX-PACKAGE "CLWEB")
 (DEFTEST ENTRY-HEADING-LESSP
          (LET ((A (MAKE-INSTANCE 'HEADING :NAME "a"))
                (B (MAKE-INSTANCE 'HEADING :NAME "b"))

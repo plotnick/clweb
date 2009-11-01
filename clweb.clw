@@ -1512,10 +1512,10 @@ also the reason we need |print-object| methods for all the markers.
 
 @t@l
 (deftest read-backquote
-  (let ((marker (read-form-from-string "`(:a :b :c)")))
+  (let ((marker (read-form-from-string "`(a b c)")))
     (and (typep marker 'backquote-marker)
-         (marker-value marker)))
-  #.(read-from-string "`(:a :b :c)"))
+         (equal (eval (marker-value marker)) '(a b c))))
+  t)
 
 @ @<Global variables@>=
 (defvar *re-reading* nil)
@@ -1565,8 +1565,9 @@ value.
 
 @t@l
 (deftest read-comma
-  (eval (marker-value (read-form-from-string "`(:a ,@'(:b :c) :d)")))
-  (:a :b :c :d))
+  (equal (eval (marker-value (read-form-from-string "`(a ,@'(b c) d)")))
+         '(a b c d))
+  t)
 
 @ Allegro Common Lisp's pretty printer tries to be clever about certain
 forms, like |defun| and |cond|, which might have a list as their |cadr|.
@@ -4326,6 +4327,12 @@ to |*index-packages*|.
 
 @ @<Initialize global...@>=
 (setq *index-packages* nil)
+
+@t For testing the indexer, we need to make sure that the \CLWEB\ package
+is in |*index-packages*|.
+
+@l
+(index-package "CLWEB")
 
 @ Before we proceed, let's establish some terminology. Formally, an
 {\it index\/} is an ordered collection of {\it entries}, each of which
