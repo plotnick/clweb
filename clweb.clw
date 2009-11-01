@@ -114,7 +114,8 @@ that might be signaled while processing a web.
 (defpackage @x"CLWEB"
   (:use "COMMON-LISP"
         #+sbcl "SB-CLTL2"
-        #+allegro "SYS")
+        #+allegro "SYS"
+        #+ccl "CCL")
   (:export "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
@@ -605,7 +606,8 @@ characters with a single space.
 (defparameter *whitespace*
   #.(coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'string))
 
-(defun whitespacep (char) (find char *whitespace* :test #'char=))
+(unless (fboundp 'whitespacep) ; CCL, at least, provides a suitable definition
+  (defun whitespacep (char) (find char *whitespace* :test #'char=)))
 
 (defun squeeze (string)
   (loop with squeezing = nil
@@ -1494,8 +1496,9 @@ also the reason we need |print-object| methods for all the markers.
         (*print-readably* t)
         (*print-marker* t)
         (*readtable* (readtable-for-mode :inner-lisp))
-        (*re-reading* t))
-    (values (read-from-string (prin1-to-string marker)))))
+        (*re-reading* t)
+        #+ccl (ccl::*backquote-expand* t))
+    (values (tangle (read-from-string (prin1-to-string marker))))))
 
 (defmethod print-object ((obj backquote-marker) stream)
   (if *print-marker*
@@ -1512,10 +1515,10 @@ also the reason we need |print-object| methods for all the markers.
 
 @t@l
 (deftest read-backquote
-  (let ((marker (read-form-from-string "`(:a :b :c)")))
+  (let ((marker (read-form-from-string "`(a b c)")))
     (and (typep marker 'backquote-marker)
-         (marker-value marker)))
-  #.(read-from-string "`(:a :b :c)"))
+         (equal (eval (marker-value marker)) '(a b c))))
+  t)
 
 @ @<Global variables@>=
 (defvar *re-reading* nil)
@@ -1565,8 +1568,9 @@ value.
 
 @t@l
 (deftest read-comma
-  (eval (marker-value (read-form-from-string "`(:a ,@'(:b :c) :d)")))
-  (:a :b :c :d))
+  (equal (eval (marker-value (read-form-from-string "`(a ,@'(b c) d)")))
+         '(a b c d))
+  t)
 
 @ Allegro Common Lisp's pretty printer tries to be clever about certain
 forms, like |defun| and |cond|, which might have a list as their |cadr|.
@@ -3577,11 +3581,11 @@ function name.
 
 @ @<Condition classes@>=
 (define-condition invalid-function-name (parse-error)
-  ((name :initarg :name :reader function-name))
+  ((name :initarg :name :reader invalid-function-name))
   (:report (lambda (error stream)
              (format stream "~@<Invalid function name ~A.~:@>" ;
 @.Invalid function name...@>
-                     (function-name error)))))
+                     (invalid-function-name error)))))
 
 @t@l
 (deftest (walk-function-name 1)
@@ -4326,6 +4330,12 @@ to |*index-packages*|.
 
 @ @<Initialize global...@>=
 (setq *index-packages* nil)
+
+@t For testing the indexer, we need to make sure that the \CLWEB\ package
+is in |*index-packages*|.
+
+@l
+(index-package "CLWEB")
 
 @ Before we proceed, let's establish some terminology. Formally, an
 {\it index\/} is an ordered collection of {\it entries}, each of which

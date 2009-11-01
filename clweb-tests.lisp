@@ -1,4 +1,4 @@
-;;;; TANGLED WEB FROM "clweb.clw". DO NOT EDIT.
+;;;; TANGLED WEB FROM "//home/alex/tmp/clweb-ccl/clweb.clw". DO NOT EDIT.
 (IN-PACKAGE "CLWEB")
 (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
   (REQUIRE 'RT)
@@ -54,11 +54,11 @@
            (FIND-OR-INSERT -1 TREE :INSERT-IF-NOT-FOUND NIL))
          NIL NIL)
 (DEFTEST NAMED-SECTION-NUMBER/CODE
-         (WITH-TEMPORARY-SECTIONS
-          ((:SECTION :NAME "foo" :CODE (1)) (:SECTION :NAME "foo" :CODE (2))
-           (:SECTION :NAME "foo" :CODE (3)))
-          (LET ((SECTION (FIND-SECTION "foo")))
-            (VALUES (SECTION-CODE SECTION) (SECTION-NUMBER SECTION))))
+         (WITH-TEMPORARY-SECTIONS ((:SECTION :NAME "foo" :CODE (1))
+                                   (:SECTION :NAME "foo" :CODE (2))
+                                   (:SECTION :NAME "foo" :CODE (3)))
+           (LET ((SECTION (FIND-SECTION "foo")))
+             (VALUES (SECTION-CODE SECTION) (SECTION-NUMBER SECTION))))
          (1 2 3) 0)
 (DEFTEST (SECTION-NAME-PREFIX-P 1) (SECTION-NAME-PREFIX-P "a") NIL 1)
 (DEFTEST (SECTION-NAME-PREFIX-P 2) (SECTION-NAME-PREFIX-P "ab...") T 2)
@@ -74,10 +74,11 @@
 (DEFTEST (SQUEEZE 2) (SQUEEZE "ab c") "ab c")
 (DEFTEST (SQUEEZE 3) (SQUEEZE (FORMAT NIL " a b ~C c " #\Tab)) "a b c")
 (DEFVAR *SAMPLE-NAMED-SECTIONS*
-  (WITH-TEMPORARY-SECTIONS
-   ((:SECTION :NAME "bar" :CODE (:BAR)) (:SECTION :NAME "baz" :CODE (:BAZ))
-    (:SECTION :NAME "foo" :CODE (:FOO)) (:SECTION :NAME "qux" :CODE (:QUX)))
-   *NAMED-SECTIONS*))
+  (WITH-TEMPORARY-SECTIONS ((:SECTION :NAME "bar" :CODE (:BAR))
+                            (:SECTION :NAME "baz" :CODE (:BAZ))
+                            (:SECTION :NAME "foo" :CODE (:FOO))
+                            (:SECTION :NAME "qux" :CODE (:QUX)))
+    *NAMED-SECTIONS*))
 (DEFUN FIND-SAMPLE-SECTION (NAME)
   (FIND-OR-INSERT NAME *SAMPLE-NAMED-SECTIONS* :INSERT-IF-NOT-FOUND NIL))
 (DEFTEST FIND-NAMED-SECTION (SECTION-NAME (FIND-SAMPLE-SECTION "bar")) "bar")
@@ -222,12 +223,14 @@
              (READ-MAYBE-NOTHING S)))
          NIL)
 (DEFTEST READ-BACKQUOTE
-         (LET ((MARKER (READ-FORM-FROM-STRING "`(:a :b :c)")))
-           (AND (TYPEP MARKER 'BACKQUOTE-MARKER) (MARKER-VALUE MARKER)))
-         #.(READ-FROM-STRING "`(:a :b :c)"))
+         (LET ((MARKER (READ-FORM-FROM-STRING "`(a b c)")))
+           (AND (TYPEP MARKER 'BACKQUOTE-MARKER)
+                (EQUAL (EVAL (MARKER-VALUE MARKER)) '(A B C))))
+         T)
 (DEFTEST READ-COMMA
-         (EVAL (MARKER-VALUE (READ-FORM-FROM-STRING "`(:a ,@'(:b :c) :d)")))
-         (:A :B :C :D))
+         (EQUAL (EVAL (MARKER-VALUE (READ-FORM-FROM-STRING "`(a ,@'(b c) d)")))
+                '(A B C D))
+         T)
 (DEFTEST READ-FUNCTION
          (LET ((MARKER (READ-FORM-FROM-STRING "#'identity")))
            (VALUES (QUOTED-FORM MARKER) (MARKER-VALUE MARKER)))
@@ -457,121 +460,127 @@
                         ',WALKED-FORM)
             T))
 (DEFINE-WALK-BINDING-TEST WALK-ORDINARY-LAMBDA-LIST
- (LAMBDA
-     (X Y
-      &OPTIONAL
-      (O
-       (+ (CHECK-BINDING O :VARIABLE NIL) (CHECK-BINDING X :VARIABLE :SPECIAL)
-          (CHECK-BINDING Y :VARIABLE :LEXICAL)))
-      &KEY ((SECRET K) 1 K-S-P) (K2 (CHECK-BINDING K-S-P :VARIABLE :LEXICAL))
-      K3
-      &REST ARGS
-      &AUX W
-      (Z
-       (IF K-S-P
-           O
-           X)))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING X :VARIABLE :SPECIAL)
-   (CHECK-BINDING (Y Z O K K-S-P K2 K3 ARGS W Z) :VARIABLE :LEXICAL)
-   (CHECK-BINDING SECRET :VARIABLE NIL))
- (LAMBDA
-     (X Y
-      &OPTIONAL (O (+ O X Y))
-      &KEY ((SECRET K) 1 K-S-P) (K2 K-S-P) K3
-      &REST ARGS
-      &AUX W
-      (Z
-       (IF K-S-P
-           O
-           X)))
-   (DECLARE (SPECIAL X))
-   X
-   (Y Z O K K-S-P K2 K3 ARGS W Z)
-   SECRET))
+                          (LAMBDA
+                              (X Y
+                               &OPTIONAL
+                               (O
+                                (+ (CHECK-BINDING O :VARIABLE NIL)
+                                   (CHECK-BINDING X :VARIABLE :SPECIAL)
+                                   (CHECK-BINDING Y :VARIABLE :LEXICAL)))
+                               &KEY ((SECRET K) 1 K-S-P)
+                               (K2 (CHECK-BINDING K-S-P :VARIABLE :LEXICAL)) K3
+                               &REST ARGS
+                               &AUX W
+                               (Z
+                                (IF K-S-P
+                                    O
+                                    X)))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING X :VARIABLE :SPECIAL)
+                            (CHECK-BINDING (Y Z O K K-S-P K2 K3 ARGS W Z)
+                             :VARIABLE :LEXICAL)
+                            (CHECK-BINDING SECRET :VARIABLE NIL))
+                          (LAMBDA
+                              (X Y
+                               &OPTIONAL (O (+ O X Y))
+                               &KEY ((SECRET K) 1 K-S-P) (K2 K-S-P) K3
+                               &REST ARGS
+                               &AUX W
+                               (Z
+                                (IF K-S-P
+                                    O
+                                    X)))
+                            (DECLARE (SPECIAL X))
+                            X
+                            (Y Z O K K-S-P K2 K3 ARGS W Z)
+                            SECRET))
 (DEFINE-WALK-BINDING-TEST WALK-MACRO-LAMBDA-LIST
- (LAMBDA
-     (&WHOLE W (X Y)
-      &OPTIONAL ((O) (+ X Y))
-      &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV . BODY)
-   (CHECK-BINDING (W X Y O K1 K2 K-S-P ENV BODY) :VARIABLE :LEXICAL))
- (LAMBDA
-     (&WHOLE W (X Y)
-      &OPTIONAL ((O) (+ X Y))
-      &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV
-      &REST BODY)
-   (W X Y O K1 K2 K-S-P ENV BODY)))
+                          (LAMBDA
+                              (&WHOLE W (X Y)
+                               &OPTIONAL ((O) (+ X Y))
+                               &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT
+                               ENV . BODY)
+                            (CHECK-BINDING (W X Y O K1 K2 K-S-P ENV BODY)
+                             :VARIABLE :LEXICAL))
+                          (LAMBDA
+                              (&WHOLE W (X Y)
+                               &OPTIONAL ((O) (+ X Y))
+                               &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV
+                               &REST BODY)
+                            (W X Y O K1 K2 K-S-P ENV BODY)))
 (DEFINE-WALK-BINDING-TEST WALK-LET
- (LET ((X 1) (Y (CHECK-BINDING X :VARIABLE NIL)))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING X :VARIABLE :SPECIAL)
-   (CHECK-BINDING Y :VARIABLE :LEXICAL))
- (LET ((X 1) (Y X))
-   (DECLARE (SPECIAL X))
-   X
-   Y))
+                          (LET ((X 1) (Y (CHECK-BINDING X :VARIABLE NIL)))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING X :VARIABLE :SPECIAL)
+                            (CHECK-BINDING Y :VARIABLE :LEXICAL))
+                          (LET ((X 1) (Y X))
+                            (DECLARE (SPECIAL X))
+                            X
+                            Y))
 (DEFINE-WALK-BINDING-TEST WALK-FLET
- (FLET ((FOO (X)
-          (CHECK-BINDING X :VARIABLE :LEXICAL))
-        (BAR (Y)
-          Y))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING X :VARIABLE :SPECIAL)
-   (CHECK-BINDING FOO :FUNCTION :FUNCTION))
- (FLET ((FOO (X)
-          X)
-        (BAR (Y)
-          Y))
-   (DECLARE (SPECIAL X))
-   X
-   FOO))
+                          (FLET ((FOO (X)
+                                   (CHECK-BINDING X :VARIABLE :LEXICAL))
+                                 (BAR (Y)
+                                   Y))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING X :VARIABLE :SPECIAL)
+                            (CHECK-BINDING FOO :FUNCTION :FUNCTION))
+                          (FLET ((FOO (X)
+                                   X)
+                                 (BAR (Y)
+                                   Y))
+                            (DECLARE (SPECIAL X))
+                            X
+                            FOO))
 (DEFINE-WALK-BINDING-TEST WALK-MACROLET
- (MACROLET ((FOO (X)
-              (CHECK-BINDING X :VARIABLE :LEXICAL))
-            (BAR (Y)
-              Y))
-   (CHECK-BINDING FOO :FUNCTION :MACRO)
-   (FOO :FOO))
- (MACROLET ((FOO (X)
-              X)
-            (BAR (Y)
-              Y))
-   FOO
-   :FOO))
+                          (MACROLET ((FOO (X)
+                                       (CHECK-BINDING X :VARIABLE :LEXICAL))
+                                     (BAR (Y)
+                                       Y))
+                            (CHECK-BINDING FOO :FUNCTION :MACRO)
+                            (FOO :FOO))
+                          (MACROLET ((FOO (X)
+                                       X)
+                                     (BAR (Y)
+                                       Y))
+                            FOO
+                            :FOO))
 (DEFINE-WALK-BINDING-TEST WALK-SYMBOL-MACROLET
- (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
-   (CHECK-BINDING (FOO BAR) :VARIABLE :SYMBOL-MACRO))
- (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
-   (:FOO :BAR)))
+                          (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
+                            (CHECK-BINDING (FOO BAR) :VARIABLE :SYMBOL-MACRO))
+                          (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
+                            (:FOO :BAR)))
 (DEFINE-WALK-BINDING-TEST WALK-LET*
- (LET* ((X 1) (Y (CHECK-BINDING X :VARIABLE :SPECIAL)))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING Y :VARIABLE :LEXICAL))
- (LET* ((X 1) (Y X))
-   (DECLARE (SPECIAL X))
-   Y))
+                          (LET* ((X 1) (Y (CHECK-BINDING X :VARIABLE :SPECIAL)))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING Y :VARIABLE :LEXICAL))
+                          (LET* ((X 1) (Y X))
+                            (DECLARE (SPECIAL X))
+                            Y))
 (DEFINE-WALK-BINDING-TEST WALK-LABELS
- (LABELS ((FOO (X)
-            (CHECK-BINDING X :VARIABLE :LEXICAL))
-          (BAR (Y)
-            (CHECK-BINDING FOO :FUNCTION :FUNCTION)))
-   (DECLARE (SPECIAL X))
-   (CHECK-BINDING X :VARIABLE :SPECIAL)
-   (CHECK-BINDING FOO :FUNCTION :FUNCTION))
- (LABELS ((FOO (X)
-            X)
-          (BAR (Y)
-            FOO))
-   (DECLARE (SPECIAL X))
-   X
-   FOO))
+                          (LABELS ((FOO (X)
+                                     (CHECK-BINDING X :VARIABLE :LEXICAL))
+                                   (BAR (Y)
+                                     (CHECK-BINDING FOO :FUNCTION :FUNCTION)))
+                            (DECLARE (SPECIAL X))
+                            (CHECK-BINDING X :VARIABLE :SPECIAL)
+                            (CHECK-BINDING FOO :FUNCTION :FUNCTION))
+                          (LABELS ((FOO (X)
+                                     X)
+                                   (BAR (Y)
+                                     FOO))
+                            (DECLARE (SPECIAL X))
+                            X
+                            FOO))
 (DEFINE-WALK-BINDING-TEST WALK-LOCALLY
- (LET ((Y T))
-   (CHECK-BINDING Y :VARIABLE :LEXICAL)
-   (LOCALLY (DECLARE (SPECIAL Y)) (CHECK-BINDING Y :VARIABLE :SPECIAL)))
- (LET ((Y T))
-   Y
-   (LOCALLY (DECLARE (SPECIAL Y)) Y)))
+                          (LET ((Y T))
+                            (CHECK-BINDING Y :VARIABLE :LEXICAL)
+                            (LOCALLY
+                             (DECLARE (SPECIAL Y))
+                             (CHECK-BINDING Y :VARIABLE :SPECIAL)))
+                          (LET ((Y T))
+                            Y
+                            (LOCALLY (DECLARE (SPECIAL Y)) Y)))
 (DEFCLASS TRACING-WALKER (WALKER) NIL)
 (DEFMETHOD WALK-ATOMIC-FORM :BEFORE
            ((WALKER TRACING-WALKER) FORM ENV &OPTIONAL (EVALP T))
@@ -583,6 +592,7 @@
            ((WALKER TRACING-WALKER) OPERATOR FORM ENV)
            (DECLARE (IGNORE OPERATOR ENV))
            (FORMAT T "~<; ~@;walking compound form ~W~:>~%" (LIST FORM)))
+(INDEX-PACKAGE "CLWEB")
 (DEFTEST ENTRY-HEADING-LESSP
          (LET ((A (MAKE-INSTANCE 'HEADING :NAME "a"))
                (B (MAKE-INSTANCE 'HEADING :NAME "b"))
@@ -687,38 +697,43 @@
 (DEFMACRO DEFINE-INDEXING-TEST (NAME SECTIONS &REST EXPECTED-ENTRIES)
   `(DEFTEST (INDEX ,NAME)
             (WITH-TEMPORARY-SECTIONS ,SECTIONS
-             (LET ((TANGLED-CODE
-                    (TANGLE (UNNAMED-SECTION-CODE-PARTS *SECTIONS*)))
-                   (MANGLED-CODE (TANGLE-CODE-FOR-INDEXING *SECTIONS*))
-                   (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
-               (LOOP FOR FORM IN TANGLED-CODE
-                     AND MANGLED-FORM IN MANGLED-CODE AS WALKED-FORM = (WALK-FORM
-                                                                        WALKER
-                                                                        MANGLED-FORM)
-                     DO (ASSERT (TREE-EQUAL WALKED-FORM FORM)
-                                (WALKED-FORM MANGLED-FORM FORM)))
-               (TREE-EQUAL (ALL-INDEX-ENTRIES (WALKER-INDEX WALKER))
-                           ',EXPECTED-ENTRIES :TEST #'EQUAL)))
+              (LET ((TANGLED-CODE
+                     (TANGLE (UNNAMED-SECTION-CODE-PARTS *SECTIONS*)))
+                    (MANGLED-CODE (TANGLE-CODE-FOR-INDEXING *SECTIONS*))
+                    (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
+                (LOOP FOR FORM IN TANGLED-CODE
+                      AND MANGLED-FORM IN MANGLED-CODE AS WALKED-FORM = (WALK-FORM
+                                                                         WALKER
+                                                                         MANGLED-FORM)
+                      DO (ASSERT (TREE-EQUAL WALKED-FORM FORM)
+                                 (WALKED-FORM MANGLED-FORM FORM)))
+                (TREE-EQUAL (ALL-INDEX-ENTRIES (WALKER-INDEX WALKER))
+                            ',EXPECTED-ENTRIES :TEST #'EQUAL)))
             T))
 (DEFINE-INDEXING-TEST ATOM ((:SECTION :CODE (*SECTIONS*)))
- ((*SECTIONS* "special variable") (0)))
+                      ((*SECTIONS* "special variable") (0)))
 (DEFINE-INDEXING-TEST FUNCALL
- ((:SECTION :CODE ((MAPAPPEND 'IDENTITY '(1 2 3)))))
- ((MAPAPPEND "function") (0)))
+                      ((:SECTION :CODE ((MAPAPPEND 'IDENTITY '(1 2 3)))))
+                      ((MAPAPPEND "function") (0)))
 (DEFINE-INDEXING-TEST FUNCTION-NAME
- ((:SECTION :CODE ((FLET ((FOO (X) X)))))
-  (:SECTION :CODE ((FLET (((SETF FOO) (Y X) Y))))))
- ((FOO "local function") ((:DEF 0))) ((FOO "local setf function") ((:DEF 1))))
+                      ((:SECTION :CODE ((FLET ((FOO (X) X)))))
+                       (:SECTION :CODE ((FLET (((SETF FOO) (Y X) Y))))))
+                      ((FOO "local function") ((:DEF 0)))
+                      ((FOO "local setf function") ((:DEF 1))))
 (DEFINE-INDEXING-TEST DEFUN ((:SECTION :CODE ((DEFUN FOO (X) X))))
- ((FOO "function") ((:DEF 0))))
+                      ((FOO "function") ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFMACRO
- ((:SECTION :CODE ((DEFMACRO FOO (&BODY BODY) (MAPAPPEND 'IDENTITY BODY)))))
- ((FOO "macro") ((:DEF 0))) ((MAPAPPEND "function") (0)))
+                      ((:SECTION :CODE
+                        ((DEFMACRO FOO (&BODY BODY)
+                           (MAPAPPEND 'IDENTITY BODY)))))
+                      ((FOO "macro") ((:DEF 0))) ((MAPAPPEND "function") (0)))
 (DEFINE-INDEXING-TEST DEFVAR
- ((:SECTION :CODE ((DEFVAR A T))) (:SECTION :CODE ((DEFPARAMETER B T)))
-  (:SECTION :CODE ((DEFCONSTANT C T))))
- ((A "special variable") ((:DEF 0))) ((B "special variable") ((:DEF 1)))
- ((C "constant variable") ((:DEF 2))))
+                      ((:SECTION :CODE ((DEFVAR A T)))
+                       (:SECTION :CODE ((DEFPARAMETER B T)))
+                       (:SECTION :CODE ((DEFCONSTANT C T))))
+                      ((A "special variable") ((:DEF 0)))
+                      ((B "special variable") ((:DEF 1)))
+                      ((C "constant variable") ((:DEF 2))))
 (DEFTEST INDEXING-WALK-DECLARATION-SPECIFIERS
          (EQUAL
           (WALK-DECLARATION-SPECIFIERS (MAKE-INSTANCE 'INDEXING-WALKER)
@@ -728,27 +743,32 @@
           '((SPECIAL X Y Z)))
          T)
 (DEFINE-INDEXING-TEST DEFGENERIC
- ((:SECTION :CODE
-   ((DEFGENERIC FOO
-        (X Y)
-      (:DOCUMENTATION "foo")
-      (:METHOD-COMBINATION PROGN)
-      (:METHOD PROGN ((X T) Y) X)
-      (:METHOD :AROUND (X (Y (EQL 'T))) Y)))))
- ((FOO "AROUND method") ((:DEF 0))) ((FOO "generic function") ((:DEF 0)))
- ((FOO "PROGN method") ((:DEF 0))))
+                      ((:SECTION :CODE
+                        ((DEFGENERIC FOO
+                             (X Y)
+                           (:DOCUMENTATION "foo")
+                           (:METHOD-COMBINATION PROGN)
+                           (:METHOD PROGN ((X T) Y) X)
+                           (:METHOD :AROUND (X (Y (EQL 'T))) Y)))))
+                      ((FOO "AROUND method") ((:DEF 0)))
+                      ((FOO "generic function") ((:DEF 0)))
+                      ((FOO "PROGN method") ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFMETHOD
- ((:SECTION :CODE ((DEFMETHOD ADD (X Y) (+ X Y))))
-  (:SECTION :CODE ((DEFMETHOD ADD :BEFORE (X Y)))))
- ((ADD "BEFORE method") ((:DEF 1))) ((ADD "generic function") ((:DEF 0))))
+                      ((:SECTION :CODE ((DEFMETHOD ADD (X Y) (+ X Y))))
+                       (:SECTION :CODE ((DEFMETHOD ADD :BEFORE (X Y)))))
+                      ((ADD "BEFORE method") ((:DEF 1)))
+                      ((ADD "generic function") ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFCLASS
- ((:SECTION :CODE ((DEFCLASS FOO NIL ((A :READER FOO-A1 :READER FOO-A2)))))
-  (:SECTION :CODE
-   ((DEFINE-CONDITION BAR
-        NIL
-        ((B :ACCESSOR FOO-B))))))
- ((BAR "condition class") ((:DEF 1))) ((FOO "class") ((:DEF 0)))
- ((FOO-A1 "generic function") ((:DEF 0)))
- ((FOO-A2 "generic function") ((:DEF 0)))
- ((FOO-B "generic function") ((:DEF 1)))
- ((FOO-B "primary setf method") ((:DEF 1))))
+                      ((:SECTION :CODE
+                        ((DEFCLASS FOO NIL
+                                   ((A :READER FOO-A1 :READER FOO-A2)))))
+                       (:SECTION :CODE
+                        ((DEFINE-CONDITION BAR
+                             NIL
+                             ((B :ACCESSOR FOO-B))))))
+                      ((BAR "condition class") ((:DEF 1)))
+                      ((FOO "class") ((:DEF 0)))
+                      ((FOO-A1 "generic function") ((:DEF 0)))
+                      ((FOO-A2 "generic function") ((:DEF 0)))
+                      ((FOO-B "generic function") ((:DEF 1)))
+                      ((FOO-B "primary setf method") ((:DEF 1))))
