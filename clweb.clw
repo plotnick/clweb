@@ -602,9 +602,6 @@ trailing whitespace and replaces all runs of one or more whitespace
 characters with a single space.
 
 @l
-(defparameter *whitespace*
-  #.(coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'string))
-
 (defun whitespacep (char) (find char *whitespace* :test #'char=))
 
 (defun squeeze (string)
@@ -624,6 +621,17 @@ characters with a single space.
 (deftest (squeeze 1) (squeeze "abc") "abc")
 (deftest (squeeze 2) (squeeze "ab c") "ab c")
 (deftest (squeeze 3) (squeeze (format nil " a b ~C c " #\Tab)) "a b c")
+
+@ This list should contain the characters named `Space', `Tab', `Newline',
+`Linefeed', `Page', and~`Return', in that order. However, `Linefeed' might
+be the same character as `Newline' or `Return', and so might not appear as
+a distinct character. This is a known bug, caused by the fact that we're
+not currently overriding the character name reader.
+@^Bug, known@>
+
+@<Glob...@>=
+(defparameter *whitespace*
+  #.(coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'string))
 
 @ The next routine is our primary interface to named sections: it looks up
 a section by name in the tree, and creates a new one if no such section
