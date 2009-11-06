@@ -886,26 +886,31 @@ we'll pass around, so that the standard stream functions will all work.
 
 @l
 (defclass charpos-stream ()
-  ((charpos :initarg :charpos)
-   (proxy-stream :accessor charpos-proxy-stream :initarg :proxy))
-  (:default-initargs :charpos 0))
+  ((charpos :initarg :charpos :initform 0)
+   (proxy-stream :accessor charpos-proxy-stream :initarg :proxy)))
 
 @ The \csc{gf} |charpos| returns the current character position of a charpos
 stream. It relies on the last calculated character position (stored in the
 |charpos| slot) and a buffer that stores the characters input or output
 since the last call to |charpos|, retrieved with |get-charpos-stream-buffer|.
+Tabs in the underlying stream are interpreted as advancing the column number
+to the next multiple of |*tab-width*|.
 
 @l
 (defgeneric get-charpos-stream-buffer (stream))
 
 (defgeneric charpos (stream))
 (defmethod charpos ((stream charpos-stream))
-  (let* ((buffer (get-charpos-stream-buffer stream))
-         (len (length buffer))
-         (newline (position #\Newline buffer :test #'char= :from-end t)))
-    (if newline
-        (setf (slot-value stream 'charpos) (- len 1 newline))
-        (incf (slot-value stream 'charpos) len))))
+  (with-slots (charpos) stream
+    (loop for char across (get-charpos-stream-buffer stream)
+          do (case char
+               (#\Tab (incf charpos (- *tab-width* (rem charpos *tab-width*))))
+               (#\Newline (setf charpos 0))
+               (t (incf charpos)))
+          finally (return charpos))))
+
+@ @<Glob...@>=
+(defvar *tab-width* 8)
 
 @ For tracking the character position of an input stream, our proxy stream
 will be an echo stream that takes input from the underlying stream and sends
@@ -1017,16 +1022,21 @@ is bound to a proxy stream the tracks the character position for |stream|.
 
 @t@l
 (deftest charpos-input-stream
-  (with-charpos-input-stream (s (make-string-input-stream
-                                 (format nil "012~%abc")))
-    (values (stream-charpos s)
-            (read-line s)
-            (stream-charpos s)
-            (read-char s)
-            (read-char s)
-            (read-char s)
-            (stream-charpos s)))
-  0 "012" 0 #\a #\b #\c 3)
+  (let ((*tab-width* 8))
+    (with-charpos-input-stream (s (make-string-input-stream
+                                   (format nil "012~%abc~C~C" #\Tab #\Tab)))
+      (values (stream-charpos s)
+              (read-line s)
+              (stream-charpos s)
+              (read-char s)
+              (read-char s)
+              (read-char s)
+              (stream-charpos s)
+              (read-char s)
+              (stream-charpos s)
+              (read-char s)
+              (stream-charpos s))))
+  0 "012" 0 #\a #\b #\c 3 #\Tab 8 #\Tab 16)
 
 (deftest charpos-output-stream
   (let ((string-stream (make-string-output-stream)))

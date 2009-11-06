@@ -123,13 +123,16 @@
            (PEEK-CHAR NIL S))
          #\ )
 (DEFTEST CHARPOS-INPUT-STREAM
-         (WITH-CHARPOS-INPUT-STREAM (S
-                                     (MAKE-STRING-INPUT-STREAM
-                                      (FORMAT NIL "012~%abc")))
-           (VALUES (STREAM-CHARPOS S) (READ-LINE S) (STREAM-CHARPOS S)
-                   (READ-CHAR S) (READ-CHAR S) (READ-CHAR S)
-                   (STREAM-CHARPOS S)))
-         0 "012" 0 #\a #\b #\c 3)
+         (LET ((*TAB-WIDTH* 8))
+           (WITH-CHARPOS-INPUT-STREAM (S
+                                       (MAKE-STRING-INPUT-STREAM
+                                        (FORMAT NIL "012~%abc~C~C" #\Tab
+                                                #\Tab)))
+             (VALUES (STREAM-CHARPOS S) (READ-LINE S) (STREAM-CHARPOS S)
+                     (READ-CHAR S) (READ-CHAR S) (READ-CHAR S)
+                     (STREAM-CHARPOS S) (READ-CHAR S) (STREAM-CHARPOS S)
+                     (READ-CHAR S) (STREAM-CHARPOS S))))
+         0 "012" 0 #\a #\b #\c 3 #\Tab 8 #\Tab 16)
 (DEFTEST CHARPOS-OUTPUT-STREAM
          (LET ((STRING-STREAM (MAKE-STRING-OUTPUT-STREAM)))
            (WITH-CHARPOS-OUTPUT-STREAM (S STRING-STREAM)
