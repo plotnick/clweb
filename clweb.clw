@@ -1250,8 +1250,9 @@ reader tests will involve reading a single form in Lisp mode.
            (read ,charpos-stream ,eof-error-p ,eof-value)))))
 
 (defun read-form-from-string (string &key (mode :lisp))
-  (with-mode mode
-    (read-from-string-with-charpos string)))
+  (let ((*package* (find-package "CLWEB")))
+    (with-mode mode
+      (read-from-string-with-charpos string))))
 
 @ {\it Left-Parenthesis.} We have two different kinds of markers for lists.
 The first is one for empty lists, so that we can maintain a distinction
