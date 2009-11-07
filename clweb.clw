@@ -959,8 +959,8 @@ maintain a mapping between them and their associated instances of
 (defvar *charpos-streams* (make-hash-table :test #'eq))
 
 @ @l
-(defmethod initialize-instance :after ((instance charpos-stream) ;
-                                       &rest initargs &key)
+(defmethod initialize-instance :after ;
+    ((instance charpos-stream) &rest initargs &key)
   (declare (ignore initargs))
   (setf (gethash (charpos-proxy-stream instance) *charpos-streams*) instance))
 
