@@ -3514,15 +3514,8 @@ expansion.
 (defgeneric walk-as-special-form-p (walker operator form env))
 
 @ Macroexpansion and environment augmentation both get wrapped in generic
-functions to allow subclasses to override the usual behavior.
-
-@ @<Walker generic functions@>=
-(defgeneric macroexpand-for-walk (walker form env))
-(defgeneric augment-walker-environment (walker env &rest args))
-
-@ The default methods for |macroexpand-for-walk| and
-|augment-waker-environment| just call down to the normal Lisp
-functions.
+functions to allow subclasses to override the usual behavior. The default
+methods just call down to the normal Lisp functions.
 
 @l
 (defmethod macroexpand-for-walk ((walker walker) form env)
@@ -3530,6 +3523,10 @@ functions.
 
 (defmethod augment-walker-environment ((walker walker) env &rest args)
   (apply #'augment-environment env args))
+
+@ @<Walker generic functions@>=
+(defgeneric macroexpand-for-walk (walker form env))
+(defgeneric augment-walker-environment (walker env &rest args))
 
 @ Here's a utility function we'll use often in walker methods: it walks
 each element of the supplied list and returns a new list of the results
@@ -3541,14 +3538,13 @@ of those walks.
        (newform () (cons (walk-form walker (car form) env) newform)))
       ((atom form) (nreconc newform form))))
 
-@ The functions |walk-atomic-form| and |walk-compound-form| are the
-real work-horses of the walker. The former takes a walker instance,
-an (atomic) form, an environment, and a flag indicating whether or
-not the form occurs in an evaluated position. Compound forms, being
-always evaluated, don't need such a flag, but we do provide an
-additional |operator| argument so that we can use |eql|-specializers.
-The |operator| of a form passed to |walk-compound-form| will always be
-a symbol.
+@ The functions |walk-atomic-form| and |walk-compound-form| are the real
+work-horses of the walker. The former takes a walker instance, an (atomic)
+form, an environment, and a flag indicating whether or not the form occurs
+in an evaluated position. Compound forms don't need such a flag, but we do
+provide an additional |operator| argument so that we can use
+|eql|~specializers. The |operator| of a form passed to |walk-compound-form|
+will always be a symbol.
 
 @<Walker generic functions@>=
 (defgeneric walk-atomic-form (walker form env &optional evalp))
@@ -3572,36 +3568,33 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
   `(,(walk-atomic-form walker (car form) env nil)
     ,@(walk-list walker (cdr form) env)))
 
-@ There's a special walker function just for function names, since
-they're not necessarily atomic.
-
-@<Walker generic functions@>=
-(defgeneric walk-function-name (walker function-name env &key &allow-other-keys))
-
-@ Common Lisp defines a {\it function name\/} as ``A symbol or a list
-|(setf symbol)|.'' We signal an continuable error in case of a malformed
-function name.
+@ Common Lisp defines a {\it function name\/} as ``[a] symbol or a list
+|(setf symbol)|.'' Since they're not necessarily atomic, we define a special
+walker function just for function names.
 
 @l
 (deftype setf-function-name () '(cons (eql setf) (cons symbol null)))
 
 (defmethod walk-function-name ((walker walker) function-name env &key)
   (typecase function-name
-    (symbol
+    (symbol ;
      (walk-atomic-form walker function-name env nil))
-    (setf-function-name
+    (setf-function-name ;
      `(setf ,(walk-atomic-form walker (cadr function-name) env nil)))
-    (t (cerror "Use the function name anyway."
+    (t (cerror "Use the function name anyway." ;
                'invalid-function-name :name function-name)
        function-name)))
 
+@ @<Walker generic functions@>=
+(defgeneric walk-function-name (walker function-name env &key &allow-other-keys))
+
 @ @<Condition classes@>=
 (define-condition invalid-function-name (parse-error)
-  ((name :initarg :name :reader function-name))
+  ((name :initarg :name :reader invalid-function-name))
   (:report (lambda (error stream)
              (format stream "~@<Invalid function name ~A.~:@>" ;
 @.Invalid function name...@>
-                     (function-name error)))))
+                     (invalid-function-name error)))))
 
 @t@l
 (deftest (walk-function-name 1)
@@ -3616,14 +3609,13 @@ function name.
 
 (deftest (walk-function-name 3)
   (let ((error-handled nil))
-    (flet ((note-and-continue (condition)
-             (setq error-handled t)
-             (continue condition)))
-      (handler-bind ((invalid-function-name #'note-and-continue))
-        (values (equal (walk-function-name (make-instance 'walker) ;
-                                           '(foo bar) nil)
-                       '(foo bar))
-                error-handled))))
+    (handler-bind ((invalid-function-name
+                    (lambda (condition)
+                      (setq error-handled t)
+                      (continue condition))))
+      (values (equal (walk-function-name (make-instance 'walker) '(foo bar) nil)
+                     '(foo bar))
+              error-handled)))
   t t)
 
 @ Many of the special forms defined in Common Lisp can be walked using the
@@ -3635,7 +3627,7 @@ macro.'' (\csc{ansi} Common Lisp, section~3.1.2.1.2.2)
 
 @l
 (macrolet ((walk-as-special-form (operator)
-             `(defmethod walk-as-special-form-p
+             `(defmethod walk-as-special-form-p ;
                   ((walker walker) (operator (eql ',operator)) form env)
                 (declare (ignore form env))
                 t)))
@@ -3693,7 +3685,7 @@ unevaluated form, followed by zero or more evaluated forms.
   (define-quote-like-walker go))
 
 @ The |function| special form takes either a valid function name or a
-lambda expression.
+\L~expression.
 
 @l
 (define-special-form-walker function ((walker walker) form env)
@@ -3813,8 +3805,8 @@ object containing bindings for all of the parameters found therein.
 (defun walk-lambda-list (walker lambda-list decls env &aux
                          new-lambda-list (state :reqvars))
   (labels ((augment-env (&rest vars &aux (vars (remove-if #'null vars)))
-             (setq env (augment-walker-environment walker env
-                                                   :variable vars
+             (setq env (augment-walker-environment walker env ;
+                                                   :variable vars ;
                                                    :declare decls)))
            (walk-var (var)
              (walk-atomic-form walker var env nil))
@@ -3956,11 +3948,11 @@ to avoid having to worry about reversing an improper |new-lambda-list|.
   (augment-env var)
   (push '&rest new-lambda-list)
   (push var new-lambda-list))
-(setq lambda-list nil) ; walk no more
+(setq lambda-list nil)
 
-@ While we're in the mood to deal with \L-lists, let's write a routine that
-can walk the `specialized' \L-lists used in |defmethod| forms. We can't use
-the same function as the one used to parse macro \L-lists, since the syntax
+@ While we're in the mood to deal with \L-lists, here's a routine that can
+walk the `specialized' \L-lists used in |defmethod| forms. We can't use the
+same function as the one used to parse macro \L-lists, since the syntax
 would be ambiguous: there would be no way to distinguish between a
 specialized required parameter and a destructuring pattern. What we can do,
 however, is peel off just the required parameters from a specialized
@@ -3983,8 +3975,8 @@ the parameters found therein.
 
 @ @<Extract the required...@>=
 (flet ((augment-env (var)
-         (setq env (augment-walker-environment walker env
-                                               :variable (list var)
+         (setq env (augment-walker-environment walker env ;
+                                               :variable (list var) ;
                                                :declare decls)))
        (walk-var (spec)
          (etypecase spec
@@ -4001,10 +3993,10 @@ the parameters found therein.
         do (augment-env (if (consp var) (car var) var))
         collect var))
 
-@ Having built up the necessary machinery, walking a \L-expression is now
+@ Having built up the necessary machinery, walking a \L~expression is now
 straightforward. The slight generality of walking the car of the form using
 |walk-function-name| is because this function will also be used to walk the
-bindings in |flet|, |macrolet|, and~|labels| special forms. Note also that
+bindings in |flet|, |macrolet|, and~|labels| special forms. Also note that
 this function passes all of its extra arguments down to |walk-function-name|;
 this will be used later to aid in the indexing process.
 
@@ -4022,13 +4014,13 @@ this will be used later to aid in the indexing process.
         ,@(walk-list walker forms env)))))
 
 @ `lambda' is not a special operator in Common Lisp, but we'll treat
-\L-expressions as special forms.
+\L~expressions as special forms.
 
 @l
 (define-special-form-walker lambda ((walker walker) form env)
   (walk-lambda-expression walker form env))
 
-@t To test the walker on binding forms, including \L-expressions, we'll use
+@t To test the walker on binding forms, including \L~expressions, we'll use
 a specialized walker class that recognizes a custom |check-binding| special
 form. Its syntax is |(check-binding symbols namespace type)|, where
 |symbols| is an unevaluated designator for a list of symbols, |namespace|
@@ -4136,9 +4128,9 @@ their body forms in an environment that contains all of the new bindings.
 @ @l
 (define-special-form-walker flet
     ((walker walker) form env &aux
-     (bindings (mapcar (lambda (p)
-                         (walk-lambda-expression walker p env
-                                                 :operator 'flet
+     (bindings (mapcar (lambda (p) ;
+                         (walk-lambda-expression walker p env ;
+                                                 :operator 'flet ;
                                                  :local t :def t))
                        (cadr form)))
      (body (cddr form)))
@@ -4161,16 +4153,16 @@ former case.
 @l
 (defun make-macro-definitions (walker defs env)
   (mapcar (lambda (def &aux (name (walk-atomic-form walker (car def) env nil)))
-            (list name
+            (list name ;
                   (enclose (parse-macro name (cadr def) (cddr def) env) ;
                            env walker)))
           defs))
 
 (define-special-form-walker macrolet
     ((walker walker) form env &aux
-     (bindings (mapcar (lambda (p)
-                         (walk-lambda-expression walker p env
-                                                 :operator 'macrolet
+     (bindings (mapcar (lambda (p) ;
+                         (walk-lambda-expression walker p env ;
+                                                 :operator 'macrolet ;
                                                  :local t :def t))
                        (cadr form)))
      (body (cddr form)))
@@ -4242,13 +4234,13 @@ and |labels|, which does so before walking any of its bindings.
      (body (cddr form)))
   (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     `(,(car form)
-      ,(mapcar (lambda (p)
-                 (let ((walked-binding (walk-variable-binding walker p env)))
-                   (setq env (augment-walker-environment
-                               walker env
-                               :variable (list (car walked-binding))
-                               :declare decls))
-                   walked-binding))
+      ,(mapcar (lambda (p &aux
+                        (walked-binding (walk-variable-binding walker p env))
+                        (variable (list (car walked-binding))))
+                 (setq env (augment-walker-environment walker env
+                                                       :variable variable
+                                                       :declare decls))
+                 walked-binding)
                bindings)
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms env))))
@@ -4328,8 +4320,8 @@ the walker classes defined in this program.
   (format t "~<; ~@;walking compound form ~W~:>~%" (list form)))
 
 @*Indexing. Having constructed our code walker, we can now use it to
-produce an index of the interesting symbols in a web. We'll say a symbol
-is {\it interesting\/} if it is interned in one of the packages listed
+produce an index of the symbols in a web. We'll say a symbol is
+{\it interesting\/} if it is interned in one of the packages listed
 in |*index-packages*|. The user should add packages to this list using
 the \.{@@x} control code, which calls the following function. It takes
 a designator for a list of package designators, and adds each package
@@ -4358,7 +4350,7 @@ is in |*index-packages*|.
 is a (\metasyn{heading}, \metasyn{locator}) pair: the {\it locator}
 indicates where the object referred to by the {\it heading} may be found.
 A list of entries with the same heading is called an {\it entry list},
-or sometimes just an {\it entry}; this latter is an abuse of terminology,
+or sometimes just an {\it entry\/}; the latter is an abuse of terminology,
 but useful and usually clear in context.
 
 Headings may in general be multi-leveled, and are sorted lexicographically.
@@ -4600,12 +4592,11 @@ significantly affecting usability.
 In this program, a locator is either a pointer to a section (the usual
 case) or a cross-reference to another index entry. We'll represent
 locators as instances of a |locator| class, and use a single generic
-function,|location|, to dereference them.
+function, |location|, to dereference them.
 
 Section locators have an additional slot for a definition flag, which
 when true indicates that the object referred to by the associated heading
 is defined in the section represented by that locator, not just used.
-
 Such locators will be given a bit of typographic emphasis by the weaver
 when it prints the containing entry.
 
@@ -4714,15 +4705,15 @@ ordinary ones.
               (push (make-locator) (entry-locators entry)))))))
 
 @ And here's the main index entry retrieval method. In fact, this function
-isn't used in this program (although the test suite uses it), since all we
-do with the index is add entries to it and then traverse the whole thing
-and print them all out.
+isn't actually used in this program (although the test suite uses it),
+since all we do with the index is add entries to it and then traverse the
+whole thing and print them all out.
 
 @l
 (defmethod find-index-entries ((index index) heading)
   (let ((entries (index-entries index)))
     (when entries
-      (multiple-value-bind (entry present-p)
+      (multiple-value-bind (entry present-p) ;
           (find-or-insert heading entries :insert-if-not-found nil)
         (when present-p
           (entry-locators entry))))))
@@ -5043,7 +5034,7 @@ call down to this function, passing keyword arguments that describe the
 context.
 
 @l
-(defmethod walk-function-name :before
+(defmethod walk-function-name :before ;
     ((walker indexing-walker) function-name env &rest args &key def)
   (let ((index (walker-index walker)))
     (typecase function-name
@@ -5088,9 +5079,9 @@ defined, by way of |walk-lambda-expression|.
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env)
                 `(,(car form)
-                   ,@(walk-lambda-expression walker (cdr form) env
-                                             :operator (car form)
-                                             :def t)))))
+                  ,@(walk-lambda-expression walker (cdr form) env
+                                            :operator (car form)
+                                            :def t)))))
   (define-defun-like-walker defun)
   (define-defun-like-walker defmacro))
 
@@ -5197,7 +5188,7 @@ descriptions.
   ((foo "PROGN method") ((:def 0))))
 
 @ Method descriptions are very much like |defmethod| forms with an implicit
-function name; this routine walks both. The function-name (if non-null) and
+function name; this routine walks both. The function name (if non-null) and
 qualifiers (if any) should have been walked already; we'll walk the
 specialized \L-list and body forms here.
 

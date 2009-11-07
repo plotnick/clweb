@@ -102,10 +102,11 @@
     NIL)
 (DEFINE-CONDITION INVALID-FUNCTION-NAME
     (PARSE-ERROR)
-    ((NAME :INITARG :NAME :READER FUNCTION-NAME))
+    ((NAME :INITARG :NAME :READER INVALID-FUNCTION-NAME))
   (:REPORT
    (LAMBDA (ERROR STREAM)
-     (FORMAT STREAM "~@<Invalid function name ~A.~:@>" (FUNCTION-NAME ERROR)))))
+     (FORMAT STREAM "~@<Invalid function name ~A.~:@>"
+             (INVALID-FUNCTION-NAME ERROR)))))
 (DEFUN ENSURE-LIST (OBJECT)
   (IF (LISTP OBJECT)
       OBJECT
@@ -1922,13 +1923,14 @@
       (PARSE-BODY BODY :WALKER WALKER :ENV ENV)
     `(,(CAR FORM)
       ,(MAPCAR
-        (LAMBDA (P)
-          (LET ((WALKED-BINDING (WALK-VARIABLE-BINDING WALKER P ENV)))
-            (SETQ ENV
-                    (AUGMENT-WALKER-ENVIRONMENT WALKER ENV :VARIABLE
-                                                (LIST (CAR WALKED-BINDING))
-                                                :DECLARE DECLS))
-            WALKED-BINDING))
+        (LAMBDA
+            (P
+             &AUX (WALKED-BINDING (WALK-VARIABLE-BINDING WALKER P ENV))
+             (VARIABLE (LIST (CAR WALKED-BINDING))))
+          (SETQ ENV
+                  (AUGMENT-WALKER-ENVIRONMENT WALKER ENV :VARIABLE VARIABLE
+                                              :DECLARE DECLS))
+          WALKED-BINDING)
         BINDINGS)
       ,@(IF DECLS
             `((DECLARE ,@DECLS)))

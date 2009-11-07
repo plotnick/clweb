@@ -396,15 +396,15 @@
          T)
 (DEFTEST (WALK-FUNCTION-NAME 3)
          (LET ((ERROR-HANDLED NIL))
-           (FLET ((NOTE-AND-CONTINUE (CONDITION)
-                    (SETQ ERROR-HANDLED T)
-                    (CONTINUE CONDITION)))
-             (HANDLER-BIND ((INVALID-FUNCTION-NAME #'NOTE-AND-CONTINUE))
-               (VALUES
-                (EQUAL
-                 (WALK-FUNCTION-NAME (MAKE-INSTANCE 'WALKER) '(FOO BAR) NIL)
-                 '(FOO BAR))
-                ERROR-HANDLED))))
+           (HANDLER-BIND ((INVALID-FUNCTION-NAME
+                           (LAMBDA (CONDITION)
+                             (SETQ ERROR-HANDLED T)
+                             (CONTINUE CONDITION))))
+             (VALUES
+              (EQUAL
+               (WALK-FUNCTION-NAME (MAKE-INSTANCE 'WALKER) '(FOO BAR) NIL)
+               '(FOO BAR))
+              ERROR-HANDLED)))
          T T)
 (DEFTEST (WALK-FUNCTION 1)
          (TREE-EQUAL (WALK-FORM (MAKE-INSTANCE 'WALKER) '#'FOO NIL) '#'FOO) T)
