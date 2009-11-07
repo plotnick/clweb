@@ -919,8 +919,8 @@ its output to a string stream, which we'll use as our buffer.
 @l
 (defclass charpos-input-stream (charpos-stream) ())
 
-(defmethod shared-initialize :around ((instance charpos-input-stream) slot-names
-                                      &rest initargs &key stream)
+(defmethod shared-initialize :around ;
+    ((instance charpos-input-stream) slot-names &rest initargs &key stream)
   (apply #'call-next-method instance slot-names
          (list* :proxy (make-echo-stream
                         stream
@@ -938,8 +938,8 @@ given stream and a fresh string stream, again used as a buffer.
 @l
 (defclass charpos-output-stream (charpos-stream) ())
 
-(defmethod shared-initialize :around ((instance charpos-output-stream) slot-names
-                                      &rest initargs &key stream)
+(defmethod shared-initialize :around ;
+    ((instance charpos-output-stream) slot-names &rest initargs &key stream)
   (apply #'call-next-method instance slot-names
          (list* :proxy (make-broadcast-stream
                         (make-string-output-stream
