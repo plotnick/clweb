@@ -2108,7 +2108,7 @@
   (OR (TYPEP FUNCTION-NAME 'GENERIC-FUNCTION)
       (AND (FBOUNDP FUNCTION-NAME)
            (TYPEP (FDEFINITION FUNCTION-NAME) 'GENERIC-FUNCTION))))
-(DEFUN INDEX-VARIABLE-USE (INDEX VARIABLE SECTION ENV)
+(DEFUN INDEX-VARIABLE (INDEX VARIABLE SECTION ENV)
   (MULTIPLE-VALUE-BIND (TYPE LOCAL)
       (VARIABLE-INFORMATION VARIABLE ENV)
     (WHEN (MEMBER TYPE '(:SPECIAL :SYMBOL-MACRO :CONSTANT))
@@ -2123,7 +2123,7 @@
                                 (MAKE-INSTANCE 'SYMBOL-MACRO-HEADING :LOCAL
                                                LOCAL))))
                        SECTION))))
-(DEFUN INDEX-FUNCTION-USE (INDEX FUNCTION-NAME SECTION ENV)
+(DEFUN INDEX-FUNCALL (INDEX FUNCTION-NAME SECTION ENV)
   (MULTIPLE-VALUE-BIND (TYPE LOCAL)
       (FUNCTION-INFORMATION FUNCTION-NAME ENV)
     (WHEN (MEMBER TYPE '(:FUNCTION :MACRO))
@@ -2138,16 +2138,13 @@
                                (:MACRO
                                 (MAKE-INSTANCE 'MACRO-HEADING :LOCAL LOCAL))))
                        SECTION))))
-(DEFUN INDEX-VARIABLE-DEFINITION
-       (INDEX VARIABLE SECTION
-        &KEY OPERATOR SPECIAL
-        &AUX (CONSTANT (EQL OPERATOR 'DEFCONSTANT)))
+(DEFUN INDEX-DEFVAR (INDEX VARIABLE SECTION &KEY OPERATOR SPECIAL)
   (ADD-INDEX-ENTRY INDEX
                    (LIST VARIABLE
                          (MAKE-SUB-HEADING OPERATOR :SPECIAL SPECIAL :CONSTANT
-                                           CONSTANT))
+                                           (EQL OPERATOR 'DEFCONSTANT)))
                    SECTION :DEF T))
-(DEFUN INDEX-FUNCTION-DEFINITION
+(DEFUN INDEX-DEFUN
        (INDEX FUNCTION-NAME SECTION &KEY OPERATOR LOCAL GENERIC QUALIFIERS)
   (ADD-INDEX-ENTRY INDEX
                    (LIST
@@ -2204,8 +2201,7 @@
                  (SECTION
                   (CASE (VARIABLE-INFORMATION SYMBOL ENV)
                     (:SYMBOL-MACRO
-                     (INDEX-VARIABLE-USE (WALKER-INDEX WALKER) SYMBOL SECTION
-                                         ENV)
+                     (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV)
                      (CALL-NEXT-METHOD WALKER (CONS SYMBOL (CDR FORM)) ENV))
                     (T FORM)))
                  (T (CALL-NEXT-METHOD)))))
@@ -2216,8 +2212,7 @@
                  (SECTION
                   (CASE (FUNCTION-INFORMATION SYMBOL ENV)
                     (:MACRO
-                     (INDEX-FUNCTION-USE (WALKER-INDEX WALKER) SYMBOL SECTION
-                                         ENV)
+                     (INDEX-FUNCALL (WALKER-INDEX WALKER) SYMBOL SECTION ENV)
                      (CALL-NEXT-METHOD WALKER (CONS SYMBOL (CDR FORM)) ENV))
                     (T FORM)))
                  (T (CALL-NEXT-METHOD)))))
@@ -2228,8 +2223,7 @@
                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                    (SYMBOL-PROVENANCE FORM)
                  (WHEN SECTION
-                   (INDEX-VARIABLE-USE (WALKER-INDEX WALKER) SYMBOL SECTION
-                                       ENV))
+                   (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV))
                  SYMBOL)
                FORM))
 (DEFMETHOD WALK-COMPOUND-FORM :BEFORE
@@ -2237,7 +2231,7 @@
            (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                (SYMBOL-PROVENANCE OPERATOR)
              (WHEN SECTION
-               (INDEX-FUNCTION-USE (WALKER-INDEX WALKER) SYMBOL SECTION ENV))))
+               (INDEX-FUNCALL (WALKER-INDEX WALKER) SYMBOL SECTION ENV))))
 (DEFMETHOD WALK-FUNCTION-NAME :BEFORE
            ((WALKER INDEXING-WALKER) FUNCTION-NAME ENV &REST ARGS &KEY DEF)
            (LET ((INDEX (WALKER-INDEX WALKER)))
@@ -2247,18 +2241,17 @@
                     (SYMBOL-PROVENANCE FUNCTION-NAME)
                   (WHEN SECTION
                     (IF DEF
-                        (APPLY #'INDEX-FUNCTION-DEFINITION INDEX SYMBOL SECTION
+                        (APPLY #'INDEX-DEFUN INDEX SYMBOL SECTION
                                :ALLOW-OTHER-KEYS T ARGS)
-                        (INDEX-FUNCTION-USE INDEX SYMBOL SECTION ENV)))))
+                        (INDEX-FUNCALL INDEX SYMBOL SECTION ENV)))))
                (SETF-FUNCTION-NAME
                 (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                     (SYMBOL-PROVENANCE (CADR FUNCTION-NAME))
                   (WHEN SECTION
                     (IF DEF
-                        (APPLY #'INDEX-FUNCTION-DEFINITION INDEX
-                               `(SETF ,SYMBOL) SECTION :ALLOW-OTHER-KEYS T
-                               ARGS)
-                        (INDEX-FUNCTION-USE INDEX SYMBOL SECTION ENV))))))))
+                        (APPLY #'INDEX-DEFUN INDEX `(SETF ,SYMBOL) SECTION
+                               :ALLOW-OTHER-KEYS T ARGS)
+                        (INDEX-FUNCALL INDEX SYMBOL SECTION ENV))))))))
 (MACROLET ((DEFINE-DEFUN-LIKE-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
@@ -2274,9 +2267,8 @@
                     ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                          (SYMBOL-PROVENANCE (CADR FORM))
                        (WHEN SECTION
-                         (INDEX-VARIABLE-DEFINITION (WALKER-INDEX WALKER)
-                                                    SYMBOL SECTION :OPERATOR
-                                                    (CAR FORM) :SPECIAL T))
+                         (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION
+                                       :OPERATOR (CAR FORM) :SPECIAL T))
                        SYMBOL)
                     ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
   (DEFINE-INDEXING-DEFVAR-WALKER DEFVAR)
@@ -2385,14 +2377,11 @@
              DO (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                     (SYMBOL-PROVENANCE OPT-VALUE)
                   (WHEN SECTION
-                    (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER) SYMBOL
-                                               SECTION :OPERATOR 'DEFMETHOD
-                                               :GENERIC T)
+                    (INDEX-DEFUN (WALKER-INDEX WALKER) SYMBOL SECTION :OPERATOR
+                                 'DEFMETHOD :GENERIC T)
                     (WHEN (EQL OPT-NAME :ACCESSOR)
-                      (INDEX-FUNCTION-DEFINITION (WALKER-INDEX WALKER)
-                                                 `(SETF ,SYMBOL) SECTION
-                                                 :OPERATOR 'DEFMETHOD :GENERIC
-                                                 T)))))
+                      (INDEX-DEFUN (WALKER-INDEX WALKER) `(SETF ,SYMBOL)
+                                   SECTION :OPERATOR 'DEFMETHOD :GENERIC T)))))
        `(,(WALK-ATOMIC-FORM WALKER NAME ENV NIL)
          ,@(WALK-LIST WALKER OPTIONS ENV))))))
 (DEFUN INDEX-SECTIONS

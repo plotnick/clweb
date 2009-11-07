@@ -4761,39 +4761,38 @@ function name refers to an ordinary or generic function.
 for indexing function and variable {\it uses}. They look up the given
 variable or function in a lexical environment object and add an appropriate
 index entry. (We can't use this routine for definitions because the name
-being indexed wouldn't in the environment yet.) We don't currently index
-lexical variables, as that would probably just bulk up the index to no
-particular advantage.
+being indexed might not be in the environment yet.) We don't currently
+index lexical variables, as that would probably just bulk up the index to
+no particular advantage.
 
 @l
-(defun index-variable-use (index variable section env)
+(defun index-variable (index variable section env)
   (multiple-value-bind (type local) (variable-information variable env)
     (when (member type '(:special :symbol-macro :constant))
       (add-index-entry
-        index
-        (list variable
-              (ecase type
-                (:special (make-instance 'variable-heading :special t))
-                (:constant (make-instance 'variable-heading :constant t))
-                (:symbol-macro (make-instance 'symbol-macro-heading ;
-                                              :local local))))
-        section))))
+       index
+       (list variable
+             (ecase type
+               (:special (make-instance 'variable-heading :special t))
+               (:constant (make-instance 'variable-heading :constant t))
+               (:symbol-macro (make-instance 'symbol-macro-heading ;
+                                             :local local))))
+       section))))
 
-(defun index-function-use (index function-name section env)
-  (multiple-value-bind (type local) ;
-      (function-information function-name env)
+(defun index-funcall (index function-name section env)
+  (multiple-value-bind (type local) (function-information function-name env)
     (when (member type '(:function :macro))
       (add-index-entry
-        index
-        (list function-name
-              (ecase type
-                (:function ;
-                 (make-instance 'function-heading
-                                :local local
-                                :generic (generic-function-p function-name)))
-                (:macro ;
-                 (make-instance 'macro-heading :local local))))
-        section))))
+       index
+       (list function-name
+             (ecase type
+               (:function ;
+                (make-instance 'function-heading
+                               :local local
+                               :generic (generic-function-p function-name)))
+               (:macro ;
+                (make-instance 'macro-heading :local local))))
+       section))))
 
 @ To index definitions, we'll need more information from the walker about
 the context in which the variable or function name occurred. In particular,
@@ -4801,29 +4800,31 @@ we'll get the |car| of the defining form as the |operator| argument, which
 is then passed down to |make-sub-heading|.
 
 @l
-(defun index-variable-definition (index variable section &key ;
-                                  operator special &aux
-                                  (constant (eql operator 'defconstant)))
+(defun index-defvar (index variable section &key operator special)
   (add-index-entry
-    index
-    (list variable ;
-          (make-sub-heading operator :special special :constant constant))
-    section :def t))
+   index
+   (list variable ;
+         (make-sub-heading operator
+                           :special special
+                           :constant (eql operator 'defconstant)))
+   section
+   :def t))
 
-(defun index-function-definition (index function-name section &key ;
-                                  operator local generic qualifiers)
+(defun index-defun (index function-name section &key ;
+                    operator local generic qualifiers)
   (add-index-entry
-    index
-    (list (typecase function-name
-            (symbol function-name)
-            (setf-function-name (cadr function-name)))
-          (make-sub-heading operator
-                            :function-name function-name
-                            :local local
-                            :generic (or generic ;
-                                         (generic-function-p function-name))
-                            :qualifiers qualifiers))
-    section :def t))
+   index
+   (list (typecase function-name
+           (symbol function-name)
+           (setf-function-name (cadr function-name)))
+         (make-sub-heading operator
+                           :function-name function-name
+                           :local local
+                           :generic (or generic ;
+                                        (generic-function-p function-name))
+                           :qualifiers qualifiers))
+   section
+   :def t))
 
 @ We'll perform the indexing by walking over the code of each section and
 noting each of the interesting symbols that we find there according to its
@@ -4987,7 +4988,7 @@ off to the next method for the actual expansion.
        (cond (section
               (case (variable-information symbol env)
                 (:symbol-macro
-                 (index-variable-use (walker-index walker) symbol section env)
+                 (index-variable (walker-index walker) symbol section env)
                  (call-next-method walker (cons symbol (cdr form)) env))
                 (t form)))
              (t (call-next-method)))))
@@ -4996,7 +4997,7 @@ off to the next method for the actual expansion.
        (cond (section
               (case (function-information symbol env)
                 (:macro
-                 (index-function-use (walker-index walker) symbol section env)
+                 (index-funcall (walker-index walker) symbol section env)
                  (call-next-method walker (cons symbol (cdr form)) env))
                 (t form)))
              (t (call-next-method)))))
@@ -5012,7 +5013,7 @@ takes place.
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
         (when section
-          (index-variable-use (walker-index walker) symbol section env))
+          (index-variable (walker-index walker) symbol section env))
         symbol)
       form))
 
@@ -5030,7 +5031,7 @@ symbol.
   (declare (ignore form))
   (multiple-value-bind (symbol section) (symbol-provenance operator)
     (when section
-      (index-function-use (walker-index walker) symbol section env))))
+      (index-funcall (walker-index walker) symbol section env))))
 
 @t@l
 (define-indexing-test funcall
@@ -5050,17 +5051,17 @@ context.
        (multiple-value-bind (symbol section) (symbol-provenance function-name)
          (when section
            (if def
-               (apply #'index-function-definition ;
+               (apply #'index-defun ;
                       index symbol section :allow-other-keys t args)
-               (index-function-use index symbol section env)))))
+               (index-funcall index symbol section env)))))
       (setf-function-name
        (multiple-value-bind (symbol section) ;
            (symbol-provenance (cadr function-name))
          (when section
            (if def
-               (apply #'index-function-definition ;
+               (apply #'index-defun ;
                       index `(setf ,symbol) section :allow-other-keys t args)
-               (index-function-use index symbol section env))))))))
+               (index-funcall index symbol section env))))))))
 
 @t@l
 (define-indexing-test function-name
@@ -5114,10 +5115,9 @@ special forms. Once again, we'll just skip the macro expansions.
                   ,(multiple-value-bind (symbol section) ;
                        (symbol-provenance (cadr form))
                      (when section
-                       (index-variable-definition (walker-index walker) ;
-                                                  symbol section
-                                                  :operator (car form)
-                                                  :special t))
+                       (index-defvar (walker-index walker) symbol section
+                                     :operator (car form)
+                                     :special t))
                      symbol)
                   ,@(walk-list walker (cddr form) env)))))
   (define-indexing-defvar-walker defvar)
@@ -5323,14 +5323,13 @@ options.
 @ @<Index |opt-value| as a slot access method@>=
 (multiple-value-bind (symbol section) (symbol-provenance opt-value)
   (when section
-    (index-function-definition (walker-index walker) symbol section ;
-                               :operator 'defmethod
-                               :generic t)
+    (index-defun (walker-index walker) symbol section ;
+                 :operator 'defmethod ;
+                 :generic t)
     (when (eql opt-name :accessor)
-      (index-function-definition (walker-index walker) ;
-                                 `(setf ,symbol) section
-                                 :operator 'defmethod
-                                 :generic t))))
+      (index-defun (walker-index walker) `(setf ,symbol) section ;
+                   :operator 'defmethod ;
+                   :generic t))))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index
