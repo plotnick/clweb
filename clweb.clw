@@ -22,9 +22,9 @@ Readers unfamiliar with either of them---or with literate programming in
 general---should consult the \CWEB\ manual or Knuth's {\it \ldq Literate
 Programming\/\rdq} ({\sc csli}:~1992).
 
-This is a preliminary, $\alpha$-quality release of the system; for the
-latest version, please visit\par\noindent
-\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}.
+This is a priliminary, $\beta$-quality release of the system.
+To obtain the latest version, please visit\break
+\hbox{\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}}\,.
 
 @ A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
 control codes, but which is primary depends on your point of view. The
