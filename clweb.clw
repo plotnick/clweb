@@ -55,9 +55,9 @@ audiences by whom it must be read: the computer on the one hand, and the
 human programmers that must understand and maintain it on the other.
 
 Our tangler has two main interface functions: |tangle-file| and |load-web|.
-The first is analogous to |cl:compile-file|: given a file containing \CLWEB\
+The first is analogous to |compile-file|: given a file containing \CLWEB\
 source, it produces an output file that can be subsequently loaded into a
-Lisp image with |load|. The function |load-web| is analogous to |cl:load|,
+Lisp image with |load|. The function |load-web| is analogous to |load|,
 but also accepts \CLWEB\ source as input instead of ordinary Lisp source:
 it loads a web into the Lisp environment.
 
@@ -848,7 +848,7 @@ reconstruct the original indentation.
 
 We'll define a {\it charpos stream\/} as an object that tracks the
 character position of an underlying stream. Note that these aren't
-instances of |cl:stream| (and can't be, without relying on an extension to
+instances of |stream| (and can't be, without relying on an extension to
 Common Lisp like Gray streams). But they contain a standard composite
 stream we'll call a {\it proxy stream} which is hooked up to the underlying
 stream whose position they're tracking, and it's these proxy streams that
@@ -2670,7 +2670,7 @@ all.
 
 @ The file tangler operates by writing out the tangled code to a Lisp source
 file and then invoking the file compiler on that file. The arguments are
-essentially the same as those to |cl:compile-file|, except for the
+essentially the same as those to |compile-file|, except for the
 |tests-file| keyword argument, which specifies the file to which the test
 sections' code should be written.
 
@@ -2746,7 +2746,7 @@ warnings about unused named sections.
          (sort unused-sections #'< :key #'section-number))))
 
 @*The weaver. The top-level weaver interface is modeled after
-|cl:compile-file|. The function |weave| reads the \WEB\ |input-file| and
+|compile-file|. The function |weave| reads the \WEB\ |input-file| and
 produces an output \TeX\ file named by |output-file|. If |output-file| is
 not supplied or is |nil|, a pathname will be generated from |input-file| by
 replacing its |type| component with \.{"tex"}.
