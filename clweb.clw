@@ -1,26 +1,26 @@
 % -*-CLWEB-*-
+\font\sc=cmcsc10
 \font\tenec=ecrm1000
-\def\ldq{{\tenec\char'23}} % left guillemet
-\def\rdq{{\tenec\char'24}} % right guillemet
-\def\csc#1{{\sc\uppercase{#1}}}
+\def\ldq{{\tenec \char'23}} % left guillemet
+\def\rdq{{\tenec \char'24}} % right guillemet
 \def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
 \def\WEB{{\tt WEB}}
 \def\CWEB{{\tt CWEB}}
 \def\CLWEB{{\tt CLWEB}}
-\def\EOF{\csc{eof}}
+\def\EOF{{\sc EOF}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\metasyn#1{$\langle${\it #1\/}$\rangle$} % metasyntactic variable
-\def\cltl{\csc{cl}t\csc{l}-2} % Common Lisp, the Language (2nd ed.)
+\def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
 
 @*Introduction. This is \CLWEB, a literate programming system for Common
 Lisp by Alex Plotnick \metasyn{plotnick@@cs.brandeis.edu}. It is modeled
 after the \CWEB\ system by Silvio Levy and Donald E.~Knuth, which was in
 turn adapted from Knuth's original \WEB\ system. It shares with those
-earlier systems not only their underlying philosophy, but also most of
-their syntax and control codes. Readers unfamiliar with either of them---or
-with literate programming in general---should consult the \CWEB\ manual or
-Knuth's {\it \ldq Literate Programming\rdq} (\csc{csli}:~1992).
+systems not only their underlying philosophy, but also most of their syntax.
+Readers unfamiliar with either of them---or with literate programming in
+general---should consult the \CWEB\ manual or Knuth's {\it \ldq Literate
+Programming\/\rdq} ({\sc csli}:~1992).
 
 This is a preliminary, $\alpha$-quality release of the system; for the
 latest version, please visit\par\noindent
@@ -101,13 +101,13 @@ that might be signaled while processing a web.
 (in-package "CLWEB")
 
 @t*Test suite. The test suite for this system uses Richard Waters's
-\csc{rt} library, a copy of which is included in the distribution. For more
-information on \csc{rt}, see Richard C.~Waters, ``Supporting the Regression
+{\sc rt} library, a copy of which is included in the distribution. For more
+information on {\sc rt}, see Richard C.~Waters, ``Supporting the Regression
 Testing of Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991):
 47--53.
 
 We use the sleazy trick of manually importing the external symbols of
-the \csc{rt} package instead of the more sensible |(use-package "RT")|
+the {\sc rt} package instead of the more sensible |(use-package "RT")|
 because many compilers issue warnings when the use-list of a package
 changes, which would occur if the |defpackage| form above were evaluated
 after the tests have been loaded.
@@ -134,7 +134,7 @@ useful for functions that accept a list desginator.
 (defun ensure-list (object)
   (if (listp object) object (list object)))
 
-@ And here's one taken from \csc{pcl}: |mapappend| is like |mapcar| except
+@ And here's one taken from {\sc pcl}: |mapappend| is like |mapcar| except
 that the results are appended together.
 
 @l
@@ -224,10 +224,10 @@ its |commentary| slot; it will never have a code part.
 
 @ Whenever we create a non-test section, we store it in the global
 |*sections*| vector and set its number to its index therein. This means
-that section objects won't be collected by the \csc{gc} even after the
-tangling or weaving has completed, but there's a good reason: keeping them
-around allows incremental redefinition of a web, which is important for
-interactive development.
+that section objects won't be collected by the garbage collector even after
+the tangling or weaving has completed, but there's a good reason: keeping
+them around allows incremental redefinition of a web, which is important
+for interactive development.
 
 We'll also keep the global variable |*current-section*| pointing to the
 last section (test or not) created.
@@ -323,7 +323,7 @@ a hash table so that we can support abbreviations (see below).
    (right-child :accessor right-child :initarg :right))
   (:default-initargs :left nil :right nil))
 
-@ The primary interface to the \csc{bst} is the following routine, which
+@ The primary interface to the {\sc bst} is the following routine, which
 attempts to locate the node with key |item| in the tree rooted at |root|.
 If it is not already present and the |:insert-if-not-found| argument
 is true, a new node is created with that key and added to the tree. The
@@ -364,7 +364,7 @@ whether or not the node was already in the tree.
         (setf (right-child parent) node)))
   (values node nil))
 
-@ Besides searching, probably the most common operation on a \csc{bst} is
+@ Besides searching, probably the most common operation on a {\sc bst} is
 to traverse it in-order, applying some function to each node.
 
 @l
@@ -413,7 +413,7 @@ of a named section as a sort of `virtual' section, which consists of a
 name, the combined code parts of all of the physical sections with that
 name, and the number of the first such section.
 
-And that's what we store in the \csc{bst}: nodes that look like sections,
+And that's what we store in the {\sc bst}: nodes that look like sections,
 inasmuch as they have specialized |section-name|, |section-code|, and
 |section-number| methods, but are not actually instances of the class
 |section|. The commentary and code is stored in the |section| instances
@@ -475,7 +475,7 @@ segment of the name.
 
 @ Next we need some special comparison routines for section names that
 might be abbreviations. We'll use these as the |:test| and |:predicate|
-functions, respectively, for our \csc{bst}.
+functions, respectively, for our {\sc bst}.
 
 @l
 (defun section-name-lessp (name1 name2)
@@ -859,7 +859,7 @@ we'll pass around, so that the standard stream functions will all work.
   ((charpos :initarg :charpos :initform 0)
    (proxy-stream :accessor charpos-proxy-stream :initarg :proxy)))
 
-@ The \csc{gf} |charpos| returns the current character position of a charpos
+@ The {\sc gf} |charpos| returns the current character position of a charpos
 stream. It relies on the last calculated character position (stored in the
 |charpos| slot) and a buffer that stores the characters input or output
 since the last call to |charpos|, retrieved with |get-charpos-stream-buffer|.
@@ -1196,7 +1196,7 @@ since indentation is completely ignored there.
   t)
 
 @ The rest of the reader macro functions for standard macro characters are
-defined in the order given in section~2.4 of the \csc{ansi} Common Lisp
+defined in the order given in section~2.4 of the {\sc ansi} Common Lisp
 standard. We override all of the standard macro characters except |#\)|
 and~|#\"| (the former because the standard reader macro function just
 signals an error, which is fine, and the latter because we don't need
@@ -2762,7 +2762,7 @@ is not supplied, the value of |*weave-print*| is used.
 Finally, the |external-format| argument specifies the external file format
 to be used when opening both the input file and the output file.
 {\it N.B.:} standard \TeX\ only handles 8-bit characters, and the encodings
-for non-printable-\csc{ascii} characters vary widely.
+for non-printable-{\sc ascii} characters vary widely.
 
 If successful, |weave| returns the truename of the output file. 
 
@@ -3386,7 +3386,7 @@ we'll describe as we come to them.
 @l
 @<Walker generic functions@>
 
-@ We'll use the environments \csc{api} defined in \cltl, since even
+@ We'll use the environments {\sc api} defined in \cltl, since even
 though it's not part of the Common Lisp standard, it's widely supported,
 and does everything we need it to do.
 
@@ -3593,7 +3593,7 @@ default method for |walk-compound-form| just defined, since their syntax is
 the same as an ordinary function call. But it's important to override
 |walk-as-special-form-p| for these operators, because ``[a]n
 implementation is free to implement a Common Lisp special operator as a
-macro.'' (\csc{ansi} Common Lisp, section~3.1.2.1.2.2)
+macro.'' ({\sc ansi} Common Lisp, section~3.1.2.1.2.2)
 
 @l
 (macrolet ((walk-as-special-form (operator)
@@ -3692,7 +3692,7 @@ followed by other forms (as occurs in the bodies of |defun|, |defmacro|,
 \etc.), |parse-body| returns |(values forms decls doc)|, where |decls|
 is the declaration specifiers found in each |declare| expression, |doc|
 holds a doc string (or |nil| if there is none), and |forms| holds the
-other forms. See \csc{ansi} Common Lisp section~3.4.11 for the rules on
+other forms. See {\sc ansi} Common Lisp section~3.4.11 for the rules on
 the syntactic interaction of doc strings and declarations.
 
 If |doc-string-allowed| is |nil| (the default), then no forms will be
@@ -3764,7 +3764,7 @@ able to walk the specifiers.
   (declare (ignore env))
   decls)
 
-@ The syntax of \L-lists is given in section~3.4 of the \csc{ansi} standard.
+@ The syntax of \L-lists is given in section~3.4 of the {\sc ansi} standard.
 We accept the syntax of macro \L-lists, since they are the most general,
 and appear to be a superset of every other type of \L-list.
 
@@ -5119,7 +5119,7 @@ about |special| declarations, so we just throw everything else away.
          '((special x y z)))
   t)
 
-@ Now we'll turn to the various \csc{clos} forms. We'll start with a little
+@ Now we'll turn to the various {\sc clos} forms. We'll start with a little
 macro to pull off method qualifiers from a |defgeneric| form or a method
 description. Syntactically, the qualifiers are any non-list objects
 preceding the specialized \L-list.
