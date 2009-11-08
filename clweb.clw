@@ -1,38 +1,8 @@
 % -*-CLWEB-*-
-
-\newif\ifzapf \zapffalse
-\ifzapf
-\input palatino
-\input euler
-\font\tenrmr=pplr8r at 10pt % for non-ASCII characters
-\def\ldq{{\tenrmr \char'253}} % left guillemet
-\def\rdq{{\tenrmr \char'273}} % right guillemet
-\font\tenss=lopr8r at 10pt
-\font\tenssi=lopri8r at 10pt
-\font\tenssb=lopb8r at 10pt
-\let\cmntfont=\tenssi
-\mainfont
-\def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
-\def\){\/\egroup}
-{\catcode`\(=\active \catcode`\)=\active
- % borrow Palatino's parenthesis for Lisp code
- \gdef({{\tenrm\char`\(}\kern.025em}
- \gdef){{\tenrm\char`\)}\kern.025em}}
-\def\csc#1{{\sc #1}}
-\def\lheader{\headertrue\mainfont\the\pageno\sc\qquad\grouptitle
-  \hfill\lowercase\expandafter{\jobname}\qquad
-  \mainfont\topsecno} % top line on left-hand pages
-\def\rheader{\headertrue\mainfont\topsecno
-  \sc\qquad\lowercase\expandafter{\jobname}\hfill
-  \grouptitle\qquad\mainfont\the\pageno} % top line on right-hand pages
-\def\grouptitle{\let\i=I\let\j=J\lowercase\expandafter{\expandafter
-                        \takethree\topmark}}
-\else
-\def\ldq{\relax} % left guillemet
-\def\rdq{\relax} % right guillemet
+\font\tenec=ecrm1000
+\def\ldq{{\tenec\char'23}} % left guillemet
+\def\rdq{{\tenec\char'24}} % right guillemet
 \def\csc#1{{\sc\uppercase{#1}}}
-\fi
-
 \def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
 \def\WEB{{\tt WEB}}
