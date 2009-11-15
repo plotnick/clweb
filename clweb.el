@@ -72,9 +72,13 @@ any existing code for that section; otherwise, it will be replaced."
                   (end-of-buffer (point-max))))
            (temp-file (make-temp-file "clweb")))
       (write-region start end temp-file t 'nomsg)
-      (comint-simple-send (inferior-lisp-proc)
-                          (format "(load-sections-from-temp-file %S %S)"
-                                  temp-file (not (null arg)))))))
+      (let ((string (format "(clweb:load-sections-from-temp-file %s %s)"
+                            temp-file (not (null arg)))))
+        (cond ((fboundp 'slime-interactive-eval)
+               (slime-interactive-eval string))
+              ((fboundp 'inferior-lisp-proc)
+               (comint-simple-send (inferior-lisp-proc) string))
+              (t (error "Unable to find superior or inferior Lisp")))))))
 
 (define-derived-mode clweb-mode lisp-mode "CLWEB"
   "Major mode for editing CLWEB programs.
