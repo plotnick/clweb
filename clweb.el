@@ -99,8 +99,8 @@ any existing code for that section; otherwise, it will be replaced."
               ("\\(^\\|[^@]\\)@\\(>\\)[^=]" 2 "> bn")
               ("\\(^\\|[^@]\\)@\\(>\\)\\+?\\(=\\)" (2 "> bn") (3 "> b")))))))
 
-(define-key clweb-mode-map "\M-n" 'forward-section)
-(define-key clweb-mode-map "\M-p" 'backward-section)
+(define-key clweb-mode-map "\C-c\C-n" 'forward-section)
+(define-key clweb-mode-map "\C-c\C-p" 'backward-section)
 (define-key clweb-mode-map "\C-c\C-s" 'eval-section)
 
 (add-to-list 'auto-mode-alist '("\\.clw" . clweb-mode))
