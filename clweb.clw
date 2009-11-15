@@ -2642,13 +2642,14 @@ all.
   (if tests-file
       (merge-pathnames tests-file (make-pathname :type type :case :common))
       (unless tests-file-supplied-p
-        (make-pathname :name (concatenate 'string
-                                          (pathname-name output-file ;
-                                                         :case :common)
-                                          "-TESTS")
-                       :type type
-                       :defaults output-file
-                       :case :common))))
+        (merge-pathnames
+         (make-pathname :name (concatenate 'string
+                                           (pathname-name output-file ;
+                                                          :case :common)
+                                           "-TESTS")
+                        :type type
+                        :case :common)
+         output-file))))
 
 @t@l
 (deftest (tests-file-pathname 1)
