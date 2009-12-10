@@ -1107,7 +1107,7 @@ varying degrees of accuracy, what was originally given in the source.
 If a marker is {\it bound}---i.e., if |marker-boundp| returns non-nil when
 called with it as an argument---then the tangler will call |marker-value|
 to obtain the associated value. (The weaver will never ask for a marker's
-value). Otherwise, the marker will be silently dropped from its containing
+value.) Otherwise, the marker will be silently dropped from its containing
 form; this is used, e.g., for newlines and comments. The value need not be
 stored in the |value| slot, but often is.
 
