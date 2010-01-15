@@ -108,3 +108,27 @@ any existing code for that section; otherwise, it will be replaced."
 (define-key clweb-mode-map "\C-c\C-s" 'eval-section)
 
 (add-to-list 'auto-mode-alist '("\\.clw" . clweb-mode))
+
+(eval-after-load 'slime-repl
+  '(progn
+     (defslime-repl-shortcut clweb-weave ("weave")
+       (:handler (lambda (filename)
+                   (interactive
+                    (list (expand-file-name
+                           (read-file-name "File: " nil nil nil nil))))
+                   (slime-save-some-lisp-buffers)
+                   (slime-repl-shortcut-eval
+                    `(cl:namestring
+                      (clweb:weave ,(slime-to-lisp-filename filename))))))
+       (:one-liner "Weave a web."))
+     (defslime-repl-shortcut clweb-tangle-and-load ("tangle-and-load" "tl")
+       (:handler (lambda (filename)
+                   (interactive
+                    (list (expand-file-name
+                           (read-file-name "File: " nil nil nil nil))))
+                   (slime-save-some-lisp-buffers)
+                   (slime-repl-shortcut-eval
+                    `(cl:load
+                      (clweb:tangle-file
+                       ,(slime-to-lisp-filename filename))))))
+       (:one-liner "Tangle and load a web."))))
