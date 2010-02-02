@@ -3107,14 +3107,21 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
 
 (set-weave-dispatch 'symbol #'print-symbol)
 
-@ Lambda gets special treatment.
+@ A few symbols get special replacements.
 
 @l
-(set-weave-dispatch '(eql lambda)
-  (lambda (stream obj)
-    (declare (ignore obj))
-    (write-string "\\L" stream))
-  1)
+(macrolet ((weave-symbol (symbol replacement)
+             `(set-weave-dispatch '(eql ,symbol)
+                (lambda (stream obj)
+                  (declare (ignore obj))
+                  (write-string ,replacement stream))
+                1)))
+  (weave-symbol lambda "\\L")
+  (weave-symbol pi "$\\pi$")
+  (weave-symbol - "$-$")
+  (weave-symbol 1- "1$-$")
+  (weave-symbol <= "$\\le$")
+  (weave-symbol >= "$\\ge$"))
 
 @ Next, we turn to list printing, and the tricky topic of indentation.
 On the assumption that the human writing a web is smarter than a program
