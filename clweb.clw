@@ -70,9 +70,11 @@ top-level tangler and weaver functions mentioned above, there's also
 |load-sections-from-temp-file|, which is conceptually part of the tangler,
 but is a special-purpose routine designed to be used in conjunction with an
 editor such as Emacs to provide incremental redefinition of sections; the
-user will generally never need to call it directly. The remainder of the
-exported symbols are condition classes for the various errors and warnings
-that might be signaled while processing a web.
+user will generally never need to call it directly. There's a flag,
+|*index-lexical-variables*|, that controls whether or not the indexer
+should create entries for lexical variables; the default is |nil|. The
+remainder of the exported symbols are condition classes for the various
+errors and warnings that might be signaled while processing a web.
 
 @l
 (provide "CLWEB")
@@ -89,6 +91,7 @@ that might be signaled while processing a web.
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "*INDEX-LEXICAL-VARIABLES*"
            "AMBIGUOUS-PREFIX-ERROR"
            "SECTION-NAME-CONTEXT-ERROR"
            "SECTION-NAME-USE-ERROR"
@@ -3468,7 +3471,7 @@ expansion.
       (catch form
         (cond ((symbol-macro-p form env)) ; wait for macro expansion
               ((atom form)
-               (return (walk-atomic-form walker form env)))
+               (return (walk-atomic-form walker :evaluated form env)))
               ((not (symbolp (car form)))
                (return (walk-list walker form env)))
               ((or (not expanded)
@@ -3517,15 +3520,15 @@ of those walks.
       ((atom form) (nreconc newform form))))
 
 @ The functions |walk-atomic-form| and |walk-compound-form| are the real
-work-horses of the walker. The former takes a walker instance, an (atomic)
-form, an environment, and a flag indicating whether or not the form occurs
-in an evaluated position. Compound forms don't need such a flag, but we do
-provide an additional |operator| argument so that we can use
-|eql|~specializers. The |operator| of a form passed to |walk-compound-form|
-will always be a symbol.
+work-horses of the walker. Besides the walker instance, the form, and the
+lexical environment, |walk-atomic-form| takes a keyword symbol denoting the
+context in which the atom occurs, and |walk-compound-form| takes an
+additional |operator| argument, |eql| to~|(car form)|, so that we can
+use |eql|~specializers. The |operator| of a form passed to
+|walk-compound-form| will always be a symbol.
 
 @<Walker generic functions@>=
-(defgeneric walk-atomic-form (walker form env &optional evalp))
+(defgeneric walk-atomic-form (walker context form env))
 (defgeneric walk-compound-form (walker operator form env))
 
 @ The default method for |walk-atomic-form| simply returns the form.
@@ -3533,8 +3536,8 @@ Note that this function won't be called for symbol macros; those are
 expanded in |walk-form|.
 
 @l
-(defmethod walk-atomic-form ((walker walker) form env &optional (evalp t))
-  (declare (ignore env evalp))
+(defmethod walk-atomic-form ((walker walker) context form env)
+  (declare (ignore context env))
   form)
 
 @ The default method for |walk-compound-form| is used for all funcall-like
@@ -3543,7 +3546,7 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
 @l
 (defmethod walk-compound-form ((walker walker) operator form env)
   (declare (ignore operator))
-  `(,(walk-atomic-form walker (car form) env nil)
+  `(,(walk-atomic-form walker :unevaluated (car form) env)
     ,@(walk-list walker (cdr form) env)))
 
 @ Common Lisp defines a {\it function name\/} as ``[a] symbol or a list
@@ -3556,9 +3559,9 @@ walker function just for function names.
 (defmethod walk-function-name ((walker walker) function-name env &key)
   (typecase function-name
     (symbol ;
-     (walk-atomic-form walker function-name env nil))
+     (walk-atomic-form walker :unevaluated function-name env))
     (setf-function-name ;
-     `(setf ,(walk-atomic-form walker (cadr function-name) env nil)))
+     `(setf ,(walk-atomic-form walker :unevaluated (cadr function-name) env)))
     (t (cerror "Use the function name anyway." ;
                'invalid-function-name :name function-name)
        function-name)))
@@ -3645,7 +3648,7 @@ unevaluated form, followed by zero or more evaluated forms.
 (macrolet ((define-block-like-walker (operator)
              `(define-special-form-walker ,operator ((walker walker) form env)
                 `(,(car form)
-                  ,(walk-atomic-form walker (cadr form) env nil)
+                  ,(walk-atomic-form walker :unevaluated (cadr form) env)
                   ,@(walk-list walker (cddr form) env)))))
   (define-block-like-walker block)
   (define-block-like-walker eval-when)
@@ -3787,7 +3790,7 @@ object containing bindings for all of the parameters found therein.
                                                    :variable vars ;
                                                    :declare decls)))
            (walk-var (var)
-             (walk-atomic-form walker var env nil))
+             (walk-atomic-form walker :binding var env))
            (update-state (keyword)
              (setq state (ecase keyword
                            ((nil) state)
@@ -3958,12 +3961,12 @@ the parameters found therein.
                                                :declare decls)))
        (walk-var (spec)
          (etypecase spec
-           (symbol (walk-atomic-form walker spec env nil))
+           (symbol (walk-atomic-form walker :binding spec env))
            (class-specializer
-            (list (walk-atomic-form walker (car spec) nil)
-                  (walk-atomic-form walker (cadr spec) nil)))
+            (list (walk-atomic-form walker :binding (car spec) env)
+                  (walk-atomic-form walker :class-specializer (cadr spec) env)))
            ((compound-specializer eql)
-            (list (walk-atomic-form walker (car spec) nil)
+            (list (walk-atomic-form walker :binding (car spec) env)
                   `(eql ,(walk-form walker (cadadr spec))))))))
   (loop until (or (null lambda-list)
                   (member (car lambda-list) lambda-list-keywords))
@@ -4080,7 +4083,7 @@ the same purpose.
 @l
 (defun walk-variable-binding (walker p env &aux ;
                               (binding (if (consp p) p (list p))))
-  (list (walk-atomic-form walker (car binding) env nil)
+  (list (walk-atomic-form walker :binding (car binding) env)
         (and (cdr binding)
              (walk-form walker (cadr binding) env))))
 
@@ -4130,7 +4133,9 @@ former case.
 
 @l
 (defun make-macro-definitions (walker defs env)
-  (mapcar (lambda (def &aux (name (walk-atomic-form walker (car def) env nil)))
+  (mapcar (lambda (def &aux
+                   (name (walk-atomic-form walker :symbol-macro-binding ;
+                                           (car def) env)))
             (list name ;
                   (enclose (parse-macro name (cadr def) (cddr def) env) ;
                            env walker)))
@@ -4288,9 +4293,9 @@ the walker classes defined in this program.
 (defclass tracing-walker (walker) ())
 
 (defmethod walk-atomic-form :before
-    ((walker tracing-walker) form env &optional (evalp t))
-  (format t "; walking ~:[un~;~]evaluated atomic form ~S~@[ (~(~A~) variable)~]~%"
-          evalp form (and (symbolp form) (variable-information form env))))
+    ((walker tracing-walker) context form env)
+  (format t "; walking atomic form ~S (~S)~@[ (~(~A~) variable)~]~%"
+          form context (and (symbolp form) (variable-information form env))))
 
 (defmethod walk-compound-form :before ;
     ((walker tracing-walker) operator form env)
@@ -4315,7 +4320,7 @@ to |*index-packages*|.
 (defvar *index-packages* nil)
 
 @ @<Initialize global...@>=
-(setq *index-packages* nil)
+(setq *index-packages* (list (find-package "COMMON-LISP-USER")))
 
 @t For testing the indexer, we need to make sure that the \CLWEB\ package
 is in |*index-packages*|.
@@ -4726,6 +4731,13 @@ function name refers to an ordinary or generic function.
       (and (fboundp function-name)
            (typep (fdefinition function-name) 'generic-function))))
 
+@ The global variable |*index-lexical-variables*| controls whether or not
+the indexer will create entries for lexical variables. Its value is
+{\it not\/} re-initialized on each run.
+
+@<Global variables@>=
+(defvar *index-lexical-variables* nil)
+
 @ Here are a couple of indexing routines that we'll use in the walker below
 for indexing function and variable {\it uses}. They look up the given
 variable or function in a lexical environment object and add an appropriate
@@ -4737,11 +4749,13 @@ no particular advantage.
 @l
 (defun index-variable (index variable section env)
   (multiple-value-bind (type local) (variable-information variable env)
-    (when (member type '(:special :symbol-macro :constant))
+    (when (or (member type '(:special :symbol-macro :constant))
+              (and *index-lexical-variables* (eql type :lexical)))
       (add-index-entry
        index
        (list variable
              (ecase type
+               (:lexical (make-instance 'variable-heading))
                (:special (make-instance 'variable-heading :special t))
                (:constant (make-instance 'variable-heading :constant t))
                (:symbol-macro (make-instance 'symbol-macro-heading ;
@@ -4770,14 +4784,15 @@ is then passed down to |make-sub-heading|.
 
 @l
 (defun index-defvar (index variable section &key operator special)
-  (add-index-entry
-   index
-   (list variable ;
-         (make-sub-heading operator
-                           :special special
-                           :constant (eql operator 'defconstant)))
-   section
-   :def t))
+  (when (or special *index-lexical-variables*)
+   (add-index-entry
+    index
+    (list variable ;
+          (make-sub-heading operator
+                            :special special
+                            :constant (eql operator 'defconstant)))
+    section
+    :def t)))
 
 (defun index-defun (index function-name section &key ;
                     operator local generic qualifiers)
@@ -4930,7 +4945,8 @@ entries.
        (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
              (mangled-code (tangle-code-for-indexing *sections*))
              (walker (make-instance 'indexing-walker)))
-         (loop for form in tangled-code and mangled-form in mangled-code
+         (loop with *index-lexical-variables* = nil
+               for form in tangled-code and mangled-form in mangled-code
                as walked-form = (walk-form walker mangled-form)
                do (assert (tree-equal walked-form form)
                           (walked-form mangled-form form)))
@@ -4977,12 +4993,15 @@ the referents; this is where the reverse-substitution of referring symbols
 takes place.
 
 @l
-(defmethod walk-atomic-form ((walker indexing-walker) form env &optional evalp)
-  (declare (ignore evalp))
+(defmethod walk-atomic-form ((walker indexing-walker) context form env)
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
         (when section
-          (index-variable (walker-index walker) symbol section env))
+          (index-variable (walker-index walker) symbol section env)
+          (when (eql context :binding)
+            (index-defvar (walker-index walker) symbol section
+                          :operator 'defvar
+                          :special nil)))
         symbol)
       form))
 
@@ -5187,7 +5206,8 @@ specialized \L-list and body forms here.
 
 @ @<Walk the method description in |form|@>=
 (let* ((operator (pop form))
-       (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q env nil))
+       (qualifiers (mapcar (lambda (q)
+                             (walk-atomic-form walker :method-qualifier q env))
                            (pop-qualifiers form)))
        (lambda-list (pop form))
        (body form))
@@ -5207,7 +5227,8 @@ a method description.
     ((walker indexing-walker) form env &aux
      (operator (pop form))
      (function-name (pop form)) ; don't walk yet: wait for the qualifiers
-     (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q env nil))
+     (qualifiers (mapcar (lambda (q)
+                           (walk-atomic-form walker :method-qualifier q env))
                          (pop-qualifiers form)))
      (lambda-list (pop form))
      (body form))
@@ -5242,7 +5263,7 @@ class names, super-classes, and~accessor methods.
                                        section
                                        :def t))
                     `(,operator
-                      ,(walk-atomic-form walker symbol env nil)
+                      ,(walk-atomic-form walker :class-name symbol env)
                       ,(mapcar (lambda (super)
                                  @<Index the use of the superclass |super|@>)
                                supers)
@@ -5259,7 +5280,7 @@ class names, super-classes, and~accessor methods.
     (add-index-entry (walker-index walker)
                      (list symbol (make-sub-heading operator))
                      section))
-  (walk-atomic-form walker symbol env nil))
+  (walk-atomic-form walker :superclass-name symbol env))
 
 @t@l
 (define-indexing-test defclass
@@ -5281,12 +5302,12 @@ options.
 @l
 (defun walk-slot-specifier (walker spec env)
   (etypecase spec
-    (symbol (walk-atomic-form walker spec env nil))
+    (symbol (walk-atomic-form walker :slot-name spec env))
     (cons (destructuring-bind (name &rest options) spec
             (loop for (opt-name opt-value) on options by #'cddr
                   if (member opt-name '(:reader :writer :accessor))
                     do @<Index |opt-value| as a slot access method@>)
-            `(,(walk-atomic-form walker name env nil)
+            `(,(walk-atomic-form walker :slot-name name env)
               ,@(walk-list walker options env))))))
 
 @ @<Index |opt-value| as a slot access method@>=

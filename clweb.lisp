@@ -8,6 +8,7 @@
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "*INDEX-LEXICAL-VARIABLES*"
            "AMBIGUOUS-PREFIX-ERROR"
            "SECTION-NAME-CONTEXT-ERROR"
            "SECTION-NAME-USE-ERROR"
@@ -40,6 +41,7 @@
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
 (DEFVAR *INDEX-PACKAGES* NIL)
 (DEFVAR *INDEX* NIL)
+(DEFVAR *INDEX-LEXICAL-VARIABLES* NIL)
 (DEFVAR *INDEXING* NIL)
 (DEFINE-CONDITION AMBIGUOUS-PREFIX-ERROR
     (ERROR)
@@ -1050,7 +1052,7 @@
   (SETF *CURRENT-SECTION* NIL)
   (SETF (FILL-POINTER *TEST-SECTIONS*) 0)
   (SETQ *NAMED-SECTIONS* NIL)
-  (SETQ *INDEX-PACKAGES* NIL)
+  (SETQ *INDEX-PACKAGES* (LIST (FIND-PACKAGE "COMMON-LISP-USER")))
   (SETQ *INDEX* (MAKE-INDEX))
   (WHEN VERBOSE (FORMAT T "~&; loading WEB from ~S~%" FILESPEC))
   (IF (STREAMP FILESPEC)
@@ -1108,7 +1110,7 @@
   (SETF *CURRENT-SECTION* NIL)
   (SETF (FILL-POINTER *TEST-SECTIONS*) 0)
   (SETQ *NAMED-SECTIONS* NIL)
-  (SETQ *INDEX-PACKAGES* NIL)
+  (SETQ *INDEX-PACKAGES* (LIST (FIND-PACKAGE "COMMON-LISP-USER")))
   (SETQ *INDEX* (MAKE-INDEX))
   (WITH-OPEN-FILE
       (INPUT INPUT-FILE :DIRECTION :INPUT :EXTERNAL-FORMAT EXTERNAL-FORMAT)
@@ -1176,7 +1178,7 @@
   (SETF *CURRENT-SECTION* NIL)
   (SETF (FILL-POINTER *TEST-SECTIONS*) 0)
   (SETQ *NAMED-SECTIONS* NIL)
-  (SETQ *INDEX-PACKAGES* NIL)
+  (SETQ *INDEX-PACKAGES* (LIST (FIND-PACKAGE "COMMON-LISP-USER")))
   (SETQ *INDEX* (MAKE-INDEX))
   (WITH-OPEN-FILE
       (INPUT INPUT-FILE :DIRECTION :INPUT :EXTERNAL-FORMAT EXTERNAL-FORMAT
@@ -1364,11 +1366,18 @@
     (PRINT-ESCAPED STREAM (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL))
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
-(SET-WEAVE-DISPATCH '(EQL LAMBDA)
-                    (LAMBDA (STREAM OBJ)
-                      (DECLARE (IGNORE OBJ))
-                      (WRITE-STRING "\\L" STREAM))
-                    1)
+(MACROLET ((WEAVE-SYMBOL (SYMBOL REPLACEMENT)
+             `(SET-WEAVE-DISPATCH '(EQL ,SYMBOL)
+                                  (LAMBDA (STREAM OBJ)
+                                    (DECLARE (IGNORE OBJ))
+                                    (WRITE-STRING ,REPLACEMENT STREAM))
+                                  1)))
+  (WEAVE-SYMBOL LAMBDA "\\L")
+  (WEAVE-SYMBOL PI "$\\pi$")
+  (WEAVE-SYMBOL - "$-$")
+  (WEAVE-SYMBOL 1- "1$-$")
+  (WEAVE-SYMBOL <= "$\\le$")
+  (WEAVE-SYMBOL >= "$\\ge$"))
 (DEFSTRUCT (LOGICAL-BLOCK (:CONSTRUCTOR MAKE-LOGICAL-BLOCK (LIST))) LIST)
 (DEFUN ANALYZE-INDENTATION (LIST-MARKER)
   (DECLARE (TYPE LIST-MARKER LIST-MARKER))
@@ -1509,7 +1518,7 @@
 (DEFGENERIC AUGMENT-WALKER-ENVIRONMENT
     (WALKER ENV &REST ARGS))
 (DEFGENERIC WALK-ATOMIC-FORM
-    (WALKER FORM ENV &OPTIONAL EVALP))
+    (WALKER CONTEXT FORM ENV))
 (DEFGENERIC WALK-COMPOUND-FORM
     (WALKER OPERATOR FORM ENV))
 (DEFGENERIC WALK-FUNCTION-NAME
@@ -1544,7 +1553,8 @@
              (LOOP
               (CATCH FORM
                 (COND ((SYMBOL-MACRO-P FORM ENV))
-                      ((ATOM FORM) (RETURN (WALK-ATOMIC-FORM WALKER FORM ENV)))
+                      ((ATOM FORM)
+                       (RETURN (WALK-ATOMIC-FORM WALKER :EVALUATED FORM ENV)))
                       ((NOT (SYMBOLP (CAR FORM)))
                        (RETURN (WALK-LIST WALKER FORM ENV)))
                       ((OR (NOT EXPANDED)
@@ -1563,18 +1573,19 @@
   (DO ((FORM LIST (CDR FORM))
        (NEWFORM NIL (CONS (WALK-FORM WALKER (CAR FORM) ENV) NEWFORM)))
       ((ATOM FORM) (NRECONC NEWFORM FORM))))
-(DEFMETHOD WALK-ATOMIC-FORM ((WALKER WALKER) FORM ENV &OPTIONAL (EVALP T))
-           (DECLARE (IGNORE ENV EVALP)) FORM)
+(DEFMETHOD WALK-ATOMIC-FORM ((WALKER WALKER) CONTEXT FORM ENV)
+           (DECLARE (IGNORE CONTEXT ENV)) FORM)
 (DEFMETHOD WALK-COMPOUND-FORM ((WALKER WALKER) OPERATOR FORM ENV)
            (DECLARE (IGNORE OPERATOR))
-           `(,(WALK-ATOMIC-FORM WALKER (CAR FORM) ENV NIL)
+           `(,(WALK-ATOMIC-FORM WALKER :UNEVALUATED (CAR FORM) ENV)
              ,@(WALK-LIST WALKER (CDR FORM) ENV)))
 (DEFTYPE SETF-FUNCTION-NAME () '(CONS (EQL SETF) (CONS SYMBOL NULL)))
 (DEFMETHOD WALK-FUNCTION-NAME ((WALKER WALKER) FUNCTION-NAME ENV &KEY)
            (TYPECASE FUNCTION-NAME
-             (SYMBOL (WALK-ATOMIC-FORM WALKER FUNCTION-NAME ENV NIL))
+             (SYMBOL (WALK-ATOMIC-FORM WALKER :UNEVALUATED FUNCTION-NAME ENV))
              (SETF-FUNCTION-NAME
-              `(SETF ,(WALK-ATOMIC-FORM WALKER (CADR FUNCTION-NAME) ENV NIL)))
+              `(SETF ,(WALK-ATOMIC-FORM WALKER :UNEVALUATED
+                                        (CADR FUNCTION-NAME) ENV)))
              (T
               (CERROR "Use the function name anyway." 'INVALID-FUNCTION-NAME
                       :NAME FUNCTION-NAME)
@@ -1616,7 +1627,8 @@
 (MACROLET ((DEFINE-BLOCK-LIKE-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER WALKER) FORM ENV)
-                ,'`(,(CAR FORM) ,(WALK-ATOMIC-FORM WALKER (CADR FORM) ENV NIL)
+                ,'`(,(CAR FORM)
+                    ,(WALK-ATOMIC-FORM WALKER :UNEVALUATED (CADR FORM) ENV)
                     ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
   (DEFINE-BLOCK-LIKE-WALKER BLOCK)
   (DEFINE-BLOCK-LIKE-WALKER EVAL-WHEN)
@@ -1662,7 +1674,7 @@
                      (AUGMENT-WALKER-ENVIRONMENT WALKER ENV :VARIABLE VARS
                                                  :DECLARE DECLS)))
            (WALK-VAR (VAR)
-             (WALK-ATOMIC-FORM WALKER VAR ENV NIL))
+             (WALK-ATOMIC-FORM WALKER :BINDING VAR ENV))
            (UPDATE-STATE (KEYWORD)
              (SETQ STATE
                      (ECASE KEYWORD
@@ -1803,12 +1815,13 @@
                                                       DECLS)))
                 (WALK-VAR (SPEC)
                   (ETYPECASE SPEC
-                    (SYMBOL (WALK-ATOMIC-FORM WALKER SPEC ENV NIL))
+                    (SYMBOL (WALK-ATOMIC-FORM WALKER :BINDING SPEC ENV))
                     (CLASS-SPECIALIZER
-                     (LIST (WALK-ATOMIC-FORM WALKER (CAR SPEC) NIL)
-                           (WALK-ATOMIC-FORM WALKER (CADR SPEC) NIL)))
+                     (LIST (WALK-ATOMIC-FORM WALKER :BINDING (CAR SPEC) ENV)
+                           (WALK-ATOMIC-FORM WALKER :CLASS-SPECIALIZER
+                                             (CADR SPEC) ENV)))
                     ((COMPOUND-SPECIALIZER EQL)
-                     (LIST (WALK-ATOMIC-FORM WALKER (CAR SPEC) NIL)
+                     (LIST (WALK-ATOMIC-FORM WALKER :BINDING (CAR SPEC) ENV)
                            `(EQL ,(WALK-FORM WALKER (CADADR SPEC))))))))
            (LOOP UNTIL (OR (NULL LAMBDA-LIST)
                            (MEMBER (CAR LAMBDA-LIST)
@@ -1847,7 +1860,7 @@
          (IF (CONSP P)
              P
              (LIST P))))
-  (LIST (WALK-ATOMIC-FORM WALKER (CAR BINDING) ENV NIL)
+  (LIST (WALK-ATOMIC-FORM WALKER :BINDING (CAR BINDING) ENV)
         (AND (CDR BINDING) (WALK-FORM WALKER (CADR BINDING) ENV))))
 (DEFINE-SPECIAL-FORM-WALKER LET
     ((WALKER WALKER) FORM ENV &AUX
@@ -1882,7 +1895,10 @@
                                                DECLS)))))
 (DEFUN MAKE-MACRO-DEFINITIONS (WALKER DEFS ENV)
   (MAPCAR
-   (LAMBDA (DEF &AUX (NAME (WALK-ATOMIC-FORM WALKER (CAR DEF) ENV NIL)))
+   (LAMBDA
+       (DEF
+        &AUX
+        (NAME (WALK-ATOMIC-FORM WALKER :SYMBOL-MACRO-BINDING (CAR DEF) ENV)))
      (LIST NAME
            (ENCLOSE (PARSE-MACRO NAME (CADR DEF) (CDDR DEF) ENV) ENV WALKER)))
    DEFS))
@@ -2115,10 +2131,13 @@
 (DEFUN INDEX-VARIABLE (INDEX VARIABLE SECTION ENV)
   (MULTIPLE-VALUE-BIND (TYPE LOCAL)
       (VARIABLE-INFORMATION VARIABLE ENV)
-    (WHEN (MEMBER TYPE '(:SPECIAL :SYMBOL-MACRO :CONSTANT))
+    (WHEN
+        (OR (MEMBER TYPE '(:SPECIAL :SYMBOL-MACRO :CONSTANT))
+            (AND *INDEX-LEXICAL-VARIABLES* (EQL TYPE :LEXICAL)))
       (ADD-INDEX-ENTRY INDEX
                        (LIST VARIABLE
                              (ECASE TYPE
+                               (:LEXICAL (MAKE-INSTANCE 'VARIABLE-HEADING))
                                (:SPECIAL
                                 (MAKE-INSTANCE 'VARIABLE-HEADING :SPECIAL T))
                                (:CONSTANT
@@ -2143,11 +2162,13 @@
                                 (MAKE-INSTANCE 'MACRO-HEADING :LOCAL LOCAL))))
                        SECTION))))
 (DEFUN INDEX-DEFVAR (INDEX VARIABLE SECTION &KEY OPERATOR SPECIAL)
-  (ADD-INDEX-ENTRY INDEX
-                   (LIST VARIABLE
-                         (MAKE-SUB-HEADING OPERATOR :SPECIAL SPECIAL :CONSTANT
-                                           (EQL OPERATOR 'DEFCONSTANT)))
-                   SECTION :DEF T))
+  (WHEN (OR SPECIAL *INDEX-LEXICAL-VARIABLES*)
+    (ADD-INDEX-ENTRY INDEX
+                     (LIST VARIABLE
+                           (MAKE-SUB-HEADING OPERATOR :SPECIAL SPECIAL
+                                             :CONSTANT
+                                             (EQL OPERATOR 'DEFCONSTANT)))
+                     SECTION :DEF T)))
 (DEFUN INDEX-DEFUN
        (INDEX FUNCTION-NAME SECTION &KEY OPERATOR LOCAL GENERIC QUALIFIERS)
   (ADD-INDEX-ENTRY INDEX
@@ -2221,13 +2242,15 @@
                     (T FORM)))
                  (T (CALL-NEXT-METHOD)))))
              (T FORM)))
-(DEFMETHOD WALK-ATOMIC-FORM ((WALKER INDEXING-WALKER) FORM ENV &OPTIONAL EVALP)
-           (DECLARE (IGNORE EVALP))
+(DEFMETHOD WALK-ATOMIC-FORM ((WALKER INDEXING-WALKER) CONTEXT FORM ENV)
            (IF (SYMBOLP FORM)
                (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
                    (SYMBOL-PROVENANCE FORM)
                  (WHEN SECTION
-                   (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV))
+                   (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV)
+                   (WHEN (EQL CONTEXT :BINDING)
+                     (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION
+                                   :OPERATOR 'DEFVAR :SPECIAL NIL)))
                  SYMBOL)
                FORM))
 (DEFMETHOD WALK-COMPOUND-FORM :BEFORE
@@ -2301,7 +2324,8 @@
                                 (QUALIFIERS
                                  (MAPCAR
                                   (LAMBDA (Q)
-                                    (WALK-ATOMIC-FORM WALKER Q ENV NIL))
+                                    (WALK-ATOMIC-FORM WALKER :METHOD-QUALIFIER
+                                                      Q ENV))
                                   (POP-QUALIFIERS FORM)))
                                 (LAMBDA-LIST (POP FORM))
                                 (BODY FORM))
@@ -2329,7 +2353,7 @@
     ((WALKER INDEXING-WALKER) FORM ENV &AUX (OPERATOR (POP FORM))
      (FUNCTION-NAME (POP FORM))
      (QUALIFIERS
-      (MAPCAR (LAMBDA (Q) (WALK-ATOMIC-FORM WALKER Q ENV NIL))
+      (MAPCAR (LAMBDA (Q) (WALK-ATOMIC-FORM WALKER :METHOD-QUALIFIER Q ENV))
               (POP-QUALIFIERS FORM)))
      (LAMBDA-LIST (POP FORM)) (BODY FORM))
   (WALK-METHOD-DEFINITION WALKER OPERATOR
@@ -2350,7 +2374,8 @@
                                        (LIST SYMBOL
                                              (MAKE-SUB-HEADING OPERATOR))
                                        SECTION :DEF T))
-                    ,'`(,OPERATOR ,(WALK-ATOMIC-FORM WALKER SYMBOL ENV NIL)
+                    ,'`(,OPERATOR
+                        ,(WALK-ATOMIC-FORM WALKER :CLASS-NAME SYMBOL ENV)
                         ,(MAPCAR
                           (LAMBDA (SUPER)
                             (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
@@ -2361,7 +2386,8 @@
                                                        (MAKE-SUB-HEADING
                                                         OPERATOR))
                                                  SECTION))
-                              (WALK-ATOMIC-FORM WALKER SYMBOL ENV NIL)))
+                              (WALK-ATOMIC-FORM WALKER :SUPERCLASS-NAME SYMBOL
+                                                ENV)))
                           SUPERS)
                         ,(MAPCAR
                           (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
@@ -2371,7 +2397,7 @@
   (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION))
 (DEFUN WALK-SLOT-SPECIFIER (WALKER SPEC ENV)
   (ETYPECASE SPEC
-    (SYMBOL (WALK-ATOMIC-FORM WALKER SPEC ENV NIL))
+    (SYMBOL (WALK-ATOMIC-FORM WALKER :SLOT-NAME SPEC ENV))
     (CONS
      (DESTRUCTURING-BIND
          (NAME &REST OPTIONS)
@@ -2386,7 +2412,7 @@
                     (WHEN (EQL OPT-NAME :ACCESSOR)
                       (INDEX-DEFUN (WALKER-INDEX WALKER) `(SETF ,SYMBOL)
                                    SECTION :OPERATOR 'DEFMETHOD :GENERIC T)))))
-       `(,(WALK-ATOMIC-FORM WALKER NAME ENV NIL)
+       `(,(WALK-ATOMIC-FORM WALKER :SLOT-NAME NAME ENV)
          ,@(WALK-LIST WALKER OPTIONS ENV))))))
 (DEFUN INDEX-SECTIONS
        (SECTIONS

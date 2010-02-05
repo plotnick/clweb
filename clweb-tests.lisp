@@ -579,11 +579,9 @@
    Y
    (LOCALLY (DECLARE (SPECIAL Y)) Y)))
 (DEFCLASS TRACING-WALKER (WALKER) NIL)
-(DEFMETHOD WALK-ATOMIC-FORM :BEFORE
-           ((WALKER TRACING-WALKER) FORM ENV &OPTIONAL (EVALP T))
-           (FORMAT T
-                   "; walking ~:[un~;~]evaluated atomic form ~S~@[ (~(~A~) variable)~]~%"
-                   EVALP FORM
+(DEFMETHOD WALK-ATOMIC-FORM :BEFORE ((WALKER TRACING-WALKER) CONTEXT FORM ENV)
+           (FORMAT T "; walking atomic form ~S (~S)~@[ (~(~A~) variable)~]~%"
+                   FORM CONTEXT
                    (AND (SYMBOLP FORM) (VARIABLE-INFORMATION FORM ENV))))
 (DEFMETHOD WALK-COMPOUND-FORM :BEFORE
            ((WALKER TRACING-WALKER) OPERATOR FORM ENV)
@@ -698,7 +696,8 @@
                     (TANGLE (UNNAMED-SECTION-CODE-PARTS *SECTIONS*)))
                    (MANGLED-CODE (TANGLE-CODE-FOR-INDEXING *SECTIONS*))
                    (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
-               (LOOP FOR FORM IN TANGLED-CODE
+               (LOOP WITH *INDEX-LEXICAL-VARIABLES* = NIL
+                     FOR FORM IN TANGLED-CODE
                      AND MANGLED-FORM IN MANGLED-CODE AS WALKED-FORM = (WALK-FORM
                                                                         WALKER
                                                                         MANGLED-FORM)
