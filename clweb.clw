@@ -419,7 +419,7 @@ name, and the number of the first such section.
 And that's what we store in the {\sc bst}: nodes that look like sections,
 inasmuch as they have specialized |section-name|, |section-code|, and
 |section-number| methods, but are not actually instances of the class
-|section|. The commentary and code is stored in the |section| instances
+|section|. The commentary and code are stored in the |section| instances
 that comprise a given named section: references to those sections are
 stored in the |sections| slot.
 
