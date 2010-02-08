@@ -45,7 +45,7 @@
            (LET ((KEYS 'NIL))
              (FLET ((PUSH-KEY (NODE)
                       (PUSH (NODE-KEY NODE) KEYS)))
-               (MAPTREE #'PUSH-KEY TREE)
+               (MAP-BST #'PUSH-KEY TREE)
                (EQUAL (NREVERSE KEYS)
                       (REMOVE-DUPLICATES (SORT NUMBERS #'<))))))
          T)
@@ -678,7 +678,7 @@
 (DEFTEST (SYMBOL-PROVENANCE 2) (SYMBOL-PROVENANCE :FOO) :FOO)
 (DEFUN ALL-INDEX-ENTRIES (INDEX)
   (LET ((ENTRIES))
-    (MAPTREE
+    (MAP-BST
      (LAMBDA (ENTRY)
        (PUSH
         (LIST (MAPCAR #'HEADING-NAME (ENTRY-HEADING ENTRY))

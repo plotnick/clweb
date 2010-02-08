@@ -371,14 +371,14 @@ whether or not the node was already in the tree.
 to traverse it in-order, applying some function to each node.
 
 @l
-(defgeneric maptree (function tree))
+(defgeneric map-bst (function tree))
 
-(defmethod maptree (function (tree (eql nil)))
+(defmethod map-bst (function (tree (eql nil)))
   (declare (ignore function)))
-(defmethod maptree (function (tree binary-search-tree))
-  (maptree function (left-child tree))
+(defmethod map-bst (function (tree binary-search-tree))
+  (map-bst function (left-child tree))
   (funcall function tree)
-  (maptree function (right-child tree)))
+  (map-bst function (right-child tree)))
 
 @t@l
 (deftest (bst 1)
@@ -400,7 +400,7 @@ to traverse it in-order, applying some function to each node.
     (let ((keys '()))
       (flet ((push-key (node)
                (push (node-key node) keys)))
-        (maptree #'push-key tree)
+        (map-bst #'push-key tree)
         (equal (nreverse keys)
                (remove-duplicates (sort numbers #'<))))))
   t)
@@ -2741,7 +2741,7 @@ warnings about unused named sections.
   (flet ((note-unused-section (section)
            (when (null (used-by section))
              (push section unused-sections))))
-    (maptree #'note-unused-section *named-sections*)
+    (map-bst #'note-unused-section *named-sections*)
     (map nil
          (lambda (section)
            (warn 'unused-named-section-warning
@@ -2876,7 +2876,7 @@ file.
           (with-output-file (idx index-file)
             (weave (index-sections sections) idx))
           (with-output-file (scn sections-file)
-            (maptree (lambda (section)
+            (map-bst (lambda (section)
                        (weave (make-instance 'section-name-index-entry ;
                                              :named-section section) ;
                               scn))
@@ -4919,7 +4919,7 @@ locations)|, where each location is either a section number or a list
 @l
 (defun all-index-entries (index)
   (let ((entries))
-    (maptree
+    (map-bst
      (lambda (entry)
        (push (list (mapcar #'heading-name (entry-heading entry))
                    (loop for locator in (entry-locators entry)
@@ -5338,7 +5338,7 @@ of all of the interesting symbols so encountered.
 @l
 (set-weave-dispatch 'index
   (lambda (stream index)
-    (maptree (lambda (entry) (write entry :stream stream))
+    (map-bst (lambda (entry) (write entry :stream stream))
              (index-entries index))))
 
 (set-weave-dispatch 'index-entry
