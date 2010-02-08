@@ -72,7 +72,7 @@ any existing code for that section; otherwise, it will be replaced."
                   (end-of-buffer (point-max))))
            (temp-file (make-temp-file "clweb")))
       (write-region start end temp-file t 'nomsg)
-      (let ((string (format "(clweb:load-sections-from-temp-file %s %s)"
+      (let ((string (format "(clweb:load-sections-from-temp-file %S %S)"
                             temp-file (not (null arg)))))
         (cond ((fboundp 'slime-interactive-eval)
                (slime-interactive-eval string))
