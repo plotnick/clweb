@@ -1091,6 +1091,13 @@ concatenated onto the front of |stream| prior to reading.
     (values object chars))
   :foo ":foo")
 
+@ We'll define specialized pretty-printing routines for some of the
+objects we read for use by the tangler. Since they depend heavily on
+the specific representations, they're best defined alongside the readers.
+
+@l
+@<Define the function |set-tangle-dispatch|@>
+
 @ Next, we define a class of objects called {\it markers\/} that denote
 abstract objects in source code. Some of these objects, such as newlines
 and comments, are ones that would ordinarily be ignored by the reader.
@@ -1602,11 +1609,11 @@ syntax, as recommended (but not required) by section~2.4.6.1 of the
 {\sc ansi} standard.
 
 @l
-(set-pprint-dispatch `(cons (eql ,*backquote*))
+(set-tangle-dispatch `(cons (eql ,*backquote*))
   (lambda (stream list)
     (format stream "`~W" (cadr list))))
 
-(set-pprint-dispatch `(cons (member ,*comma* ,*comma-atsign* ,*comma-dot*))
+(set-tangle-dispatch `(cons (member ,*comma* ,*comma-atsign* ,*comma-dot*))
   (lambda (stream list)
     (format stream "~[,~;,@~;,.~]~W"
             (position (car list) `(,*comma* ,*comma-atsign* ,*comma-dot*))
@@ -1628,7 +1635,7 @@ of Franz,~Inc.\ for his help in diagnosing this issue.
           list))
 
 #+allegro
-(set-pprint-dispatch 'defun-like #'pprint-defun-like)
+(set-tangle-dispatch 'defun-like #'pprint-defun-like)
 
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
@@ -2714,6 +2721,17 @@ all.
                        :tests-file nil)
   nil)
 
+@ We'll use a custom pprint-dispatch table for tangling to avoid cluttering
+the default table.
+
+@<Global variables@>=
+(defparameter *tangle-pprint-dispatch* (copy-pprint-dispatch nil))
+
+@ @<Define the function |set-tangle-dispatch|@>=
+(defun set-tangle-dispatch (type-specifier function &optional (priority 0))
+  (set-pprint-dispatch type-specifier function priority ;
+                       *tangle-pprint-dispatch*))
+
 @ The file tangler operates by writing out the tangled code to a Lisp source
 file and then invoking the file compiler on that file. The arguments are
 essentially the same as those to |compile-file|, except for the
@@ -2747,6 +2765,7 @@ sections' code should be written.
              (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT." ;
                      input-file)
              (let ((*evaluating* nil)
+                   (*print-pprint-dispatch* *tangle-pprint-dispatch*)
                    (*print-marker* t)
                    (*print-level* nil))
                (dolist (form (tangle (unnamed-section-code-parts sections)))
