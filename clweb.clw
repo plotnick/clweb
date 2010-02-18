@@ -1130,44 +1130,33 @@ stored in the |value| slot, but often is.
 (defmethod marker-boundp ((marker marker))
   (slot-boundp marker 'value))
 
-@ We'll provide |print-object| methods for all of our marker classes. These
-methods are distinct from the pretty-printing routines used by the weaver,
-and usually less precise, in that they don't try to approximate the original
-source form. The idea of these methods is to produce a printed representation
-of an object that is semantically equivalent to the one originally specified.
-
-We'll also define also a global variable, |*print-marker*|, that controls
-the way markers are printed. If it is true (as it is by default), then
-markers will be printed as just described. If it is false, markers are
-printed using the unreadable `\.\#\<' notation. This can be useful for
-debugging some of the reader routines, but might break others, so be
-careful. Routines that depend on this being set should explicitly bind it.
-
-@<Global variables@>=
-(defvar *print-marker* t)
-
-@ The simple method defined here suffices for many marker types: it simply
-prints the marker's value if it is bound. Markers that require specialized
-printing will override this method.
+@ Here's a simple pretty-printing routine that suffices for many marker
+types: it simply prints the marker's value if it is bound. Markers that
+require specialized printing will override this method.
 
 @l
-(defmethod print-object ((obj marker) stream)
-  (if *print-marker*
-      (when (marker-boundp obj)
-        (write (marker-value obj) :stream stream))
-      (print-unreadable-object (obj stream :type t :identity t)
-        (when (marker-boundp obj)
-          (princ (marker-value obj) stream)))))
+(set-tangle-dispatch 'marker
+  (lambda (stream marker)
+    (when (marker-boundp marker)
+      (write (marker-value marker) :stream stream))))
 
 @t@l
 (deftest print-marker
-  (let ((*print-marker* t))
-    (format nil "~A" (make-instance 'marker :value :foo)))
-  "FOO")
+  (write-to-string (make-instance 'marker :value :foo)
+                   :pprint-dispatch *tangle-pprint-dispatch*
+                   :pretty t)
+  ":FOO")
+
+@t This |print-object| method is purely for debugging purposes.
+
+@l
+(defmethod print-object ((obj marker) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (when (marker-boundp obj)
+      (princ (marker-value obj) stream))))
 
 (deftest print-marker-unreadably
-  (let ((*print-marker* nil)
-        (*print-readably* t))
+  (let ((*print-readably* t))
     (handler-case (format nil "~W" (make-instance 'marker :value :foo))
       (print-not-readable (condition)
         (marker-value (print-not-readable-object condition)))))
@@ -1764,7 +1753,7 @@ form evaluated is lost, as only the result of the evaluation is returned.
 We want to preserve the form for both weaving and tangling to a file. But
 we also want to return the evaluated form as the |marker-value| when we're
 tangling for evaluation. So if we're not evaluating, we return a special
-`pseudo-marker' with a specialized |print-object| method. This gives us an
+`pseudo-marker' with a specialized pretty-printing method. This gives us an
 appropriate value in all three situations: during weaving, we have just
 another marker; when tangling for evaluation, we get the read-time-evaluated
 value; and in a tangled source file, we get a \.{\#.} form.
@@ -1773,10 +1762,9 @@ value; and in a tangled source file, we get a \.{\#.} form.
 (defclass read-time-eval ()
   ((form :reader read-time-eval-form :initarg :form)))
 
-(defmethod print-object ((obj read-time-eval) stream)
-  (if *print-marker*
-      (format stream "#.~W" (read-time-eval-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
+(set-tangle-dispatch 'read-time-eval
+  (lambda (stream obj)
+    (format stream "#.~W" (read-time-eval-form obj))))
 
 (defclass read-time-eval-marker (read-time-eval marker) ())
 
@@ -1802,9 +1790,10 @@ value; and in a tangled source file, we get a \.{\#.} form.
 @t@l
 (deftest (read-time-eval 1)
   (let* ((*read-eval* t)
-         (*evaluating* nil)
-         (*print-marker* t))
-    (prin1-to-string (marker-value (read-form-from-string "#.(+ 1 1)"))))
+         (*evaluating* nil))
+    (write-to-string (marker-value (read-form-from-string "#.(+ 1 1)"))
+                     :pprint-dispatch *tangle-pprint-dispatch*
+                     :pretty t))
   "#.(+ 1 1)")
 
 (deftest (read-time-eval 2)
@@ -1867,16 +1856,17 @@ parse it when we need the value.
 
 (defmethod marker-boundp ((marker structure-marker)) t)
 (defmethod marker-value ((marker structure-marker))
-  (let ((*print-pretty* nil)
-        (*print-readably* t)
-        (*print-marker* t)
-        (*readtable* (readtable-for-mode nil)))
-    (values (read-from-string (prin1-to-string marker)))))
+  (let ((*readtable* (readtable-for-mode nil)))
+    (values (read-from-string
+             (write-to-string marker
+                              :pprint-dispatch *tangle-pprint-dispatch*
+                              :pretty t
+                              :readably t)))))
 
-(defmethod print-object ((obj structure-marker) stream)
-  (if *print-marker*
-      (format stream "#S~W" (structure-marker-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
+(set-tangle-dispatch 'structure-marker
+  (lambda (stream obj)
+    (format stream "#S~W" (structure-marker-form obj)))
+  1)
 
 (defun structure-reader (stream sub-char arg)
   (declare (ignore sub-char arg))
@@ -1885,6 +1875,13 @@ parse it when we need the value.
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\S #'structure-reader ;
                                 (readtable-for-mode mode)))
+
+@t@l
+(defstruct person (name 007 :type string))
+(deftest structure-marker
+  (person-name (marker-value ;
+                (read-form-from-string "#S(person :name \"James\")")))
+  "James")
 
 @ Sharpsign + and~-- provide read-time conditionalization based on
 feature expressions, described in section~24.1.2 of the CL standard.
@@ -1930,13 +1927,12 @@ characters that the reader scans, and use that to reconstruct the form.
    (test :reader read-time-conditional-test :initarg :test)
    (form :reader read-time-conditional-form :initarg :form)))
 
-(defmethod print-object ((obj read-time-conditional) stream)
-  (if *print-marker*
-      (format stream "#~:[-~;+~]~S ~A"
-              (read-time-conditional-plusp obj)
-              (read-time-conditional-test obj)
-              (read-time-conditional-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
+(set-tangle-dispatch 'read-time-conditional
+  (lambda (stream obj)
+    (format stream "#~:[-~;+~]~S ~A"
+            (read-time-conditional-plusp obj)
+            (read-time-conditional-test obj)
+            (read-time-conditional-form obj))))
 
 (defclass read-time-conditional-marker (read-time-conditional marker) ())
 
@@ -1975,13 +1971,12 @@ characters that the reader scans, and use that to reconstruct the form.
 
 @t@l
 (deftest (read-time-conditional 1)
-  (let ((*features* '(:a))
-        (*evaluating* nil)
-        (*print-marker* t))
-    (values (prin1-to-string (marker-value (read-form-from-string "#+a 1")))
-            (prin1-to-string (marker-value (read-form-from-string "#-a 1")))))
-  "#+:A 1"
-  "#-:A 1")
+  (let* ((*evaluating* nil)
+         (conditional (marker-value (read-form-from-string "#-a 1"))))
+    (values (read-time-conditional-plusp conditional)
+            (read-time-conditional-test conditional)
+            (read-time-conditional-form conditional)))
+  nil :a "1")
 
 (deftest (read-time-conditional 2)
   (let ((*features* '(:a))
@@ -2766,7 +2761,6 @@ sections' code should be written.
                      input-file)
              (let ((*evaluating* nil)
                    (*print-pprint-dispatch* *tangle-pprint-dispatch*)
-                   (*print-marker* t)
                    (*print-level* nil))
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
