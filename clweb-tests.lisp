@@ -225,15 +225,39 @@
            (WITH-MODE :LISP
              (READ-MAYBE-NOTHING S)))
          NIL)
-(DEFTEST READ-BACKQUOTE
-         (LET ((MARKER (READ-FORM-FROM-STRING "`(a b c)")))
-           (AND (TYPEP MARKER 'BACKQUOTE-MARKER)
-                (EQUAL (EVAL (MARKER-VALUE MARKER)) '(A B C))))
+(DEFTEST (BQ 1)
+         (LET ((B 3))
+           (DECLARE (SPECIAL B))
+           (EQUAL
+            (EVAL (TANGLE (READ-FORM-FROM-STRING "`(a b ,b ,(+ b 1) b)")))
+            '(A B 3 4 B)))
          T)
-(DEFTEST READ-COMMA
-         (EQUAL (EVAL (MARKER-VALUE (READ-FORM-FROM-STRING "`(a ,@'(b c) d)")))
-                '(A B C D))
+(DEFTEST (BQ 2)
+         (LET ((X '(A B C)))
+           (DECLARE (SPECIAL X))
+           (EQUAL
+            (EVAL
+             (TANGLE
+              (READ-FORM-FROM-STRING
+               "`(x ,x ,@x foo ,(cadr x) bar ,(cdr x) baz ,@(cdr x))")))
+            '(X (A B C) A B C FOO B BAR (B C) BAZ B C)))
          T)
+(DEFUN R (X) (REDUCE #'* X))
+(DEFTEST (BQ NESTED)
+         (LET ((Q '(R S)) (R '(3 5)) (S '(4 6)))
+           (DECLARE (SPECIAL Q R S))
+           (VALUES (EVAL (EVAL (TANGLE (READ-FORM-FROM-STRING "``(,,q)"))))
+                   (EVAL (EVAL (TANGLE (READ-FORM-FROM-STRING "``(,@,q)"))))
+                   (EVAL (EVAL (TANGLE (READ-FORM-FROM-STRING "``(,,@q)"))))
+                   (EVAL (EVAL (TANGLE (READ-FORM-FROM-STRING "``(,@,@q)"))))))
+         (24) 24 ((3 5) (4 6)) (3 5 4 6))
+(DEFTEST (BQ VECTOR)
+         (LET ((A '(1 2 3)))
+           (DECLARE (SPECIAL A))
+           (VALUES (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(:a)")))
+                   (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(,a)")))
+                   (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(,@a)")))))
+         #(:A) #((1 2 3)) #(1 2 3))
 (DEFTEST READ-FUNCTION
          (LET ((MARKER (READ-FORM-FROM-STRING "#'identity")))
            (VALUES (QUOTED-FORM MARKER) (MARKER-VALUE MARKER)))
@@ -533,9 +557,9 @@
    FOO))
 (DEFINE-WALK-BINDING-TEST WALK-MACROLET
  (MACROLET ((FOO (X)
-              (CHECK-BINDING X :VARIABLE :LEXICAL))
+              `,(CHECK-BINDING X :VARIABLE :LEXICAL))
             (BAR (Y)
-              Y))
+              `,Y))
    (CHECK-BINDING FOO :FUNCTION :MACRO)
    (FOO :FOO))
  (MACROLET ((FOO (X)

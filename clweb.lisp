@@ -35,7 +35,6 @@
 (DEFVAR *CHARPOS-STREAMS* (MAKE-HASH-TABLE :TEST #'EQ))
 (DEFVAR *PRINT-MARKER* T)
 (DEFVAR *EVALUATING* NIL)
-(DEFVAR *RE-READING* NIL)
 (DEFVAR *WEAVE-VERBOSE* T)
 (DEFVAR *WEAVE-PRINT* T)
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
@@ -394,7 +393,7 @@
            &AUX (OUT (GENSYM)))
   `(WITH-OPEN-STREAM (,OUT (MAKE-STRING-OUTPUT-STREAM))
      (WITH-OPEN-STREAM (,VAR (MAKE-ECHO-STREAM ,STREAM ,OUT))
-       (FLET ((,REWIND ,NIL
+       (FLET ((,REWIND ()
                 (SETQ ,VAR
                         (MAKE-CONCATENATED-STREAM
                          (MAKE-STRING-INPUT-STREAM
@@ -416,8 +415,8 @@
                 (,RAW-OUTPUT (GET-OUTPUT-STREAM-STRING ,OUT))
                 (,LENGTH (LENGTH ,RAW-OUTPUT))
                 (,ECHOED
-                 (SUBSEQ ,RAW-OUTPUT ,0
-                         (IF (OR (EOF-P (PEEK-CHAR ,NIL ,REWIND NIL *EOF*))
+                 (SUBSEQ ,RAW-OUTPUT 0
+                         (IF (OR (EOF-P (PEEK-CHAR NIL ,REWIND NIL *EOF*))
                                  (TOKEN-DELIMITER-P
                                   (ELT ,RAW-OUTPUT (1- ,LENGTH))))
                              ,LENGTH
@@ -544,59 +543,68 @@
                                    #\Newline))
                          (WRITE-CHAR (READ-CHAR STREAM T NIL T) S))))))
 (SET-MACRO-CHARACTER #\; #'COMMENT-READER NIL (READTABLE-FOR-MODE :LISP))
-(DEFCLASS BACKQUOTE-MARKER (MARKER) ((FORM :READER BACKQ-FORM :INITARG :FORM)))
-(DEFMETHOD MARKER-BOUNDP ((MARKER BACKQUOTE-MARKER)) T)
-(DEFMETHOD MARKER-VALUE ((MARKER BACKQUOTE-MARKER))
-           (LET ((*PRINT-PRETTY* NIL)
-                 (*PRINT-READABLY* T)
-                 (*PRINT-MARKER* T)
-                 (*READTABLE* (READTABLE-FOR-MODE :INNER-LISP))
-                 (*RE-READING* T))
-             (VALUES (READ-FROM-STRING (PRIN1-TO-STRING MARKER)))))
-(DEFMETHOD PRINT-OBJECT ((OBJ BACKQUOTE-MARKER) STREAM)
-           (IF *PRINT-MARKER*
-               (FORMAT STREAM "`~W" (BACKQ-FORM OBJ))
-               (PRINT-UNREADABLE-OBJECT (OBJ STREAM :TYPE T :IDENTITY T))))
-(DEFUN BACKQUOTE-READER (STREAM CHAR)
-  (IF *RE-READING*
-      (FUNCALL (GET-MACRO-CHARACTER CHAR (READTABLE-FOR-MODE NIL)) STREAM CHAR)
-      (MAKE-INSTANCE 'BACKQUOTE-MARKER :FORM (READ STREAM T NIL T))))
+(DEFVAR *BACKQUOTE* (MAKE-SYMBOL "BACKQUOTE"))
+(DEFVAR *COMMA* (MAKE-SYMBOL "COMMA"))
+(DEFVAR *COMMA-ATSIGN* (MAKE-SYMBOL "COMMA-ATSIGN"))
+(DEFVAR *COMMA-DOT* (MAKE-SYMBOL "COMMA-DOT"))
 (DOLIST (MODE '(:LISP :INNER-LISP))
-  (SET-MACRO-CHARACTER #\` #'BACKQUOTE-READER NIL (READTABLE-FOR-MODE MODE)))
-(DEFMETHOD PRINT-OBJECT ((OBJ NAMED-SECTION) STREAM)
-           (FORMAT STREAM "@<~A@>" (SECTION-NAME OBJ)))
-(DEFCLASS COMMA-MARKER (MARKER)
-          ((FORM :READER COMMA-FORM :INITARG :FORM)
-           (MODIFIER :READER COMMA-MODIFIER :INITARG :MODIFIER))
-          (:DEFAULT-INITARGS :MODIFIER NIL))
-(DEFMETHOD MARKER-BOUNDP ((MARKER COMMA-MARKER)) T)
-(DEFMETHOD MARKER-VALUE ((MARKER COMMA-MARKER)) MARKER)
-(DEFMETHOD PRINT-OBJECT ((OBJ COMMA-MARKER) STREAM)
-           (IF *PRINT-MARKER*
-               (FORMAT STREAM ",~@[~C~]~W" (COMMA-MODIFIER OBJ)
-                       (COMMA-FORM OBJ))
-               (PRINT-UNREADABLE-OBJECT (OBJ STREAM :TYPE T :IDENTITY T))))
-(DEFUN COMMA-READER (STREAM CHAR)
-  (IF *RE-READING*
-      (FUNCALL (GET-MACRO-CHARACTER CHAR (READTABLE-FOR-MODE NIL)) STREAM CHAR)
-      (CASE (PEEK-CHAR NIL STREAM T NIL T)
-        ((#\@ #\.)
-         (MAKE-INSTANCE 'COMMA-MARKER :MODIFIER (READ-CHAR STREAM) :FORM
-                        (READ STREAM T NIL T)))
-        (T (MAKE-INSTANCE 'COMMA-MARKER :FORM (READ STREAM T NIL T))))))
-(DOLIST (MODE '(:LISP :INNER-LISP))
-  (SET-MACRO-CHARACTER #\, #'COMMA-READER NIL (READTABLE-FOR-MODE MODE)))
-(DEFUN PPRINT-LIST (STREAM LIST) (FORMAT STREAM "~:@<~/pprint-fill/~:>" LIST))
-(DEFUN PPRINT-COMMA (STREAM LIST)
-  (FORMAT STREAM "~[,~;,@~;,.~]~W"
-          (POSITION (CAR LIST)
-                    #+:ALLEGRO '(excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot)
-                    #-:ALLEGRO '(:comma :comma-atsign :comma-dot))
-          (CADR LIST)))
-#+:ALLEGRO (deftype comma () '(member excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot))
-#+:ALLEGRO (deftype broken-pprint-operators () '(member defun defmacro macrolet cond))
-#+:ALLEGRO (set-pprint-dispatch '(cons comma) #'pprint-comma)
-#+:ALLEGRO (set-pprint-dispatch '(cons broken-pprint-operators) #'pprint-list)
+  (SET-MACRO-CHARACTER #\`
+                       (LAMBDA (STREAM CHAR)
+                         (DECLARE (IGNORE CHAR))
+                         (LIST *BACKQUOTE* (READ STREAM T NIL T)))
+                       NIL (READTABLE-FOR-MODE MODE))
+  (SET-MACRO-CHARACTER #\,
+                       (LAMBDA (STREAM CHAR)
+                         (DECLARE (IGNORE CHAR))
+                         (CASE (PEEK-CHAR NIL STREAM T NIL T)
+                           (#\@
+                            (READ-CHAR STREAM T NIL T)
+                            (LIST *COMMA-ATSIGN* (READ STREAM T NIL T)))
+                           (#\.
+                            (READ-CHAR STREAM T NIL T)
+                            (LIST *COMMA-DOT* (READ STREAM T NIL T)))
+                           (OTHERWISE (LIST *COMMA* (READ STREAM T NIL T)))))
+                       NIL (READTABLE-FOR-MODE MODE)))
+(DEFMACRO BACKQUOTE (X) (BQ-PROCESS X))
+(SETF (MACRO-FUNCTION *BACKQUOTE*) (MACRO-FUNCTION 'BACKQUOTE))
+(DEFUN BQ-PROCESS (X &AUX (X (TANGLE X)))
+  (COND ((VECTORP X) `(APPLY #'VECTOR ,(BQ-PROCESS (COERCE X 'LIST))))
+        ((ATOM X) `',X)
+        ((EQ (CAR X) *BACKQUOTE*) (BQ-PROCESS (BQ-PROCESS (CADR X))))
+        ((EQ (CAR X) *COMMA*) (CADR X))
+        ((EQ (CAR X) *COMMA-ATSIGN*) (ERROR ",@~S after `" (CADR X)))
+        ((EQ (CAR X) *COMMA-DOT*) (ERROR ",.~S after `" (CADR X)))
+        (T
+         (DO ((P X (CDR P))
+              (Q 'NIL (CONS (BRACKET (CAR P)) Q)))
+             ((ATOM P)
+              (CONS 'APPEND (NRECONC Q (AND P (LIST (LIST 'QUOTE P))))))
+           (WHEN (EQ (CAR P) *COMMA*)
+             (UNLESS (NULL (CDDR P)) (ERROR "Malformed ,~S" P))
+             (RETURN (CONS 'APPEND (NRECONC Q (LIST (CADR P))))))
+           (WHEN (EQ (CAR P) *COMMA-ATSIGN*) (ERROR "Dotted ,@~S" P))
+           (WHEN (EQ (CAR P) *COMMA-DOT*) (ERROR "Dotted ,.~S" P))))))
+(DEFUN BRACKET (X)
+  (COND ((ATOM X) `(LIST ,(BQ-PROCESS X)))
+        ((EQ (CAR X) *COMMA*) `(LIST ,(CADR X)))
+        ((EQ (CAR X) *COMMA-ATSIGN*) (CADR X))
+        ((EQ (CAR X) *COMMA-DOT*) (CADR X)) (T `(LIST ,(BQ-PROCESS X)))))
+(SET-PPRINT-DISPATCH `(CONS (EQL ,*BACKQUOTE*))
+                     (LAMBDA (STREAM LIST) (FORMAT STREAM "`~W" (CADR LIST))))
+(SET-PPRINT-DISPATCH `(CONS (MEMBER ,*COMMA* ,*COMMA-ATSIGN* ,*COMMA-DOT*))
+                     (LAMBDA (STREAM LIST)
+                       (FORMAT STREAM "~[,~;,@~;,.~]~W"
+                               (POSITION (CAR LIST)
+                                         `(,*COMMA* ,*COMMA-ATSIGN*
+                                           ,*COMMA-DOT*))
+                               (CADR LIST))))
+(DEFTYPE DEFUN-LIKE ()
+  '(CONS (MEMBER DEFUN DEFMACRO DEFVAR DEFPARAMETER MACROLET COND)))
+(DEFUN PPRINT-DEFUN-LIKE (XP LIST &REST ARGS)
+  (DECLARE (IGNORE ARGS))
+  (FORMAT XP "~:<~3I~W~^ ~@_~W~^ ~:_~:/cl:pprint-fill/~^~1I~@{ ~_~W~^~}~:>"
+          LIST))
+#+:ALLEGRO (set-pprint-dispatch 'defun-like #'pprint-defun-like)
 (DEFCLASS FUNCTION-MARKER (QUOTE-MARKER) NIL)
 (DEFUN SHARPSIGN-QUOTE-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE SUB-CHAR ARG))
@@ -1466,13 +1474,15 @@
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\C{~/clweb::print-TeX/}"
                               (READ-TEX-FROM-STRING (COMMENT-TEXT OBJ)))))
-(SET-WEAVE-DISPATCH 'BACKQUOTE-MARKER
+(SET-WEAVE-DISPATCH `(CONS (EQL ,*BACKQUOTE*))
+                    (LAMBDA (STREAM OBJ) (FORMAT STREAM "\\`~W" (CADR OBJ))))
+(SET-WEAVE-DISPATCH `(CONS (MEMBER ,*COMMA* ,*COMMA-ATSIGN* ,*COMMA-DOT*))
                     (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM "\\`~W" (BACKQ-FORM OBJ))))
-(SET-WEAVE-DISPATCH 'COMMA-MARKER
-                    (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM "\\CO{~@[~C~]}~W" (COMMA-MODIFIER OBJ)
-                              (COMMA-FORM OBJ))))
+                      (FORMAT STREAM "\\CO{~[~;@~;.~]}~W"
+                              (POSITION (CAR OBJ)
+                                        `(,*COMMA* ,*COMMA-ATSIGN*
+                                          ,*COMMA-DOT*))
+                              (CADR OBJ))))
 (SET-WEAVE-DISPATCH 'FUNCTION-MARKER
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\#\\'~S" (QUOTED-FORM OBJ)))
@@ -1627,9 +1637,9 @@
 (MACROLET ((DEFINE-BLOCK-LIKE-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER WALKER) FORM ENV)
-                ,'`(,(CAR FORM)
-                    ,(WALK-ATOMIC-FORM WALKER :UNEVALUATED (CADR FORM) ENV)
-                    ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
+                `(,(CAR FORM)
+                  ,(WALK-ATOMIC-FORM WALKER :UNEVALUATED (CADR FORM) ENV)
+                  ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
   (DEFINE-BLOCK-LIKE-WALKER BLOCK)
   (DEFINE-BLOCK-LIKE-WALKER EVAL-WHEN)
   (DEFINE-BLOCK-LIKE-WALKER RETURN-FROM)
@@ -2282,22 +2292,22 @@
 (MACROLET ((DEFINE-DEFUN-LIKE-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
-                ,'`(,(CAR FORM)
-                    ,@(WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :OPERATOR
-                                              (CAR FORM) :DEF T)))))
+                `(,(CAR FORM)
+                  ,@(WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :OPERATOR
+                                            (CAR FORM) :DEF T)))))
   (DEFINE-DEFUN-LIKE-WALKER DEFUN)
   (DEFINE-DEFUN-LIKE-WALKER DEFMACRO))
 (MACROLET ((DEFINE-INDEXING-DEFVAR-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
-                ,'`(,(CAR FORM)
-                    ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                         (SYMBOL-PROVENANCE (CADR FORM))
-                       (WHEN SECTION
-                         (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION
-                                       :OPERATOR (CAR FORM) :SPECIAL T))
-                       SYMBOL)
-                    ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
+                `(,(CAR FORM)
+                  ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                       (SYMBOL-PROVENANCE (CADR FORM))
+                     (WHEN SECTION
+                       (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION
+                                     :OPERATOR (CAR FORM) :SPECIAL T))
+                     SYMBOL)
+                  ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
   (DEFINE-INDEXING-DEFVAR-WALKER DEFVAR)
   (DEFINE-INDEXING-DEFVAR-WALKER DEFPARAMETER)
   (DEFINE-INDEXING-DEFVAR-WALKER DEFCONSTANT))
@@ -2374,25 +2384,25 @@
                                        (LIST SYMBOL
                                              (MAKE-SUB-HEADING OPERATOR))
                                        SECTION :DEF T))
-                    ,'`(,OPERATOR
-                        ,(WALK-ATOMIC-FORM WALKER :CLASS-NAME SYMBOL ENV)
-                        ,(MAPCAR
-                          (LAMBDA (SUPER)
-                            (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                                (SYMBOL-PROVENANCE SUPER)
-                              (WHEN SECTION
-                                (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
-                                                 (LIST SYMBOL
-                                                       (MAKE-SUB-HEADING
-                                                        OPERATOR))
-                                                 SECTION))
-                              (WALK-ATOMIC-FORM WALKER :SUPERCLASS-NAME SYMBOL
-                                                ENV)))
-                          SUPERS)
-                        ,(MAPCAR
-                          (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
-                          SLOT-SPECS)
-                        ,@(WALK-LIST WALKER OPTIONS ENV)))))))
+                    `(,OPERATOR
+                      ,(WALK-ATOMIC-FORM WALKER :CLASS-NAME SYMBOL ENV)
+                      ,(MAPCAR
+                        (LAMBDA (SUPER)
+                          (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                              (SYMBOL-PROVENANCE SUPER)
+                            (WHEN SECTION
+                              (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
+                                               (LIST SYMBOL
+                                                     (MAKE-SUB-HEADING
+                                                      OPERATOR))
+                                               SECTION))
+                            (WALK-ATOMIC-FORM WALKER :SUPERCLASS-NAME SYMBOL
+                                              ENV)))
+                        SUPERS)
+                      ,(MAPCAR
+                        (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
+                        SLOT-SPECS)
+                      ,@(WALK-LIST WALKER OPTIONS ENV)))))))
   (DEFINE-DEFCLASS-WALKER DEFCLASS)
   (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION))
 (DEFUN WALK-SLOT-SPECIFIER (WALKER SPEC ENV)

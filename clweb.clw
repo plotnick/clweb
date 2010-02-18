@@ -1463,130 +1463,172 @@ line breaks in the source file that will not appear in the woven output.
      (read-maybe-nothing s)))
   nil)
 
-@ {\it Backquote\/} is hairy, and so we use a kludge to avoid implementing
-the whole thing. Our reader macro functions for |#\`| and |#\,| do the
-absolute minimum amount of processing necessary to be able to reconstruct
-the forms that were read. When the tangler asks for the |marker-value| of a
-backquote marker, we reconstruct the source form using the printer, then
-read it back in. The read is done using inner-Lisp mode so that we can
-pick up named section references, and we'll bind the global variable
-|*re-reading*| to true to avoid infinite regress.
+@ {\it Backquote\/} has formally defined semantics, but the representation
+is explicitly implementation-specific. We therefore need to supply our own
+backquote reader to ensure a consistent representation across implementations.
 
-Of course, this trick assumes read-print equivalence, but that's not
-unreasonable, since without it the file tangler won't work anyway. It's
-also the reason we need |print-object| methods for all the markers.
+This backquote implementation is based on Appendix~C of \cltl. It has been
+modified to conform to the overall style of this program, to support commas
+inside vectors, and to remove the code simplifier. This last is in the
+interest of simplicity: because we preserve backquotes during tangling, we
+can leave optimization to the Lisp implementation.
+
+@ The following are unique tokens used during processing. They need not be
+symbols; they need not even be atoms.
 
 @l
-(defclass backquote-marker (marker)
-  ((form :reader backq-form :initarg :form)))
+(defvar *backquote* (make-symbol "BACKQUOTE"))
+(defvar *comma* (make-symbol "COMMA"))
+(defvar *comma-atsign* (make-symbol "COMMA-ATSIGN"))
+(defvar *comma-dot* (make-symbol "COMMA-DOT"))
 
-(defmethod marker-boundp ((marker backquote-marker)) t)
-(defmethod marker-value ((marker backquote-marker))
-  (let ((*print-pretty* nil)
-        (*print-readably* t)
-        (*print-marker* t)
-        (*readtable* (readtable-for-mode :inner-lisp))
-        (*re-reading* t))
-    (values (read-from-string (prin1-to-string marker)))))
-
-(defmethod print-object ((obj backquote-marker) stream)
-  (if *print-marker*
-      (format stream "`~W" (backq-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
-
-(defun backquote-reader (stream char)
-  (if *re-reading*
-      (funcall (get-macro-character char (readtable-for-mode nil)) stream char)
-      (make-instance 'backquote-marker :form (read stream t nil t))))
-
+@ @l
 (dolist (mode '(:lisp :inner-lisp))
-  (set-macro-character #\` #'backquote-reader nil (readtable-for-mode mode)))
-
-@t@l
-(deftest read-backquote
-  (let ((marker (read-form-from-string "`(a b c)")))
-    (and (typep marker 'backquote-marker)
-         (equal (eval (marker-value marker)) '(a b c))))
-  t)
-
-@ @<Global variables@>=
-(defvar *re-reading* nil)
-
-@ In order to support named section references in backquoted forms, we
-need to be able to print them readably. The simple and obvious method
-works fine, since `readably' here means readable in inner-Lisp mode.
-
-@l
-(defmethod print-object ((obj named-section) stream)
-  (format stream "@<~A@>" (section-name obj)))
-
-@ {\it Comma\/} is really just part of the backquote-syntax, and so we're
-after the same goal as above: reconstructing just enough of the original
-source so that the reader can do what it would have done had we not been
-here in the first place.
-
-Note that comma markers are bound, but self-evaluating: they need to be
-printed and re-read as part of a backquote form to retrieve their actual
-value.
-
-@l
-(defclass comma-marker (marker)
-  ((form :reader comma-form :initarg :form)
-   (modifier :reader comma-modifier :initarg :modifier))
-  (:default-initargs :modifier nil))
-
-(defmethod marker-boundp ((marker comma-marker)) t)
-(defmethod marker-value ((marker comma-marker)) marker)
-
-(defmethod print-object ((obj comma-marker) stream)
-  (if *print-marker*
-      (format stream ",~@[~C~]~W" (comma-modifier obj) (comma-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
-
-(defun comma-reader (stream char)
-  (if *re-reading*
-      (funcall (get-macro-character char (readtable-for-mode nil)) stream char)
+  (set-macro-character #\`
+    (lambda (stream char)
+      (declare (ignore char))
+      (list *backquote* (read stream t nil t)))
+    nil (readtable-for-mode mode))
+  (set-macro-character #\,
+    (lambda (stream char)
+      (declare (ignore char))
       (case (peek-char nil stream t nil t)
-        ((#\@ #\.) (make-instance 'comma-marker
-                                  :modifier (read-char stream)
-                                  :form (read stream t nil t)))
-        (t (make-instance 'comma-marker :form (read stream t nil t))))))
+        (#\@ (read-char stream t nil t)
+             (list *comma-atsign* (read stream t nil t)))
+        (#\. (read-char stream t nil t)
+             (list *comma-dot* (read stream t nil t)))
+        (otherwise (list *comma* (read stream t nil t)))))
+    nil (readtable-for-mode mode)))
 
-(dolist (mode '(:lisp :inner-lisp))
-  (set-macro-character #\, #'comma-reader nil (readtable-for-mode mode)))
-
-@t@l
-(deftest read-comma
-  (equal (eval (marker-value (read-form-from-string "`(a ,@'(b c) d)")))
-         '(a b c d))
-  t)
-
-@ Allegro Common Lisp's pretty printer tries to be clever about certain
-forms, like |defun| and |cond|, which might have a list as their |cadr|.
-However, it fails to notice when such a list is one constructed by their
-reader for a comma. It therefore doesn't print such lists using the comma
-syntax, yielding forms that can't be read in other Lisps. The following
-pretty printing routines work around this problem.
+@ |#:backquote| is an ordinary macro (not a read-macro) that processes the
+expression~|x|, looking for occurrences of |#:comma|, |#:comma-atsign|,
+and~|#:comma-dot|. We use an uninterned symbol for |#:backquote| to avoid
+problems with macro expansion during indexing; the indexing code walker
+breaks symbol identity during macro expansion, but never for uninterned
+symbols.
 
 @l
-(defun pprint-list (stream list)
-  (format stream "~:@<~/pprint-fill/~:>" list))
+(defmacro backquote (x)
+  (bq-process x))
+(setf (macro-function *backquote*) (macro-function 'backquote))
 
-(defun pprint-comma (stream list)
-  (format stream "~[,~;,@~;,.~]~W"
-          (position (car list)
-                    #+allegro '(excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot)
-                    #-allegro '(:comma :comma-atsign :comma-dot))
-          (cadr list)))
+(defun bq-process (x &aux (x (tangle x)))
+  (cond ((vectorp x) `(apply #'vector ,(bq-process (coerce x 'list))))
+        ((atom x) `(quote ,x))
+        ((eq (car x) *backquote*) (bq-process (bq-process (cadr x))))
+        ((eq (car x) *comma*) (cadr x))
+        ((eq (car x) *comma-atsign*) (error ",@~S after `" (cadr x)))
+        ((eq (car x) *comma-dot*) (error ",.~S after `" (cadr x)))
+        (t @<Process the list |x| for backquotes and commas@>)))
+
+@ We do one simplification here which, although not strictly in accordance
+with the formal rules on pages~528--529 of~\cltl\ (section~2.4.6 of {\sc ansi}
+Common Lisp), is necessary in the presence of nested backquotes; viz.,~we
+will never append |(quote nil)| to the end of a list. This seems to be an
+error in the formal rules: in particular, reducing the case of a
+|nil|-terminated list to the general case of a dotted list appears to be
+overly simplistic.
+
+@<Process the list |x|...@>=
+(do ((p x (cdr p))
+     (q '() (cons (bracket (car p)) q)))
+    ((atom p)
+     (cons 'append (nreconc q (and p (list (list 'quote p))))))
+  (when (eq (car p) *comma*)
+    (unless (null (cddr p)) (error "Malformed ,~S" p))
+    (return (cons 'append (nreconc q (list (cadr p))))))
+  (when (eq (car p) *comma-atsign*)
+    (error "Dotted ,@~S" p))
+  (when (eq (car p) *comma-dot*)
+    (error "Dotted ,.~S" p)))
+
+@ This implements the bracket operator of the formal rules.
+
+@l
+(defun bracket (x)
+  (cond ((atom x) `(list ,(bq-process x)))
+        ((eq (car x) *comma*) `(list ,(cadr x)))
+        ((eq (car x) *comma-atsign*) (cadr x))
+        ((eq (car x) *comma-dot*) (cadr x))
+        (t `(list ,(bq-process x)))))
+
+@t The first two tests come from page~528 of \cltl; the third comes from
+Appendix~C.
+
+@l
+(deftest (bq 1)
+  (let ((b 3))
+    (declare (special b))
+    (equal (eval (tangle (read-form-from-string "`(a b ,b ,(+ b 1) b)")))
+           '(a b 3 4 b)))
+  t)
+
+(deftest (bq 2)
+  (let ((x '(a b c)))
+    (declare (special x))
+    (equal (eval (tangle
+                  (read-form-from-string ;
+                   "`(x ,x ,@x foo ,(cadr x) bar ,(cdr x) baz ,@(cdr x))")))
+           '(x (a b c) a b c foo b bar (b c) baz b c)))
+  t)
+
+(defun r (x) (reduce #'* x))
+(deftest (bq nested)
+  (let ((q '(r s))
+        (r '(3 5))
+        (s '(4 6)))
+    (declare (special q r s))
+    (values (eval (eval (tangle (read-form-from-string "``(,,q)"))))
+            (eval (eval (tangle (read-form-from-string "``(,@,q)"))))
+            (eval (eval (tangle (read-form-from-string "``(,,@q)"))))
+            (eval (eval (tangle (read-form-from-string "``(,@,@q)"))))))
+  (24)
+  24
+  ((3 5) (4 6))
+  (3 5 4 6))
+
+(deftest (bq vector)
+  (let ((a '(1 2 3)))
+    (declare (special a))
+    (values (eval (tangle (read-form-from-string "`#(:a)")))
+            (eval (tangle (read-form-from-string "`#(,a)")))
+            (eval (tangle (read-form-from-string "`#(,@a)")))))
+  #(:a)
+  #((1 2 3))
+  #(1 2 3))
+
+@ During tangling, we print backquotes and commas using the backquote
+syntax, as recommended (but not required) by section~2.4.6.1 of the
+{\sc ansi} standard.
+
+@l
+(set-pprint-dispatch `(cons (eql ,*backquote*))
+  (lambda (stream list)
+    (format stream "`~W" (cadr list))))
+
+(set-pprint-dispatch `(cons (member ,*comma* ,*comma-atsign* ,*comma-dot*))
+  (lambda (stream list)
+    (format stream "~[,~;,@~;,.~]~W"
+            (position (car list) `(,*comma* ,*comma-atsign* ,*comma-dot*))
+            (cadr list))))
+
+@ Allegro Common Lisp's pretty printer uses |pprint-fill| to print the
+|cadr| of |defun|-like forms, and therefore fails to print a form like
+|`(defun ,foo)| using a comma, since we represent commas using lists.
+The following is a work-around for this problem. Thanks to Duane Rettig
+of Franz,~Inc.\ for his help in diagnosing this issue.
+
+@l
+(deftype defun-like ()
+  '(cons (member defun defmacro defvar defparameter macrolet cond)))
+
+(defun pprint-defun-like (xp list &rest args)
+  (declare (ignore args))
+  (format xp "~:<~3I~W~^ ~@_~W~^ ~:_~:/cl:pprint-fill/~^~1I~@{ ~_~W~^~}~:>" ;
+          list))
 
 #+allegro
-(deftype comma () '(member excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot))
-#+allegro
-(deftype broken-pprint-operators () '(member defun defmacro macrolet cond))
-#+allegro
-(set-pprint-dispatch '(cons comma) #'pprint-comma)
-#+allegro
-(set-pprint-dispatch '(cons broken-pprint-operators) #'pprint-list)
+(set-pprint-dispatch 'defun-like #'pprint-defun-like)
 
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
@@ -1808,9 +1850,9 @@ the actual value, and store the radix in our marker.
   15)
 
 @ Sharpsign~S requires determining the standard constructor function of the
-structure type named, which we simply can't do portably. So we use the same
-trick we used for backquote above: we cache the form as given, then dump it
-out to a string and let the standard reader parse it when we need the value.
+structure type named, which we simply can't do portably. So we cache the
+form as given, then dump it out to a string and let the standard reader
+parse it when we need the value.
 
 @l
 (defclass structure-marker (marker)
@@ -3313,15 +3355,15 @@ which see.
             (read-TeX-from-string (comment-text obj)))))
 
 @ @l
-(set-weave-dispatch 'backquote-marker
+(set-weave-dispatch `(cons (eql ,*backquote*))
   (lambda (stream obj)
-    (format stream "\\`~W" (backq-form obj))))
+    (format stream "\\`~W" (cadr obj))))
 
-(set-weave-dispatch 'comma-marker
+(set-weave-dispatch `(cons (member ,*comma* ,*comma-atsign* ,*comma-dot*))
   (lambda (stream obj)
-    (format stream "\\CO{~@[~C~]}~W"
-            (comma-modifier obj)
-            (comma-form obj))))
+    (format stream "\\CO{~[~;@~;.~]}~W"
+            (position (car obj) `(,*comma* ,*comma-atsign* ,*comma-dot*))
+            (cadr obj))))
 
 @ @l
 (set-weave-dispatch 'function-marker
