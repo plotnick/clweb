@@ -2674,9 +2674,9 @@ this allows for incremental redefinition.
 @ Both |tangle-file| and |weave|, below, take a |tests-file| argument that
 has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
 then we use a pathname derived from the one given by merging in a default
-type (\.{"lisp"} in the case of tangling, \.{"tex"} for weaving). If it's
+type (\.{"LISP"} in the case of tangling, \.{"TEX"} for weaving). If it's
 not supplied, then we construct a pathname from the output file by
-appending the string \.{"-tests"} to its name component. Finally, if the
+appending the string \.{"-TESTS"} to its name component. Finally, if the
 argument is supplied and is |nil|, then no tests file will be written at
 all.
 
@@ -2688,9 +2688,9 @@ all.
       (merge-pathnames tests-file (make-pathname :type type :case :common))
       (unless tests-file-supplied-p
         (merge-pathnames
-         (make-pathname :name (concatenate 'string
+         (make-pathname :name (concatenate 'string ;
                                            (pathname-name output-file ;
-                                                          :case :common)
+                                                          :case :common) ;
                                            "-TESTS")
                         :type type
                         :case :common)
