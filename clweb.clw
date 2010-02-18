@@ -1467,7 +1467,7 @@ line breaks in the source file that will not appear in the woven output.
 is explicitly implementation-specific. We therefore need to supply our own
 backquote reader to ensure a consistent representation across implementations.
 
-This backquote implementation is based on Appendix~C of \cltl. It has been
+This backquote implementation is based on Appendix~C of~\cltl. It has been
 modified to conform to the overall style of this program, to support commas
 inside vectors, and to remove the code simplifier. This last is in the
 interest of simplicity: because we preserve backquotes during tangling, we
@@ -1552,7 +1552,7 @@ overly simplistic.
         ((eq (car x) *comma-dot*) (cadr x))
         (t `(list ,(bq-process x)))))
 
-@t The first two tests come from page~528 of \cltl; the third comes from
+@t The first two tests come from page~528 of~\cltl; the third comes from
 Appendix~C.
 
 @l
@@ -3439,7 +3439,7 @@ we'll describe as we come to them.
 @l
 @<Walker generic functions@>
 
-@ We'll use the environments {\sc api} defined in \cltl, since even
+@ We'll use the environments {\sc api} defined in~\cltl, since even
 though it's not part of the Common Lisp standard, it's widely supported,
 and does everything we need it to do.
 
@@ -3480,7 +3480,7 @@ implementation-specific; a portable version would be much more complex.
 returned from both |variable-information| and |function-information|.
 But instead of doing the sensible thing and adding that extra value at
 the {\it end\/} of the list of returned values, they {\it changed\/}
-the order from the one specified by \cltl, so that their new value is
+the order from the one specified by~\cltl, so that their new value is
 the second value returned, and what should be second is now fourth.
 Thanks, Franz!
 
