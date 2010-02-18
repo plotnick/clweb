@@ -8,7 +8,7 @@
 \def\WEB{{\tt WEB}}
 \def\CWEB{{\tt CWEB}}
 \def\CLWEB{{\tt CLWEB}}
-\def\EOF{{\sc EOF}}
+\def\EOF{{\sc eof}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\metasyn#1{$\langle${\it #1\/}$\rangle$} % metasyntactic variable
 \def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
