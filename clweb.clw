@@ -5421,8 +5421,10 @@ of all of the interesting symbols so encountered.
       (let ((heading (pprint-pop)))
         (cond ((symbolp heading) (format stream "\\(~W\\)" heading))
               (t (format stream "~[\\.~;\\9~]{~/clweb::print-TeX/}"
-                         (position (type-of heading) ;
-                                   '(tt-heading custom-heading))
+                         (typecase heading
+                           (tt-heading 0)
+                           (custom-heading 1)
+                           (otherwise -1))
                          (read-TeX-from-string (heading-name heading))))))
       (pprint-exit-if-list-exhausted)
       (write-char #\Space stream))))

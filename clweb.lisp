@@ -2462,7 +2462,10 @@
        (COND ((SYMBOLP HEADING) (FORMAT STREAM "\\(~W\\)" HEADING))
              (T
               (FORMAT STREAM "~[\\.~;\\9~]{~/clweb::print-TeX/}"
-                      (POSITION (TYPE-OF HEADING) '(TT-HEADING CUSTOM-HEADING))
+                      (TYPECASE HEADING
+                        (TT-HEADING 0)
+                        (CUSTOM-HEADING 1)
+                        (OTHERWISE -1))
                       (READ-TEX-FROM-STRING (HEADING-NAME HEADING))))))
      (PPRINT-EXIT-IF-LIST-EXHAUSTED)
      (WRITE-CHAR #\  STREAM))))
