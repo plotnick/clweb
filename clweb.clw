@@ -1631,7 +1631,7 @@ of Franz,~Inc.\ for his help in diagnosing this issue.
 
 @l
 (deftype defun-like ()
-  '(cons (member defun defmacro defvar defparameter macrolet cond)))
+  '(cons (member defun defmacro defvar defparameter macrolet)))
 
 (defun pprint-defun-like (xp list &rest args)
   (declare (ignore args))
@@ -1639,7 +1639,14 @@ of Franz,~Inc.\ for his help in diagnosing this issue.
           list))
 
 #+allegro
-(set-tangle-dispatch 'defun-like #'pprint-defun-like)
+(set-tangle-dispatch 'defun-like #'pprint-defun-like 1)
+
+@ Both Allegro Common Lisp and Clozure Common Lisp get |cond| wrong in
+basically the same way.
+
+@l
+#+(or allegro ccl)
+(set-tangle-dispatch '(cons (member cond)) (pprint-dispatch '(identity)) 1)
 
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to

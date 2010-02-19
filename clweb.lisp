@@ -394,7 +394,7 @@
            &AUX (OUT (GENSYM)))
   `(WITH-OPEN-STREAM (,OUT (MAKE-STRING-OUTPUT-STREAM))
      (WITH-OPEN-STREAM (,VAR (MAKE-ECHO-STREAM ,STREAM ,OUT))
-       (FLET ((,REWIND ,NIL
+       (FLET ((,REWIND ()
                 (SETQ ,VAR
                         (MAKE-CONCATENATED-STREAM
                          (MAKE-STRING-INPUT-STREAM
@@ -416,8 +416,8 @@
                 (,RAW-OUTPUT (GET-OUTPUT-STREAM-STRING ,OUT))
                 (,LENGTH (LENGTH ,RAW-OUTPUT))
                 (,ECHOED
-                 (SUBSEQ ,RAW-OUTPUT ,0
-                         (IF (OR (EOF-P (PEEK-CHAR ,NIL ,REWIND NIL *EOF*))
+                 (SUBSEQ ,RAW-OUTPUT 0
+                         (IF (OR (EOF-P (PEEK-CHAR NIL ,REWIND NIL *EOF*))
                                  (TOKEN-DELIMITER-P
                                   (ELT ,RAW-OUTPUT (1- ,LENGTH))))
                              ,LENGTH
@@ -433,8 +433,9 @@
     (MARKER))
 (DEFMETHOD MARKER-BOUNDP ((MARKER MARKER)) (SLOT-BOUNDP MARKER 'VALUE))
 (SET-TANGLE-DISPATCH 'MARKER
- (LAMBDA (STREAM MARKER)
-   (WHEN (MARKER-BOUNDP MARKER) (WRITE (MARKER-VALUE MARKER) :STREAM STREAM))))
+                     (LAMBDA (STREAM MARKER)
+                       (WHEN (MARKER-BOUNDP MARKER)
+                         (WRITE (MARKER-VALUE MARKER) :STREAM STREAM))))
 (DEFCLASS NEWLINE-MARKER (MARKER)
           ((INDENTATION :ACCESSOR INDENTATION :INITFORM NIL)))
 (DEFCLASS PAR-MARKER (NEWLINE-MARKER) NIL)
@@ -596,19 +597,23 @@
         ((EQ (CAR X) *COMMA-ATSIGN*) (CADR X))
         ((EQ (CAR X) *COMMA-DOT*) (CADR X)) (T `(LIST ,(BQ-PROCESS X)))))
 (SET-TANGLE-DISPATCH `(CONS (EQL ,*BACKQUOTE*))
- (LAMBDA (STREAM LIST) (FORMAT STREAM "`~W" (CADR LIST))))
+                     (LAMBDA (STREAM LIST) (FORMAT STREAM "`~W" (CADR LIST))))
 (SET-TANGLE-DISPATCH `(CONS (MEMBER ,*COMMA* ,*COMMA-ATSIGN* ,*COMMA-DOT*))
- (LAMBDA (STREAM LIST)
-   (FORMAT STREAM "~[,~;,@~;,.~]~W"
-           (POSITION (CAR LIST) `(,*COMMA* ,*COMMA-ATSIGN* ,*COMMA-DOT*))
-           (CADR LIST))))
+                     (LAMBDA (STREAM LIST)
+                       (FORMAT STREAM "~[,~;,@~;,.~]~W"
+                               (POSITION (CAR LIST)
+                                         `(,*COMMA* ,*COMMA-ATSIGN*
+                                           ,*COMMA-DOT*))
+                               (CADR LIST))))
 (DEFTYPE DEFUN-LIKE ()
-  '(CONS (MEMBER DEFUN DEFMACRO DEFVAR DEFPARAMETER MACROLET COND)))
+  '(CONS (MEMBER DEFUN DEFMACRO DEFVAR DEFPARAMETER MACROLET)))
 (DEFUN PPRINT-DEFUN-LIKE (XP LIST &REST ARGS)
   (DECLARE (IGNORE ARGS))
   (FORMAT XP "~:<~3I~W~^ ~@_~W~^ ~:_~:/cl:pprint-fill/~^~1I~@{ ~_~W~^~}~:>"
           LIST))
-#+:ALLEGRO (set-tangle-dispatch 'defun-like #'pprint-defun-like)
+#+:ALLEGRO (set-tangle-dispatch 'defun-like #'pprint-defun-like 1)
+#+(:OR :ALLEGRO
+   :CCL) (set-tangle-dispatch '(cons (member cond)) (pprint-dispatch '(identity)) 1)
 (DEFCLASS FUNCTION-MARKER (QUOTE-MARKER) NIL)
 (DEFUN SHARPSIGN-QUOTE-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE SUB-CHAR ARG))
@@ -674,7 +679,8 @@
 (DEFCLASS READ-TIME-EVAL NIL
           ((FORM :READER READ-TIME-EVAL-FORM :INITARG :FORM)))
 (SET-TANGLE-DISPATCH 'READ-TIME-EVAL
- (LAMBDA (STREAM OBJ) (FORMAT STREAM "#.~W" (READ-TIME-EVAL-FORM OBJ))))
+                     (LAMBDA (STREAM OBJ)
+                       (FORMAT STREAM "#.~W" (READ-TIME-EVAL-FORM OBJ))))
 (DEFCLASS READ-TIME-EVAL-MARKER (READ-TIME-EVAL MARKER) NIL)
 (DEFMETHOD MARKER-BOUNDP ((MARKER READ-TIME-EVAL-MARKER)) T)
 (DEFMETHOD MARKER-VALUE ((MARKER READ-TIME-EVAL-MARKER))
@@ -723,7 +729,9 @@
                                 *TANGLE-PPRINT-DISPATCH* :PRETTY T :READABLY
                                 T)))))
 (SET-TANGLE-DISPATCH 'STRUCTURE-MARKER
- (LAMBDA (STREAM OBJ) (FORMAT STREAM "#S~W" (STRUCTURE-MARKER-FORM OBJ))) 1)
+                     (LAMBDA (STREAM OBJ)
+                       (FORMAT STREAM "#S~W" (STRUCTURE-MARKER-FORM OBJ)))
+                     1)
 (DEFUN STRUCTURE-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE SUB-CHAR ARG))
   (MAKE-INSTANCE 'STRUCTURE-MARKER :FORM (READ STREAM T NIL T)))
@@ -750,9 +758,11 @@
            (TEST :READER READ-TIME-CONDITIONAL-TEST :INITARG :TEST)
            (FORM :READER READ-TIME-CONDITIONAL-FORM :INITARG :FORM)))
 (SET-TANGLE-DISPATCH 'READ-TIME-CONDITIONAL
- (LAMBDA (STREAM OBJ)
-   (FORMAT STREAM "#~:[-~;+~]~S ~A" (READ-TIME-CONDITIONAL-PLUSP OBJ)
-           (READ-TIME-CONDITIONAL-TEST OBJ) (READ-TIME-CONDITIONAL-FORM OBJ))))
+                     (LAMBDA (STREAM OBJ)
+                       (FORMAT STREAM "#~:[-~;+~]~S ~A"
+                               (READ-TIME-CONDITIONAL-PLUSP OBJ)
+                               (READ-TIME-CONDITIONAL-TEST OBJ)
+                               (READ-TIME-CONDITIONAL-FORM OBJ))))
 (DEFCLASS READ-TIME-CONDITIONAL-MARKER (READ-TIME-CONDITIONAL MARKER) NIL)
 (DEFMETHOD MARKER-BOUNDP ((MARKER READ-TIME-CONDITIONAL-MARKER))
            (IF *EVALUATING*
@@ -1633,9 +1643,9 @@
 (MACROLET ((DEFINE-BLOCK-LIKE-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER WALKER) FORM ENV)
-                ,'`(,(CAR FORM)
-                    ,(WALK-ATOMIC-FORM WALKER :UNEVALUATED (CADR FORM) ENV)
-                    ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
+                `(,(CAR FORM)
+                  ,(WALK-ATOMIC-FORM WALKER :UNEVALUATED (CADR FORM) ENV)
+                  ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
   (DEFINE-BLOCK-LIKE-WALKER BLOCK)
   (DEFINE-BLOCK-LIKE-WALKER EVAL-WHEN)
   (DEFINE-BLOCK-LIKE-WALKER RETURN-FROM)
@@ -2256,7 +2266,7 @@
                    (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV)
                    (WHEN (EQL CONTEXT :BINDING)
                      (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION
-                      :OPERATOR 'DEFVAR :SPECIAL NIL)))
+                                   :OPERATOR 'DEFVAR :SPECIAL NIL)))
                  SYMBOL)
                FORM))
 (DEFMETHOD WALK-COMPOUND-FORM :BEFORE
@@ -2288,22 +2298,22 @@
 (MACROLET ((DEFINE-DEFUN-LIKE-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
-                ,'`(,(CAR FORM)
-                    ,@(WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :OPERATOR
-                                              (CAR FORM) :DEF T)))))
+                `(,(CAR FORM)
+                  ,@(WALK-LAMBDA-EXPRESSION WALKER (CDR FORM) ENV :OPERATOR
+                                            (CAR FORM) :DEF T)))))
   (DEFINE-DEFUN-LIKE-WALKER DEFUN)
   (DEFINE-DEFUN-LIKE-WALKER DEFMACRO))
 (MACROLET ((DEFINE-INDEXING-DEFVAR-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
-                ,'`(,(CAR FORM)
-                    ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                         (SYMBOL-PROVENANCE (CADR FORM))
-                       (WHEN SECTION
-                         (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION
-                          :OPERATOR (CAR FORM) :SPECIAL T))
-                       SYMBOL)
-                    ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
+                `(,(CAR FORM)
+                  ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                       (SYMBOL-PROVENANCE (CADR FORM))
+                     (WHEN SECTION
+                       (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION
+                                     :OPERATOR (CAR FORM) :SPECIAL T))
+                     SYMBOL)
+                  ,@(WALK-LIST WALKER (CDDR FORM) ENV)))))
   (DEFINE-INDEXING-DEFVAR-WALKER DEFVAR)
   (DEFINE-INDEXING-DEFVAR-WALKER DEFPARAMETER)
   (DEFINE-INDEXING-DEFVAR-WALKER DEFCONSTANT))
@@ -2380,25 +2390,25 @@
                                        (LIST SYMBOL
                                              (MAKE-SUB-HEADING OPERATOR))
                                        SECTION :DEF T))
-                    ,'`(,OPERATOR
-                        ,(WALK-ATOMIC-FORM WALKER :CLASS-NAME SYMBOL ENV)
-                        ,(MAPCAR
-                          (LAMBDA (SUPER)
-                            (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                                (SYMBOL-PROVENANCE SUPER)
-                              (WHEN SECTION
-                                (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
-                                                 (LIST SYMBOL
-                                                       (MAKE-SUB-HEADING
-                                                        OPERATOR))
-                                                 SECTION))
-                              (WALK-ATOMIC-FORM WALKER :SUPERCLASS-NAME SYMBOL
-                                                ENV)))
-                          SUPERS)
-                        ,(MAPCAR
-                          (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
-                          SLOT-SPECS)
-                        ,@(WALK-LIST WALKER OPTIONS ENV)))))))
+                    `(,OPERATOR
+                      ,(WALK-ATOMIC-FORM WALKER :CLASS-NAME SYMBOL ENV)
+                      ,(MAPCAR
+                        (LAMBDA (SUPER)
+                          (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                              (SYMBOL-PROVENANCE SUPER)
+                            (WHEN SECTION
+                              (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
+                                               (LIST SYMBOL
+                                                     (MAKE-SUB-HEADING
+                                                      OPERATOR))
+                                               SECTION))
+                            (WALK-ATOMIC-FORM WALKER :SUPERCLASS-NAME SYMBOL
+                                              ENV)))
+                        SUPERS)
+                      ,(MAPCAR
+                        (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
+                        SLOT-SPECS)
+                      ,@(WALK-LIST WALKER OPTIONS ENV)))))))
   (DEFINE-DEFCLASS-WALKER DEFCLASS)
   (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION))
 (DEFUN WALK-SLOT-SPECIFIER (WALKER SPEC ENV)
@@ -2414,10 +2424,10 @@
                     (SYMBOL-PROVENANCE OPT-VALUE)
                   (WHEN SECTION
                     (INDEX-DEFUN (WALKER-INDEX WALKER) SYMBOL SECTION :OPERATOR
-                     'DEFMETHOD :GENERIC T)
+                                 'DEFMETHOD :GENERIC T)
                     (WHEN (EQL OPT-NAME :ACCESSOR)
                       (INDEX-DEFUN (WALKER-INDEX WALKER) `(SETF ,SYMBOL)
-                       SECTION :OPERATOR 'DEFMETHOD :GENERIC T)))))
+                                   SECTION :OPERATOR 'DEFMETHOD :GENERIC T)))))
        `(,(WALK-ATOMIC-FORM WALKER :SLOT-NAME NAME ENV)
          ,@(WALK-LIST WALKER OPTIONS ENV))))))
 (DEFUN INDEX-SECTIONS
@@ -2430,7 +2440,7 @@
 (SET-WEAVE-DISPATCH 'INDEX
                     (LAMBDA (STREAM INDEX)
                       (MAP-BST (LAMBDA (ENTRY) (WRITE ENTRY :STREAM STREAM))
-                       (INDEX-ENTRIES INDEX))))
+                               (INDEX-ENTRIES INDEX))))
 (SET-WEAVE-DISPATCH 'INDEX-ENTRY
                     (LAMBDA (STREAM ENTRY)
                       (FORMAT STREAM

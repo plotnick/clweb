@@ -574,9 +574,9 @@
    FOO))
 (DEFINE-WALK-BINDING-TEST WALK-MACROLET
  (MACROLET ((FOO (X)
-              (CHECK-BINDING X :VARIABLE :LEXICAL))
+              `,(CHECK-BINDING X :VARIABLE :LEXICAL))
             (BAR (Y)
-              Y))
+              `,Y))
    (CHECK-BINDING FOO :FUNCTION :MACRO)
    (FOO :FOO))
  (MACROLET ((FOO (X)
