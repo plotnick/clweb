@@ -1,60 +1,30 @@
 % -*-CLWEB-*-
-
-\newif\ifzapf \zapffalse
-\ifzapf
-\input palatino
-\input euler
-\font\tenrmr=pplr8r at 10pt % for non-ASCII characters
-\def\ldq{{\tenrmr \char'253}} % left guillemet
-\def\rdq{{\tenrmr \char'273}} % right guillemet
-\font\tenss=lopr8r at 10pt
-\font\tenssi=lopri8r at 10pt
-\font\tenssb=lopb8r at 10pt
-\let\cmntfont=\tenssi
-\mainfont
-\def\({\bgroup\IB\it} % use italics for inner-Lisp mode material
-\def\){\/\egroup}
-{\catcode`\(=\active \catcode`\)=\active
- % borrow Palatino's parenthesis for Lisp code
- \gdef({{\tenrm\char`\(}\kern.025em}
- \gdef){{\tenrm\char`\)}\kern.025em}}
-\def\csc#1{{\sc #1}}
-\def\lheader{\headertrue\mainfont\the\pageno\sc\qquad\grouptitle
-  \hfill\lowercase\expandafter{\jobname}\qquad
-  \mainfont\topsecno} % top line on left-hand pages
-\def\rheader{\headertrue\mainfont\topsecno
-  \sc\qquad\lowercase\expandafter{\jobname}\hfill
-  \grouptitle\qquad\mainfont\the\pageno} % top line on right-hand pages
-\def\grouptitle{\let\i=I\let\j=J\lowercase\expandafter{\expandafter
-                        \takethree\topmark}}
-\else
-\def\ldq{\relax} % left guillemet
-\def\rdq{\relax} % right guillemet
-\def\csc#1{{\sc\uppercase{#1}}}
-\fi
-
+\font\sc=cmcsc10
+\font\tenec=ecrm1000
+\def\ldq{{\tenec \char'23}} % left guillemet
+\def\rdq{{\tenec \char'24}} % right guillemet
 \def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
 \def\WEB{{\tt WEB}}
 \def\CWEB{{\tt CWEB}}
 \def\CLWEB{{\tt CLWEB}}
-\def\EOF{\csc{eof}}
+\def\EOF{{\sc eof}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\metasyn#1{$\langle${\it #1\/}$\rangle$} % metasyntactic variable
-\def\cltl{\csc{cl}t\csc{l}-2} % Common Lisp, the Language (2nd ed.)
+\def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
 
 @*Introduction. This is \CLWEB, a literate programming system for Common
 Lisp by Alex Plotnick \metasyn{plotnick@@cs.brandeis.edu}. It is modeled
 after the \CWEB\ system by Silvio Levy and Donald E.~Knuth, which was in
 turn adapted from Knuth's original \WEB\ system. It shares with those
-earlier systems not only their underlying philosophy, but also most of
-their syntax and control codes. Readers unfamiliar with either of them---or
-with literate programming in general---should consult the \CWEB\ manual or
-Knuth's {\it \ldq Literate Programming\rdq} (\csc{csli}:~1992).
+systems not only their underlying philosophy, but also most of their syntax.
+Readers unfamiliar with either of them---or with literate programming in
+general---should consult the \CWEB\ manual or Knuth's {\it \ldq Literate
+Programming\/\rdq} ({\sc csli}:~1992).
 
-This is a preliminary, $\alpha$-quality release of the system; for the
-latest version, please visit\par\noindent
-\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}.
+This is a priliminary, $\beta$-quality release of the system.
+To obtain the latest version, please visit\break
+\hbox{\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}}\,.
 
 @ A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
 control codes, but which is primary depends on your point of view. The
@@ -85,9 +55,9 @@ audiences by whom it must be read: the computer on the one hand, and the
 human programmers that must understand and maintain it on the other.
 
 Our tangler has two main interface functions: |tangle-file| and |load-web|.
-The first is analogous to |cl:compile-file|: given a file containing \CLWEB\
+The first is analogous to |compile-file|: given a file containing \CLWEB\
 source, it produces an output file that can be subsequently loaded into a
-Lisp image with |load|. The function |load-web| is analogous to |cl:load|,
+Lisp image with |load|. The function |load-web| is analogous to |load|,
 but also accepts \CLWEB\ source as input instead of ordinary Lisp source:
 it loads a web into the Lisp environment.
 
@@ -100,9 +70,11 @@ top-level tangler and weaver functions mentioned above, there's also
 |load-sections-from-temp-file|, which is conceptually part of the tangler,
 but is a special-purpose routine designed to be used in conjunction with an
 editor such as Emacs to provide incremental redefinition of sections; the
-user will generally never need to call it directly. The remainder of the
-exported symbols are condition classes for the various errors and warnings
-that might be signaled while processing a web.
+user will generally never need to call it directly. There's a flag,
+|*index-lexical-variables*|, that controls whether or not the indexer
+should create entries for lexical variables; the default is |nil|. The
+remainder of the exported symbols are condition classes for the various
+errors and warnings that might be signaled while processing a web.
 
 @l
 (provide "CLWEB")
@@ -120,6 +92,7 @@ that might be signaled while processing a web.
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "*INDEX-LEXICAL-VARIABLES*"
            "AMBIGUOUS-PREFIX-ERROR"
            "SECTION-NAME-CONTEXT-ERROR"
            "SECTION-NAME-USE-ERROR"
@@ -132,13 +105,13 @@ that might be signaled while processing a web.
 (in-package "CLWEB")
 
 @t*Test suite. The test suite for this system uses Richard Waters's
-\csc{rt} library, a copy of which is included in the distribution. For more
-information on \csc{rt}, see Richard C.~Waters, ``Supporting the Regression
+{\sc rt} library, a copy of which is included in the distribution. For more
+information on {\sc rt}, see Richard C.~Waters, ``Supporting the Regression
 Testing of Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991):
 47--53.
 
 We use the sleazy trick of manually importing the external symbols of
-the \csc{rt} package instead of the more sensible |(use-package "RT")|
+the {\sc rt} package instead of the more sensible |(use-package "RT")|
 because many compilers issue warnings when the use-list of a package
 changes, which would occur if the |defpackage| form above were evaluated
 after the tests have been loaded.
@@ -165,7 +138,7 @@ useful for functions that accept a list desginator.
 (defun ensure-list (object)
   (if (listp object) object (list object)))
 
-@ And here's one taken from \csc{pcl}: |mapappend| is like |mapcar| except
+@ And here's one taken from {\sc pcl}: |mapappend| is like |mapcar| except
 that the results are appended together.
 
 @l
@@ -255,10 +228,10 @@ its |commentary| slot; it will never have a code part.
 
 @ Whenever we create a non-test section, we store it in the global
 |*sections*| vector and set its number to its index therein. This means
-that section objects won't be collected by the \csc{gc} even after the
-tangling or weaving has completed, but there's a good reason: keeping them
-around allows incremental redefinition of a web, which is important for
-interactive development.
+that section objects won't be collected by the garbage collector even after
+the tangling or weaving has completed, but there's a good reason: keeping
+them around allows incremental redefinition of a web, which is important
+for interactive development.
 
 We'll also keep the global variable |*current-section*| pointing to the
 last section (test or not) created.
@@ -354,7 +327,7 @@ a hash table so that we can support abbreviations (see below).
    (right-child :accessor right-child :initarg :right))
   (:default-initargs :left nil :right nil))
 
-@ The primary interface to the \csc{bst} is the following routine, which
+@ The primary interface to the {\sc bst} is the following routine, which
 attempts to locate the node with key |item| in the tree rooted at |root|.
 If it is not already present and the |:insert-if-not-found| argument
 is true, a new node is created with that key and added to the tree. The
@@ -395,18 +368,18 @@ whether or not the node was already in the tree.
         (setf (right-child parent) node)))
   (values node nil))
 
-@ Besides searching, probably the most common operation on a \csc{bst} is
+@ Besides searching, probably the most common operation on a {\sc bst} is
 to traverse it in-order, applying some function to each node.
 
 @l
-(defgeneric maptree (function tree))
+(defgeneric map-bst (function tree))
 
-(defmethod maptree (function (tree (eql nil)))
+(defmethod map-bst (function (tree (eql nil)))
   (declare (ignore function)))
-(defmethod maptree (function (tree binary-search-tree))
-  (maptree function (left-child tree))
+(defmethod map-bst (function (tree binary-search-tree))
+  (map-bst function (left-child tree))
   (funcall function tree)
-  (maptree function (right-child tree)))
+  (map-bst function (right-child tree)))
 
 @t@l
 (deftest (bst 1)
@@ -428,7 +401,7 @@ to traverse it in-order, applying some function to each node.
     (let ((keys '()))
       (flet ((push-key (node)
                (push (node-key node) keys)))
-        (maptree #'push-key tree)
+        (map-bst #'push-key tree)
         (equal (nreverse keys)
                (remove-duplicates (sort numbers #'<))))))
   t)
@@ -444,10 +417,10 @@ of a named section as a sort of `virtual' section, which consists of a
 name, the combined code parts of all of the physical sections with that
 name, and the number of the first such section.
 
-And that's what we store in the \csc{bst}: nodes that look like sections,
+And that's what we store in the {\sc bst}: nodes that look like sections,
 inasmuch as they have specialized |section-name|, |section-code|, and
 |section-number| methods, but are not actually instances of the class
-|section|. The commentary and code is stored in the |section| instances
+|section|. The commentary and code are stored in the |section| instances
 that comprise a given named section: references to those sections are
 stored in the |sections| slot.
 
@@ -506,7 +479,7 @@ segment of the name.
 
 @ Next we need some special comparison routines for section names that
 might be abbreviations. We'll use these as the |:test| and |:predicate|
-functions, respectively, for our \csc{bst}.
+functions, respectively, for our {\sc bst}.
 
 @l
 (defun section-name-lessp (name1 name2)
@@ -603,9 +576,6 @@ trailing whitespace and replaces all runs of one or more whitespace
 characters with a single space.
 
 @l
-(defparameter *whitespace*
-  #.(coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'string))
-
 (unless (fboundp 'whitespacep) ; CCL, at least, provides a suitable definition
   (defun whitespacep (char) (find char *whitespace* :test #'char=)))
 
@@ -626,6 +596,17 @@ characters with a single space.
 (deftest (squeeze 1) (squeeze "abc") "abc")
 (deftest (squeeze 2) (squeeze "ab c") "ab c")
 (deftest (squeeze 3) (squeeze (format nil " a b ~C c " #\Tab)) "a b c")
+
+@ This list should contain the characters named `Space', `Tab', `Newline',
+`Linefeed', `Page', and~`Return', in that order. However, `Linefeed' might
+be the same character as `Newline' or `Return', and so might not appear as
+a distinct character. This is a known bug, caused by the fact that we're
+not currently overriding the character name reader.
+@^Bug, known@>
+
+@<Glob...@>=
+(defparameter *whitespace*
+  #.(coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'string))
 
 @ The next routine is our primary interface to named sections: it looks up
 a section by name in the tree, and creates a new one if no such section
@@ -872,7 +853,7 @@ reconstruct the original indentation.
 
 We'll define a {\it charpos stream\/} as an object that tracks the
 character position of an underlying stream. Note that these aren't
-instances of |cl:stream| (and can't be, without relying on an extension to
+instances of |stream| (and can't be, without relying on an extension to
 Common Lisp like Gray streams). But they contain a standard composite
 stream we'll call a {\it proxy stream} which is hooked up to the underlying
 stream whose position they're tracking, and it's these proxy streams that
@@ -880,26 +861,31 @@ we'll pass around, so that the standard stream functions will all work.
 
 @l
 (defclass charpos-stream ()
-  ((charpos :initarg :charpos)
-   (proxy-stream :accessor charpos-proxy-stream :initarg :proxy))
-  (:default-initargs :charpos 0))
+  ((charpos :initarg :charpos :initform 0)
+   (proxy-stream :accessor charpos-proxy-stream :initarg :proxy)))
 
-@ The \csc{gf} |charpos| returns the current character position of a charpos
+@ The {\sc gf} |charpos| returns the current character position of a charpos
 stream. It relies on the last calculated character position (stored in the
 |charpos| slot) and a buffer that stores the characters input or output
 since the last call to |charpos|, retrieved with |get-charpos-stream-buffer|.
+Tabs in the underlying stream are interpreted as advancing the column number
+to the next multiple of |*tab-width*|.
 
 @l
 (defgeneric get-charpos-stream-buffer (stream))
 
 (defgeneric charpos (stream))
 (defmethod charpos ((stream charpos-stream))
-  (let* ((buffer (get-charpos-stream-buffer stream))
-         (len (length buffer))
-         (newline (position #\Newline buffer :test #'char= :from-end t)))
-    (if newline
-        (setf (slot-value stream 'charpos) (- len 1 newline))
-        (incf (slot-value stream 'charpos) len))))
+  (with-slots (charpos) stream
+    (loop for char across (get-charpos-stream-buffer stream)
+          do (case char
+               (#\Tab (incf charpos (- *tab-width* (rem charpos *tab-width*))))
+               (#\Newline (setf charpos 0))
+               (t (incf charpos)))
+          finally (return charpos))))
+
+@ @<Glob...@>=
+(defvar *tab-width* 8)
 
 @ For tracking the character position of an input stream, our proxy stream
 will be an echo stream that takes input from the underlying stream and sends
@@ -908,8 +894,8 @@ its output to a string stream, which we'll use as our buffer.
 @l
 (defclass charpos-input-stream (charpos-stream) ())
 
-(defmethod shared-initialize :around ((instance charpos-input-stream) slot-names
-                                      &rest initargs &key stream)
+(defmethod shared-initialize :around ;
+    ((instance charpos-input-stream) slot-names &rest initargs &key stream)
   (apply #'call-next-method instance slot-names
          (list* :proxy (make-echo-stream
                         stream
@@ -927,8 +913,8 @@ given stream and a fresh string stream, again used as a buffer.
 @l
 (defclass charpos-output-stream (charpos-stream) ())
 
-(defmethod shared-initialize :around ((instance charpos-output-stream) slot-names
-                                      &rest initargs &key stream)
+(defmethod shared-initialize :around ;
+    ((instance charpos-output-stream) slot-names &rest initargs &key stream)
   (apply #'call-next-method instance slot-names
          (list* :proxy (make-broadcast-stream
                         (make-string-output-stream
@@ -948,8 +934,8 @@ maintain a mapping between them and their associated instances of
 (defvar *charpos-streams* (make-hash-table :test #'eq))
 
 @ @l
-(defmethod initialize-instance :after ((instance charpos-stream) ;
-                                       &rest initargs &key)
+(defmethod initialize-instance :after ;
+    ((instance charpos-stream) &rest initargs &key)
   (declare (ignore initargs))
   (setf (gethash (charpos-proxy-stream instance) *charpos-streams*) instance))
 
@@ -1011,16 +997,21 @@ is bound to a proxy stream the tracks the character position for |stream|.
 
 @t@l
 (deftest charpos-input-stream
-  (with-charpos-input-stream (s (make-string-input-stream
-                                 (format nil "012~%abc")))
-    (values (stream-charpos s)
-            (read-line s)
-            (stream-charpos s)
-            (read-char s)
-            (read-char s)
-            (read-char s)
-            (stream-charpos s)))
-  0 "012" 0 #\a #\b #\c 3)
+  (let ((*tab-width* 8))
+    (with-charpos-input-stream (s (make-string-input-stream
+                                   (format nil "012~%abc~C~C" #\Tab #\Tab)))
+      (values (stream-charpos s)
+              (read-line s)
+              (stream-charpos s)
+              (read-char s)
+              (read-char s)
+              (read-char s)
+              (stream-charpos s)
+              (read-char s)
+              (stream-charpos s)
+              (read-char s)
+              (stream-charpos s))))
+  0 "012" 0 #\a #\b #\c 3 #\Tab 8 #\Tab 16)
 
 (deftest charpos-output-stream
   (let ((string-stream (make-string-output-stream)))
@@ -1102,6 +1093,13 @@ concatenated onto the front of |stream| prior to reading.
     (values object chars))
   :foo ":foo")
 
+@ We'll define specialized pretty-printing routines for some of the
+objects we read for use by the tangler. Since they depend heavily on
+the specific representations, they're best defined alongside the readers.
+
+@l
+@<Define the function |set-tangle-dispatch|@>
+
 @ Next, we define a class of objects called {\it markers\/} that denote
 abstract objects in source code. Some of these objects, such as newlines
 and comments, are ones that would ordinarily be ignored by the reader.
@@ -1121,7 +1119,7 @@ varying degrees of accuracy, what was originally given in the source.
 If a marker is {\it bound}---i.e., if |marker-boundp| returns non-nil when
 called with it as an argument---then the tangler will call |marker-value|
 to obtain the associated value. (The weaver will never ask for a marker's
-value). Otherwise, the marker will be silently dropped from its containing
+value.) Otherwise, the marker will be silently dropped from its containing
 form; this is used, e.g., for newlines and comments. The value need not be
 stored in the |value| slot, but often is.
 
@@ -1134,44 +1132,33 @@ stored in the |value| slot, but often is.
 (defmethod marker-boundp ((marker marker))
   (slot-boundp marker 'value))
 
-@ We'll provide |print-object| methods for all of our marker classes. These
-methods are distinct from the pretty-printing routines used by the weaver,
-and usually less precise, in that they don't try to approximate the original
-source form. The idea of these methods is to produce a printed representation
-of an object that is semantically equivalent to the one originally specified.
-
-We'll also define also a global variable, |*print-marker*|, that controls
-the way markers are printed. If it is true (as it is by default), then
-markers will be printed as just described. If it is false, markers are
-printed using the unreadable `\.\#\<' notation. This can be useful for
-debugging some of the reader routines, but might break others, so be
-careful. Routines that depend on this being set should explicitly bind it.
-
-@<Global variables@>=
-(defvar *print-marker* t)
-
-@ The simple method defined here suffices for many marker types: it simply
-prints the marker's value if it is bound. Markers that require specialized
-printing will override this method.
+@ Here's a simple pretty-printing routine that suffices for many marker
+types: it simply prints the marker's value if it is bound. Markers that
+require specialized printing will override this method.
 
 @l
-(defmethod print-object ((obj marker) stream)
-  (if *print-marker*
-      (when (marker-boundp obj)
-        (write (marker-value obj) :stream stream))
-      (print-unreadable-object (obj stream :type t :identity t)
-        (when (marker-boundp obj)
-          (princ (marker-value obj) stream)))))
+(set-tangle-dispatch 'marker
+  (lambda (stream marker)
+    (when (marker-boundp marker)
+      (write (marker-value marker) :stream stream))))
 
 @t@l
 (deftest print-marker
-  (let ((*print-marker* t))
-    (format nil "~A" (make-instance 'marker :value :foo)))
-  "FOO")
+  (write-to-string (make-instance 'marker :value :foo)
+                   :pprint-dispatch *tangle-pprint-dispatch*
+                   :pretty t)
+  ":FOO")
+
+@t This |print-object| method is purely for debugging purposes.
+
+@l
+(defmethod print-object ((obj marker) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (when (marker-boundp obj)
+      (princ (marker-value obj) stream))))
 
 (deftest print-marker-unreadably
-  (let ((*print-marker* nil)
-        (*print-readably* t))
+  (let ((*print-readably* t))
     (handler-case (format nil "~W" (make-instance 'marker :value :foo))
       (print-not-readable (condition)
         (marker-value (print-not-readable-object condition)))))
@@ -1187,7 +1174,9 @@ evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}.
 
 @ Our first marker is for newlines, which we preserve for the purposes of
 indentation. They are represented in code forms by an unbound marker, so
-the tangler will ignore them.
+the tangler will ignore them. We'll interpret two newlines in a row as
+ending a paragraph, as in \TeX; the weaver will insert a bit of extra
+vertical space when it encounters such markers.
 
 Note that we don't set a macro character for |#\Newline| in inner-Lisp mode,
 since indentation is completely ignored there.
@@ -1195,13 +1184,17 @@ since indentation is completely ignored there.
 @l
 (defclass newline-marker (marker)
   ((indentation :accessor indentation :initform nil)))
+(defclass par-marker (newline-marker) ())
 (defun newlinep (obj) (typep obj 'newline-marker))
 
 (set-macro-character #\Newline
-                     (lambda (stream char)
-                       (declare (ignore stream char))
-                       (make-instance 'newline-marker))
-                     nil (readtable-for-mode :lisp))
+  (lambda (stream char)
+    (declare (ignore char))
+    (case (peek-char nil stream nil *eof* t)
+      (#\Newline (read-char stream t nil t)
+                 (make-instance 'par-marker))
+      (otherwise (make-instance 'newline-marker))))
+  nil (readtable-for-mode :lisp))
 
 @t@l
 (deftest read-newline
@@ -1209,8 +1202,14 @@ since indentation is completely ignored there.
               (with-mode :lisp (read s))))
   t)
 
+(deftest read-par
+  (typep (with-input-from-string (s (format nil "~%~%"))
+           (with-mode :lisp (read s)))
+         'par-marker)
+  t)
+
 @ The rest of the reader macro functions for standard macro characters are
-defined in the order given in section~2.4 of the \csc{ansi} Common Lisp
+defined in the order given in section~2.4 of the {\sc ansi} Common Lisp
 standard. We override all of the standard macro characters except |#\)|
 and~|#\"| (the former because the standard reader macro function just
 signals an error, which is fine, and the latter because we don't need
@@ -1234,8 +1233,9 @@ reader tests will involve reading a single form in Lisp mode.
            (read ,charpos-stream ,eof-error-p ,eof-value)))))
 
 (defun read-form-from-string (string &key (mode :lisp))
-  (with-mode mode
-    (read-from-string-with-charpos string)))
+  (let ((*package* (find-package "CLWEB")))
+    (with-mode mode
+      (read-from-string-with-charpos string))))
 
 @ {\it Left-Parenthesis.} We have two different kinds of markers for lists.
 The first is one for empty lists, so that we can maintain a distinction
@@ -1473,131 +1473,173 @@ line breaks in the source file that will not appear in the woven output.
      (read-maybe-nothing s)))
   nil)
 
-@ {\it Backquote\/} is hairy, and so we use a kludge to avoid implementing
-the whole thing. Our reader macro functions for |#\`| and |#\,| do the
-absolute minimum amount of processing necessary to be able to reconstruct
-the forms that were read. When the tangler asks for the |marker-value| of a
-backquote marker, we reconstruct the source form using the printer, then
-read it back in. The read is done using inner-Lisp mode so that we can
-pick up named section references, and we'll bind the global variable
-|*re-reading*| to true to avoid infinite regress.
+@ {\it Backquote\/} has formally defined semantics, but the representation
+is explicitly implementation-specific. We therefore need to supply our own
+backquote reader to ensure a consistent representation across implementations.
 
-Of course, this trick assumes read-print equivalence, but that's not
-unreasonable, since without it the file tangler won't work anyway. It's
-also the reason we need |print-object| methods for all the markers.
+This backquote implementation is based on Appendix~C of~\cltl. It has been
+modified to conform to the overall style of this program, to support commas
+inside vectors, and to remove the code simplifier. This last is in the
+interest of simplicity: because we preserve backquotes during tangling, we
+can leave optimization to the Lisp implementation.
+
+@ The following are unique tokens used during processing. They need not be
+symbols; they need not even be atoms.
 
 @l
-(defclass backquote-marker (marker)
-  ((form :reader backq-form :initarg :form)))
+(defvar *backquote* (make-symbol "BACKQUOTE"))
+(defvar *comma* (make-symbol "COMMA"))
+(defvar *comma-atsign* (make-symbol "COMMA-ATSIGN"))
+(defvar *comma-dot* (make-symbol "COMMA-DOT"))
 
-(defmethod marker-boundp ((marker backquote-marker)) t)
-(defmethod marker-value ((marker backquote-marker))
-  (let ((*print-pretty* nil)
-        (*print-readably* t)
-        (*print-marker* t)
-        (*readtable* (readtable-for-mode :inner-lisp))
-        (*re-reading* t)
-        #+ccl (ccl::*backquote-expand* t))
-    (values (tangle (read-from-string (prin1-to-string marker))))))
-
-(defmethod print-object ((obj backquote-marker) stream)
-  (if *print-marker*
-      (format stream "`~W" (backq-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
-
-(defun backquote-reader (stream char)
-  (if *re-reading*
-      (funcall (get-macro-character char (readtable-for-mode nil)) stream char)
-      (make-instance 'backquote-marker :form (read stream t nil t))))
-
+@ @l
 (dolist (mode '(:lisp :inner-lisp))
-  (set-macro-character #\` #'backquote-reader nil (readtable-for-mode mode)))
+  (set-macro-character #\`
+    (lambda (stream char)
+      (declare (ignore char))
+      (list *backquote* (read stream t nil t)))
+    nil (readtable-for-mode mode))
 
-@t@l
-(deftest read-backquote
-  (let ((marker (read-form-from-string "`(a b c)")))
-    (and (typep marker 'backquote-marker)
-         (equal (eval (marker-value marker)) '(a b c))))
-  t)
-
-@ @<Global variables@>=
-(defvar *re-reading* nil)
-
-@ In order to support named section references in backquoted forms, we
-need to be able to print them readably. The simple and obvious method
-works fine, since `readably' here means readable in inner-Lisp mode.
-
-@l
-(defmethod print-object ((obj named-section) stream)
-  (format stream "@<~A@>" (section-name obj)))
-
-@ {\it Comma\/} is really just part of the backquote-syntax, and so we're
-after the same goal as above: reconstructing just enough of the original
-source so that the reader can do what it would have done had we not been
-here in the first place.
-
-Note that comma markers are bound, but self-evaluating: they need to be
-printed and re-read as part of a backquote form to retrieve their actual
-value.
-
-@l
-(defclass comma-marker (marker)
-  ((form :reader comma-form :initarg :form)
-   (modifier :reader comma-modifier :initarg :modifier))
-  (:default-initargs :modifier nil))
-
-(defmethod marker-boundp ((marker comma-marker)) t)
-(defmethod marker-value ((marker comma-marker)) marker)
-
-(defmethod print-object ((obj comma-marker) stream)
-  (if *print-marker*
-      (format stream ",~@[~C~]~W" (comma-modifier obj) (comma-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
-
-(defun comma-reader (stream char)
-  (if *re-reading*
-      (funcall (get-macro-character char (readtable-for-mode nil)) stream char)
+  (set-macro-character #\,
+    (lambda (stream char)
+      (declare (ignore char))
       (case (peek-char nil stream t nil t)
-        ((#\@ #\.) (make-instance 'comma-marker
-                                  :modifier (read-char stream)
-                                  :form (read stream t nil t)))
-        (t (make-instance 'comma-marker :form (read stream t nil t))))))
+        (#\@ (read-char stream t nil t)
+             (list *comma-atsign* (read stream t nil t)))
+        (#\. (read-char stream t nil t)
+             (list *comma-dot* (read stream t nil t)))
+        (otherwise (list *comma* (read stream t nil t)))))
+    nil (readtable-for-mode mode)))
 
-(dolist (mode '(:lisp :inner-lisp))
-  (set-macro-character #\, #'comma-reader nil (readtable-for-mode mode)))
-
-@t@l
-(deftest read-comma
-  (equal (eval (marker-value (read-form-from-string "`(a ,@'(b c) d)")))
-         '(a b c d))
-  t)
-
-@ Allegro Common Lisp's pretty printer tries to be clever about certain
-forms, like |defun| and |cond|, which might have a list as their |cadr|.
-However, it fails to notice when such a list is one constructed by their
-reader for a comma. It therefore doesn't print such lists using the comma
-syntax, yielding forms that can't be read in other Lisps. The following
-pretty printing routines work around this problem.
+@ |#:backquote| is an ordinary macro (not a read-macro) that processes the
+expression~|x|, looking for occurrences of |#:comma|, |#:comma-atsign|,
+and~|#:comma-dot|. We use an uninterned symbol for |#:backquote| to avoid
+problems with macro expansion during indexing; the indexing code walker
+breaks symbol identity during macro expansion, but never for uninterned
+symbols.
 
 @l
-(defun pprint-list (stream list)
-  (format stream "~:@<~/pprint-fill/~:>" list))
+(defmacro backquote (x)
+  (bq-process x))
+(setf (macro-function *backquote*) (macro-function 'backquote))
 
-(defun pprint-comma (stream list)
-  (format stream "~[,~;,@~;,.~]~W"
-          (position (car list)
-                    #+allegro '(excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot)
-                    #-allegro '(:comma :comma-atsign :comma-dot))
-          (cadr list)))
+(defun bq-process (x &aux (x (tangle x)))
+  (cond ((vectorp x) `(apply #'vector ,(bq-process (coerce x 'list))))
+        ((atom x) `(quote ,x))
+        ((eq (car x) *backquote*) (bq-process (bq-process (cadr x))))
+        ((eq (car x) *comma*) (cadr x))
+        ((eq (car x) *comma-atsign*) (error ",@~S after `" (cadr x)))
+        ((eq (car x) *comma-dot*) (error ",.~S after `" (cadr x)))
+        (t @<Process the list |x| for backquotes and commas@>)))
+
+@ We do one simplification here which, although not strictly in accordance
+with the formal rules on pages~528--529 of~\cltl\ (section~2.4.6 of {\sc ansi}
+Common Lisp), is necessary in the presence of nested backquotes; viz.,~we
+will never append |(quote nil)| to the end of a list. This seems to be an
+error in the formal rules: in particular, reducing the case of a
+|nil|-terminated list to the general case of a dotted list appears to be
+overly simplistic.
+
+@<Process the list |x|...@>=
+(do ((p x (cdr p))
+     (q '() (cons (bracket (car p)) q)))
+    ((atom p)
+     (cons 'append (nreconc q (and p (list (list 'quote p))))))
+  (when (eq (car p) *comma*)
+    (unless (null (cddr p)) (error "Malformed ,~S" p))
+    (return (cons 'append (nreconc q (list (cadr p))))))
+  (when (eq (car p) *comma-atsign*)
+    (error "Dotted ,@~S" p))
+  (when (eq (car p) *comma-dot*)
+    (error "Dotted ,.~S" p)))
+
+@ This implements the bracket operator of the formal rules.
+
+@l
+(defun bracket (x)
+  (cond ((atom x) `(list ,(bq-process x)))
+        ((eq (car x) *comma*) `(list ,(cadr x)))
+        ((eq (car x) *comma-atsign*) (cadr x))
+        ((eq (car x) *comma-dot*) (cadr x))
+        (t `(list ,(bq-process x)))))
+
+@t The first two tests come from page~528 of~\cltl; the third comes from
+Appendix~C.
+
+@l
+(deftest (bq 1)
+  (let ((b 3))
+    (declare (special b))
+    (equal (eval (tangle (read-form-from-string "`(a b ,b ,(+ b 1) b)")))
+           '(a b 3 4 b)))
+  t)
+
+(deftest (bq 2)
+  (let ((x '(a b c)))
+    (declare (special x))
+    (equal (eval (tangle
+                  (read-form-from-string ;
+                   "`(x ,x ,@x foo ,(cadr x) bar ,(cdr x) baz ,@(cdr x))")))
+           '(x (a b c) a b c foo b bar (b c) baz b c)))
+  t)
+
+(defun r (x) (reduce #'* x))
+(deftest (bq nested)
+  (let ((q '(r s))
+        (r '(3 5))
+        (s '(4 6)))
+    (declare (special q r s))
+    (values (eval (eval (tangle (read-form-from-string "``(,,q)"))))
+            (eval (eval (tangle (read-form-from-string "``(,@,q)"))))
+            (eval (eval (tangle (read-form-from-string "``(,,@q)"))))
+            (eval (eval (tangle (read-form-from-string "``(,@,@q)"))))))
+  (24)
+  24
+  ((3 5) (4 6))
+  (3 5 4 6))
+
+(deftest (bq vector)
+  (let ((a '(1 2 3)))
+    (declare (special a))
+    (values (eval (tangle (read-form-from-string "`#(:a)")))
+            (eval (tangle (read-form-from-string "`#(,a)")))
+            (eval (tangle (read-form-from-string "`#(,@a)")))))
+  #(:a)
+  #((1 2 3))
+  #(1 2 3))
+
+@ During tangling, we print backquotes and commas using the backquote
+syntax, as recommended (but not required) by section~2.4.6.1 of the
+{\sc ansi} standard.
+
+@l
+(set-tangle-dispatch `(cons (eql ,*backquote*))
+  (lambda (stream list)
+    (format stream "`~W" (cadr list))))
+
+(set-tangle-dispatch `(cons (member ,*comma* ,*comma-atsign* ,*comma-dot*))
+  (lambda (stream list)
+    (format stream "~[,~;,@~;,.~]~W"
+            (position (car list) `(,*comma* ,*comma-atsign* ,*comma-dot*))
+            (cadr list))))
+
+@ Allegro Common Lisp's pretty printer uses |pprint-fill| to print the
+|cadr| of |defun|-like forms, and therefore fails to print a form like
+|`(defun ,foo)| using a comma, since we represent commas using lists.
+The following is a work-around for this problem. Thanks to Duane Rettig
+of Franz,~Inc.\ for his help in diagnosing this issue.
+
+@l
+(deftype defun-like ()
+  '(cons (member defun defmacro defvar defparameter macrolet cond)))
+
+(defun pprint-defun-like (xp list &rest args)
+  (declare (ignore args))
+  (format xp "~:<~3I~W~^ ~@_~W~^ ~:_~:/cl:pprint-fill/~^~1I~@{ ~_~W~^~}~:>" ;
+          list))
 
 #+allegro
-(deftype comma () '(member excl::bq-comma excl::bq-comma-atsign excl::bq-comma-dot))
-#+allegro
-(deftype broken-pprint-operators () '(member defun defmacro macrolet cond))
-#+allegro
-(set-pprint-dispatch '(cons comma) #'pprint-comma)
-#+allegro
-(set-pprint-dispatch '(cons broken-pprint-operators) #'pprint-list)
+(set-tangle-dispatch 'defun-like #'pprint-defun-like)
 
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
@@ -1726,7 +1768,7 @@ form evaluated is lost, as only the result of the evaluation is returned.
 We want to preserve the form for both weaving and tangling to a file. But
 we also want to return the evaluated form as the |marker-value| when we're
 tangling for evaluation. So if we're not evaluating, we return a special
-`pseudo-marker' with a specialized |print-object| method. This gives us an
+`pseudo-marker' with a specialized pretty-printing method. This gives us an
 appropriate value in all three situations: during weaving, we have just
 another marker; when tangling for evaluation, we get the read-time-evaluated
 value; and in a tangled source file, we get a \.{\#.} form.
@@ -1735,10 +1777,9 @@ value; and in a tangled source file, we get a \.{\#.} form.
 (defclass read-time-eval ()
   ((form :reader read-time-eval-form :initarg :form)))
 
-(defmethod print-object ((obj read-time-eval) stream)
-  (if *print-marker*
-      (format stream "#.~W" (read-time-eval-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
+(set-tangle-dispatch 'read-time-eval
+  (lambda (stream obj)
+    (format stream "#.~W" (read-time-eval-form obj))))
 
 (defclass read-time-eval-marker (read-time-eval marker) ())
 
@@ -1764,9 +1805,10 @@ value; and in a tangled source file, we get a \.{\#.} form.
 @t@l
 (deftest (read-time-eval 1)
   (let* ((*read-eval* t)
-         (*evaluating* nil)
-         (*print-marker* t))
-    (prin1-to-string (marker-value (read-form-from-string "#.(+ 1 1)"))))
+         (*evaluating* nil))
+    (write-to-string (marker-value (read-form-from-string "#.(+ 1 1)"))
+                     :pprint-dispatch *tangle-pprint-dispatch*
+                     :pretty t))
   "#.(+ 1 1)")
 
 (deftest (read-time-eval 2)
@@ -1819,9 +1861,9 @@ the actual value, and store the radix in our marker.
   15)
 
 @ Sharpsign~S requires determining the standard constructor function of the
-structure type named, which we simply can't do portably. So we use the same
-trick we used for backquote above: we cache the form as given, then dump it
-out to a string and let the standard reader parse it when we need the value.
+structure type named, which we simply can't do portably. So we cache the
+form as given, then dump it out to a string and let the standard reader
+parse it when we need the value.
 
 @l
 (defclass structure-marker (marker)
@@ -1829,16 +1871,17 @@ out to a string and let the standard reader parse it when we need the value.
 
 (defmethod marker-boundp ((marker structure-marker)) t)
 (defmethod marker-value ((marker structure-marker))
-  (let ((*print-pretty* nil)
-        (*print-readably* t)
-        (*print-marker* t)
-        (*readtable* (readtable-for-mode nil)))
-    (values (read-from-string (prin1-to-string marker)))))
+  (let ((*readtable* (readtable-for-mode nil)))
+    (values (read-from-string
+             (write-to-string marker
+                              :pprint-dispatch *tangle-pprint-dispatch*
+                              :pretty t
+                              :readably t)))))
 
-(defmethod print-object ((obj structure-marker) stream)
-  (if *print-marker*
-      (format stream "#S~W" (structure-marker-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
+(set-tangle-dispatch 'structure-marker
+  (lambda (stream obj)
+    (format stream "#S~W" (structure-marker-form obj)))
+  1)
 
 (defun structure-reader (stream sub-char arg)
   (declare (ignore sub-char arg))
@@ -1847,6 +1890,13 @@ out to a string and let the standard reader parse it when we need the value.
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\S #'structure-reader ;
                                 (readtable-for-mode mode)))
+
+@t@l
+(defstruct person (name 007 :type string))
+(deftest structure-marker
+  (person-name (marker-value ;
+                (read-form-from-string "#S(person :name \"James\")")))
+  "James")
 
 @ Sharpsign + and~-- provide read-time conditionalization based on
 feature expressions, described in section~24.1.2 of the CL standard.
@@ -1892,13 +1942,12 @@ characters that the reader scans, and use that to reconstruct the form.
    (test :reader read-time-conditional-test :initarg :test)
    (form :reader read-time-conditional-form :initarg :form)))
 
-(defmethod print-object ((obj read-time-conditional) stream)
-  (if *print-marker*
-      (format stream "#~:[-~;+~]~S ~A"
-              (read-time-conditional-plusp obj)
-              (read-time-conditional-test obj)
-              (read-time-conditional-form obj))
-      (print-unreadable-object (obj stream :type t :identity t))))
+(set-tangle-dispatch 'read-time-conditional
+  (lambda (stream obj)
+    (format stream "#~:[-~;+~]~S ~A"
+            (read-time-conditional-plusp obj)
+            (read-time-conditional-test obj)
+            (read-time-conditional-form obj))))
 
 (defclass read-time-conditional-marker (read-time-conditional marker) ())
 
@@ -1937,13 +1986,12 @@ characters that the reader scans, and use that to reconstruct the form.
 
 @t@l
 (deftest (read-time-conditional 1)
-  (let ((*features* '(:a))
-        (*evaluating* nil)
-        (*print-marker* t))
-    (values (prin1-to-string (marker-value (read-form-from-string "#+a 1")))
-            (prin1-to-string (marker-value (read-form-from-string "#-a 1")))))
-  "#+:A 1"
-  "#-:A 1")
+  (let* ((*evaluating* nil)
+         (conditional (marker-value (read-form-from-string "#-a 1"))))
+    (values (read-time-conditional-plusp conditional)
+            (read-time-conditional-test conditional)
+            (read-time-conditional-form conditional)))
+  nil :a "1")
 
 (deftest (read-time-conditional 2)
   (let ((*features* '(:a))
@@ -2322,13 +2370,6 @@ They differ only in how they are typeset in the woven output.
 (dolist (sub-char '(#\^ #\. #\:))
   (set-control-code sub-char #'index-entry-reader '(:TeX :lisp)))
 
-@ When we're accumulating forms from the code part of a section, we'll
-interpret two newlines in a row as ending a paragraph, as in \TeX.
-
-@l
-(defclass par-marker (newline-marker) ())
-(defvar *par* (make-instance 'par-marker))
-
 @ We need one last utility before coming to the main section reader.
 When we're accumulating text, we don't want to bother with empty strings.
 So we use the following macro, which is like |push|, but does nothing if
@@ -2439,7 +2480,7 @@ where we evaluate \.{@@e} forms.
           (section (go commentary))
           (start-code-marker ;
            @<Complain about starting a section without a commentary part@>)
-          (newline-marker @<Maybe push the newline marker@>)
+          (newline-marker (when code (push form code)))
           (evaluated-form-marker (let ((form (marker-value form)))
                                    (let ((*evaluating* t)
                                          (*readtable* (readtable-for-mode nil)))
@@ -2473,16 +2514,6 @@ where we evaluate \.{@@e} forms.
 ~:[~;~:*at position ~D in file ~A.~]~:@>" ;
 @.Can't start a section...@>
                        position (or pathname input-stream))))))
-
-@ We won't push a newline marker if no code has been accumulated yet, and
-we'll push a paragraph marker instead if there are two newlines in a row.
-
-@<Maybe push...@>=
-(unless (null code)
-  (cond ((newlinep (car code))
-         (pop code)
-         (push *par* code))
-        (t (push form code))))
 
 @ We trim trailing whitespace from the last string in |commentary|, leading
 whitespace from the first, and any trailing newline marker from |code|.
@@ -2643,9 +2674,9 @@ this allows for incremental redefinition.
 @ Both |tangle-file| and |weave|, below, take a |tests-file| argument that
 has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
 then we use a pathname derived from the one given by merging in a default
-type (\.{"lisp"} in the case of tangling, \.{"tex"} for weaving). If it's
+type (\.{"LISP"} in the case of tangling, \.{"TEX"} for weaving). If it's
 not supplied, then we construct a pathname from the output file by
-appending the string \.{"-tests"} to its name component. Finally, if the
+appending the string \.{"-TESTS"} to its name component. Finally, if the
 argument is supplied and is |nil|, then no tests file will be written at
 all.
 
@@ -2656,13 +2687,14 @@ all.
   (if tests-file
       (merge-pathnames tests-file (make-pathname :type type :case :common))
       (unless tests-file-supplied-p
-        (make-pathname :name (concatenate 'string
-                                          (pathname-name output-file ;
-                                                         :case :common)
-                                          "-TESTS")
-                       :type type
-                       :defaults output-file
-                       :case :common))))
+        (merge-pathnames
+         (make-pathname :name (concatenate 'string ;
+                                           (pathname-name output-file ;
+                                                          :case :common) ;
+                                           "-TESTS")
+                        :type type
+                        :case :common)
+         output-file))))
 
 @t@l
 (deftest (tests-file-pathname 1)
@@ -2682,9 +2714,20 @@ all.
                        :tests-file nil)
   nil)
 
+@ We'll use a custom pprint-dispatch table for tangling to avoid cluttering
+the default table.
+
+@<Global variables@>=
+(defparameter *tangle-pprint-dispatch* (copy-pprint-dispatch nil))
+
+@ @<Define the function |set-tangle-dispatch|@>=
+(defun set-tangle-dispatch (type-specifier function &optional (priority 0))
+  (set-pprint-dispatch type-specifier function priority ;
+                       *tangle-pprint-dispatch*))
+
 @ The file tangler operates by writing out the tangled code to a Lisp source
 file and then invoking the file compiler on that file. The arguments are
-essentially the same as those to |cl:compile-file|, except for the
+essentially the same as those to |compile-file|, except for the
 |tests-file| keyword argument, which specifies the file to which the test
 sections' code should be written.
 
@@ -2715,7 +2758,7 @@ sections' code should be written.
              (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT." ;
                      input-file)
              (let ((*evaluating* nil)
-                   (*print-marker* t)
+                   (*print-pprint-dispatch* *tangle-pprint-dispatch*)
                    (*print-level* nil))
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
@@ -2751,7 +2794,7 @@ warnings about unused named sections.
   (flet ((note-unused-section (section)
            (when (null (used-by section))
              (push section unused-sections))))
-    (maptree #'note-unused-section *named-sections*)
+    (map-bst #'note-unused-section *named-sections*)
     (map nil
          (lambda (section)
            (warn 'unused-named-section-warning
@@ -2760,7 +2803,7 @@ warnings about unused named sections.
          (sort unused-sections #'< :key #'section-number))))
 
 @*The weaver. The top-level weaver interface is modeled after
-|cl:compile-file|. The function |weave| reads the \WEB\ |input-file| and
+|compile-file|. The function |weave| reads the \WEB\ |input-file| and
 produces an output \TeX\ file named by |output-file|. If |output-file| is
 not supplied or is |nil|, a pathname will be generated from |input-file| by
 replacing its |type| component with \.{"tex"}.
@@ -2776,7 +2819,7 @@ is not supplied, the value of |*weave-print*| is used.
 Finally, the |external-format| argument specifies the external file format
 to be used when opening both the input file and the output file.
 {\it N.B.:} standard \TeX\ only handles 8-bit characters, and the encodings
-for non-printable-\csc{ascii} characters vary widely.
+for non-printable-{\sc ascii} characters vary widely.
 
 If successful, |weave| returns the truename of the output file. 
 
@@ -2886,7 +2929,7 @@ file.
           (with-output-file (idx index-file)
             (weave (index-sections sections) idx))
           (with-output-file (scn sections-file)
-            (maptree (lambda (section)
+            (map-bst (lambda (section)
                        (weave (make-instance 'section-name-index-entry ;
                                              :named-section section) ;
                               scn))
@@ -3120,14 +3163,21 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
 
 (set-weave-dispatch 'symbol #'print-symbol)
 
-@ Lambda gets special treatment.
+@ A few symbols get special replacements.
 
 @l
-(set-weave-dispatch '(eql lambda)
-  (lambda (stream obj)
-    (declare (ignore obj))
-    (write-string "\\L" stream))
-  1)
+(macrolet ((weave-symbol (symbol replacement)
+             `(set-weave-dispatch '(eql ,symbol)
+                (lambda (stream obj)
+                  (declare (ignore obj))
+                  (write-string ,replacement stream))
+                1)))
+  (weave-symbol lambda "\\L")
+  (weave-symbol pi "$\\pi$")
+  (weave-symbol - "$-$")
+  (weave-symbol 1- "1$-$")
+  (weave-symbol <= "$\\le$")
+  (weave-symbol >= "$\\ge$"))
 
 @ Next, we turn to list printing, and the tricky topic of indentation.
 On the assumption that the human writing a web is smarter than a program
@@ -3205,7 +3255,7 @@ alignment tabs, and makes the resulting \TeX\ much simpler.
       (newline (find-next-newline list))
       (next-indent (cdadr newline)))
      ((or (endp list)
-          (and (eq list newline) next-indent (< next-indent block-indent)))
+          (and (eq list newline) next-indent (< 0 next-indent block-indent)))
       (values (if (notany #'newlinep block)
                   (nreverse block)
                   (make-logical-block (nreverse block)))
@@ -3259,7 +3309,7 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
          (obj (pprint-pop) next))
         (nil)
       (cond ((newlinep obj)
-             (format stream "\\cr~:@_")
+             (format stream "\\cr~:[~;\\Y~]~:@_" (typep obj 'par-marker))
              (setq indent (indentation obj))
              (pprint-exit-if-list-exhausted)
              (setq next (pprint-pop)))
@@ -3316,15 +3366,15 @@ which see.
             (read-TeX-from-string (comment-text obj)))))
 
 @ @l
-(set-weave-dispatch 'backquote-marker
+(set-weave-dispatch `(cons (eql ,*backquote*))
   (lambda (stream obj)
-    (format stream "\\`~W" (backq-form obj))))
+    (format stream "\\`~W" (cadr obj))))
 
-(set-weave-dispatch 'comma-marker
+(set-weave-dispatch `(cons (member ,*comma* ,*comma-atsign* ,*comma-dot*))
   (lambda (stream obj)
-    (format stream "\\CO{~@[~C~]}~W"
-            (comma-modifier obj)
-            (comma-form obj))))
+    (format stream "\\CO{~[~;@~;.~]}~W"
+            (position (car obj) `(,*comma* ,*comma-atsign* ,*comma-dot*))
+            (cadr obj))))
 
 @ @l
 (set-weave-dispatch 'function-marker
@@ -3400,7 +3450,7 @@ we'll describe as we come to them.
 @l
 @<Walker generic functions@>
 
-@ We'll use the environments \csc{api} defined in \cltl, since even
+@ We'll use the environments {\sc api} defined in~\cltl, since even
 though it's not part of the Common Lisp standard, it's widely supported,
 and does everything we need it to do.
 
@@ -3441,7 +3491,7 @@ implementation-specific; a portable version would be much more complex.
 returned from both |variable-information| and |function-information|.
 But instead of doing the sensible thing and adding that extra value at
 the {\it end\/} of the list of returned values, they {\it changed\/}
-the order from the one specified by \cltl, so that their new value is
+the order from the one specified by~\cltl, so that their new value is
 the second value returned, and what should be second is now fourth.
 Thanks, Franz!
 
@@ -3474,7 +3524,7 @@ expansion.
       (catch form
         (cond ((symbol-macro-p form env)) ; wait for macro expansion
               ((atom form)
-               (return (walk-atomic-form walker form env)))
+               (return (walk-atomic-form walker :evaluated form env)))
               ((not (symbolp (car form)))
                (return (walk-list walker form env)))
               ((or (not expanded)
@@ -3498,15 +3548,8 @@ expansion.
 (defgeneric walk-as-special-form-p (walker operator form env))
 
 @ Macroexpansion and environment augmentation both get wrapped in generic
-functions to allow subclasses to override the usual behavior.
-
-@ @<Walker generic functions@>=
-(defgeneric macroexpand-for-walk (walker form env))
-(defgeneric augment-walker-environment (walker env &rest args))
-
-@ The default methods for |macroexpand-for-walk| and
-|augment-waker-environment| just call down to the normal Lisp
-functions.
+functions to allow subclasses to override the usual behavior. The default
+methods just call down to the normal Lisp functions.
 
 @l
 (defmethod macroexpand-for-walk ((walker walker) form env)
@@ -3514,6 +3557,10 @@ functions.
 
 (defmethod augment-walker-environment ((walker walker) env &rest args)
   (apply #'augment-environment env args))
+
+@ @<Walker generic functions@>=
+(defgeneric macroexpand-for-walk (walker form env))
+(defgeneric augment-walker-environment (walker env &rest args))
 
 @ Here's a utility function we'll use often in walker methods: it walks
 each element of the supplied list and returns a new list of the results
@@ -3525,17 +3572,16 @@ of those walks.
        (newform () (cons (walk-form walker (car form) env) newform)))
       ((atom form) (nreconc newform form))))
 
-@ The functions |walk-atomic-form| and |walk-compound-form| are the
-real work-horses of the walker. The former takes a walker instance,
-an (atomic) form, an environment, and a flag indicating whether or
-not the form occurs in an evaluated position. Compound forms, being
-always evaluated, don't need such a flag, but we do provide an
-additional |operator| argument so that we can use |eql|-specializers.
-The |operator| of a form passed to |walk-compound-form| will always be
-a symbol.
+@ The functions |walk-atomic-form| and |walk-compound-form| are the real
+work-horses of the walker. Besides the walker instance, the form, and the
+lexical environment, |walk-atomic-form| takes a keyword symbol denoting the
+context in which the atom occurs, and |walk-compound-form| takes an
+additional |operator| argument, |eql| to~|(car form)|, so that we can
+use |eql|~specializers. The |operator| of a form passed to
+|walk-compound-form| will always be a symbol.
 
 @<Walker generic functions@>=
-(defgeneric walk-atomic-form (walker form env &optional evalp))
+(defgeneric walk-atomic-form (walker context form env))
 (defgeneric walk-compound-form (walker operator form env))
 
 @ The default method for |walk-atomic-form| simply returns the form.
@@ -3543,8 +3589,8 @@ Note that this function won't be called for symbol macros; those are
 expanded in |walk-form|.
 
 @l
-(defmethod walk-atomic-form ((walker walker) form env &optional (evalp t))
-  (declare (ignore env evalp))
+(defmethod walk-atomic-form ((walker walker) context form env)
+  (declare (ignore context env))
   form)
 
 @ The default method for |walk-compound-form| is used for all funcall-like
@@ -3553,31 +3599,28 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
 @l
 (defmethod walk-compound-form ((walker walker) operator form env)
   (declare (ignore operator))
-  `(,(walk-atomic-form walker (car form) env nil)
+  `(,(walk-atomic-form walker :unevaluated (car form) env)
     ,@(walk-list walker (cdr form) env)))
 
-@ There's a special walker function just for function names, since
-they're not necessarily atomic.
-
-@<Walker generic functions@>=
-(defgeneric walk-function-name (walker function-name env &key &allow-other-keys))
-
-@ Common Lisp defines a {\it function name\/} as ``A symbol or a list
-|(setf symbol)|.'' We signal an continuable error in case of a malformed
-function name.
+@ Common Lisp defines a {\it function name\/} as ``[a] symbol or a list
+|(setf symbol)|.'' Since they're not necessarily atomic, we define a special
+walker function just for function names.
 
 @l
 (deftype setf-function-name () '(cons (eql setf) (cons symbol null)))
 
 (defmethod walk-function-name ((walker walker) function-name env &key)
   (typecase function-name
-    (symbol
-     (walk-atomic-form walker function-name env nil))
-    (setf-function-name
-     `(setf ,(walk-atomic-form walker (cadr function-name) env nil)))
-    (t (cerror "Use the function name anyway."
+    (symbol ;
+     (walk-atomic-form walker :unevaluated function-name env))
+    (setf-function-name ;
+     `(setf ,(walk-atomic-form walker :unevaluated (cadr function-name) env)))
+    (t (cerror "Use the function name anyway." ;
                'invalid-function-name :name function-name)
        function-name)))
+
+@ @<Walker generic functions@>=
+(defgeneric walk-function-name (walker function-name env &key &allow-other-keys))
 
 @ @<Condition classes@>=
 (define-condition invalid-function-name (parse-error)
@@ -3600,14 +3643,13 @@ function name.
 
 (deftest (walk-function-name 3)
   (let ((error-handled nil))
-    (flet ((note-and-continue (condition)
-             (setq error-handled t)
-             (continue condition)))
-      (handler-bind ((invalid-function-name #'note-and-continue))
-        (values (equal (walk-function-name (make-instance 'walker) ;
-                                           '(foo bar) nil)
-                       '(foo bar))
-                error-handled))))
+    (handler-bind ((invalid-function-name
+                    (lambda (condition)
+                      (setq error-handled t)
+                      (continue condition))))
+      (values (equal (walk-function-name (make-instance 'walker) '(foo bar) nil)
+                     '(foo bar))
+              error-handled)))
   t t)
 
 @ Many of the special forms defined in Common Lisp can be walked using the
@@ -3615,11 +3657,11 @@ default method for |walk-compound-form| just defined, since their syntax is
 the same as an ordinary function call. But it's important to override
 |walk-as-special-form-p| for these operators, because ``[a]n
 implementation is free to implement a Common Lisp special operator as a
-macro.'' (\csc{ansi} Common Lisp, section~3.1.2.1.2.2)
+macro.'' ({\sc ansi} Common Lisp, section~3.1.2.1.2.2)
 
 @l
 (macrolet ((walk-as-special-form (operator)
-             `(defmethod walk-as-special-form-p
+             `(defmethod walk-as-special-form-p ;
                   ((walker walker) (operator (eql ',operator)) form env)
                 (declare (ignore form env))
                 t)))
@@ -3659,7 +3701,7 @@ unevaluated form, followed by zero or more evaluated forms.
 (macrolet ((define-block-like-walker (operator)
              `(define-special-form-walker ,operator ((walker walker) form env)
                 `(,(car form)
-                  ,(walk-atomic-form walker (cadr form) env nil)
+                  ,(walk-atomic-form walker :unevaluated (cadr form) env)
                   ,@(walk-list walker (cddr form) env)))))
   (define-block-like-walker block)
   (define-block-like-walker eval-when)
@@ -3677,7 +3719,7 @@ unevaluated form, followed by zero or more evaluated forms.
   (define-quote-like-walker go))
 
 @ The |function| special form takes either a valid function name or a
-lambda expression.
+\L~expression.
 
 @l
 (define-special-form-walker function ((walker walker) form env)
@@ -3714,7 +3756,7 @@ followed by other forms (as occurs in the bodies of |defun|, |defmacro|,
 \etc.), |parse-body| returns |(values forms decls doc)|, where |decls|
 is the declaration specifiers found in each |declare| expression, |doc|
 holds a doc string (or |nil| if there is none), and |forms| holds the
-other forms. See \csc{ansi} Common Lisp section~3.4.11 for the rules on
+other forms. See {\sc ansi} Common Lisp section~3.4.11 for the rules on
 the syntactic interaction of doc strings and declarations.
 
 If |doc-string-allowed| is |nil| (the default), then no forms will be
@@ -3786,7 +3828,7 @@ able to walk the specifiers.
   (declare (ignore env))
   decls)
 
-@ The syntax of \L-lists is given in section~3.4 of the \csc{ansi} standard.
+@ The syntax of \L-lists is given in section~3.4 of the {\sc ansi} standard.
 We accept the syntax of macro \L-lists, since they are the most general,
 and appear to be a superset of every other type of \L-list.
 
@@ -3797,11 +3839,11 @@ object containing bindings for all of the parameters found therein.
 (defun walk-lambda-list (walker lambda-list decls env &aux
                          new-lambda-list (state :reqvars))
   (labels ((augment-env (&rest vars &aux (vars (remove-if #'null vars)))
-             (setq env (augment-walker-environment walker env
-                                                   :variable vars
+             (setq env (augment-walker-environment walker env ;
+                                                   :variable vars ;
                                                    :declare decls)))
            (walk-var (var)
-             (walk-atomic-form walker var env nil))
+             (walk-atomic-form walker :binding var env))
            (update-state (keyword)
              (setq state (ecase keyword
                            ((nil) state)
@@ -3940,11 +3982,11 @@ to avoid having to worry about reversing an improper |new-lambda-list|.
   (augment-env var)
   (push '&rest new-lambda-list)
   (push var new-lambda-list))
-(setq lambda-list nil) ; walk no more
+(setq lambda-list nil)
 
-@ While we're in the mood to deal with \L-lists, let's write a routine that
-can walk the `specialized' \L-lists used in |defmethod| forms. We can't use
-the same function as the one used to parse macro \L-lists, since the syntax
+@ While we're in the mood to deal with \L-lists, here's a routine that can
+walk the `specialized' \L-lists used in |defmethod| forms. We can't use the
+same function as the one used to parse macro \L-lists, since the syntax
 would be ambiguous: there would be no way to distinguish between a
 specialized required parameter and a destructuring pattern. What we can do,
 however, is peel off just the required parameters from a specialized
@@ -3967,17 +4009,17 @@ the parameters found therein.
 
 @ @<Extract the required...@>=
 (flet ((augment-env (var)
-         (setq env (augment-walker-environment walker env
-                                               :variable (list var)
+         (setq env (augment-walker-environment walker env ;
+                                               :variable (list var) ;
                                                :declare decls)))
        (walk-var (spec)
          (etypecase spec
-           (symbol (walk-atomic-form walker spec env nil))
+           (symbol (walk-atomic-form walker :binding spec env))
            (class-specializer
-            (list (walk-atomic-form walker (car spec) nil)
-                  (walk-atomic-form walker (cadr spec) nil)))
+            (list (walk-atomic-form walker :binding (car spec) env)
+                  (walk-atomic-form walker :class-specializer (cadr spec) env)))
            ((compound-specializer eql)
-            (list (walk-atomic-form walker (car spec) nil)
+            (list (walk-atomic-form walker :binding (car spec) env)
                   `(eql ,(walk-form walker (cadadr spec))))))))
   (loop until (or (null lambda-list)
                   (member (car lambda-list) lambda-list-keywords))
@@ -3985,10 +4027,10 @@ the parameters found therein.
         do (augment-env (if (consp var) (car var) var))
         collect var))
 
-@ Having built up the necessary machinery, walking a \L-expression is now
+@ Having built up the necessary machinery, walking a \L~expression is now
 straightforward. The slight generality of walking the car of the form using
 |walk-function-name| is because this function will also be used to walk the
-bindings in |flet|, |macrolet|, and~|labels| special forms. Note also that
+bindings in |flet|, |macrolet|, and~|labels| special forms. Also note that
 this function passes all of its extra arguments down to |walk-function-name|;
 this will be used later to aid in the indexing process.
 
@@ -4006,13 +4048,13 @@ this will be used later to aid in the indexing process.
         ,@(walk-list walker forms env)))))
 
 @ `lambda' is not a special operator in Common Lisp, but we'll treat
-\L-expressions as special forms.
+\L~expressions as special forms.
 
 @l
 (define-special-form-walker lambda ((walker walker) form env)
   (walk-lambda-expression walker form env))
 
-@t To test the walker on binding forms, including \L-expressions, we'll use
+@t To test the walker on binding forms, including \L~expressions, we'll use
 a specialized walker class that recognizes a custom |check-binding| special
 form. Its syntax is |(check-binding symbols namespace type)|, where
 |symbols| is an unevaluated designator for a list of symbols, |namespace|
@@ -4094,7 +4136,7 @@ the same purpose.
 @l
 (defun walk-variable-binding (walker p env &aux ;
                               (binding (if (consp p) p (list p))))
-  (list (walk-atomic-form walker (car binding) env nil)
+  (list (walk-atomic-form walker :binding (car binding) env)
         (and (cdr binding)
              (walk-form walker (cadr binding) env))))
 
@@ -4120,9 +4162,9 @@ their body forms in an environment that contains all of the new bindings.
 @ @l
 (define-special-form-walker flet
     ((walker walker) form env &aux
-     (bindings (mapcar (lambda (p)
-                         (walk-lambda-expression walker p env
-                                                 :operator 'flet
+     (bindings (mapcar (lambda (p) ;
+                         (walk-lambda-expression walker p env ;
+                                                 :operator 'flet ;
                                                  :local t :def t))
                        (cadr form)))
      (body (cddr form)))
@@ -4144,17 +4186,19 @@ former case.
 
 @l
 (defun make-macro-definitions (walker defs env)
-  (mapcar (lambda (def &aux (name (walk-atomic-form walker (car def) env nil)))
-            (list name
+  (mapcar (lambda (def &aux
+                   (name (walk-atomic-form walker :symbol-macro-binding ;
+                                           (car def) env)))
+            (list name ;
                   (enclose (parse-macro name (cadr def) (cddr def) env) ;
                            env walker)))
           defs))
 
 (define-special-form-walker macrolet
     ((walker walker) form env &aux
-     (bindings (mapcar (lambda (p)
-                         (walk-lambda-expression walker p env
-                                                 :operator 'macrolet
+     (bindings (mapcar (lambda (p) ;
+                         (walk-lambda-expression walker p env ;
+                                                 :operator 'macrolet ;
                                                  :local t :def t))
                        (cadr form)))
      (body (cddr form)))
@@ -4226,13 +4270,13 @@ and |labels|, which does so before walking any of its bindings.
      (body (cddr form)))
   (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     `(,(car form)
-      ,(mapcar (lambda (p)
-                 (let ((walked-binding (walk-variable-binding walker p env)))
-                   (setq env (augment-walker-environment
-                               walker env
-                               :variable (list (car walked-binding))
-                               :declare decls))
-                   walked-binding))
+      ,(mapcar (lambda (p &aux
+                        (walked-binding (walk-variable-binding walker p env))
+                        (variable (list (car walked-binding))))
+                 (setq env (augment-walker-environment walker env
+                                                       :variable variable
+                                                       :declare decls))
+                 walked-binding)
                bindings)
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms env))))
@@ -4302,9 +4346,9 @@ the walker classes defined in this program.
 (defclass tracing-walker (walker) ())
 
 (defmethod walk-atomic-form :before
-    ((walker tracing-walker) form env &optional (evalp t))
-  (format t "; walking ~:[un~;~]evaluated atomic form ~S~@[ (~(~A~) variable)~]~%"
-          evalp form (and (symbolp form) (variable-information form env))))
+    ((walker tracing-walker) context form env)
+  (format t "; walking atomic form ~S (~S)~@[ (~(~A~) variable)~]~%"
+          form context (and (symbolp form) (variable-information form env))))
 
 (defmethod walk-compound-form :before ;
     ((walker tracing-walker) operator form env)
@@ -4312,8 +4356,8 @@ the walker classes defined in this program.
   (format t "~<; ~@;walking compound form ~W~:>~%" (list form)))
 
 @*Indexing. Having constructed our code walker, we can now use it to
-produce an index of the interesting symbols in a web. We'll say a symbol
-is {\it interesting\/} if it is interned in one of the packages listed
+produce an index of the symbols in a web. We'll say a symbol is
+{\it interesting\/} if it is interned in one of the packages listed
 in |*index-packages*|. The user should add packages to this list using
 the \.{@@x} control code, which calls the following function. It takes
 a designator for a list of package designators, and adds each package
@@ -4329,7 +4373,7 @@ to |*index-packages*|.
 (defvar *index-packages* nil)
 
 @ @<Initialize global...@>=
-(setq *index-packages* nil)
+(setq *index-packages* (list (find-package "COMMON-LISP-USER")))
 
 @t For testing the indexer, we need to make sure that the \CLWEB\ package
 is in |*index-packages*|.
@@ -4342,7 +4386,7 @@ is in |*index-packages*|.
 is a (\metasyn{heading}, \metasyn{locator}) pair: the {\it locator}
 indicates where the object referred to by the {\it heading} may be found.
 A list of entries with the same heading is called an {\it entry list},
-or sometimes just an {\it entry}; this latter is an abuse of terminology,
+or sometimes just an {\it entry\/}; the latter is an abuse of terminology,
 but useful and usually clear in context.
 
 Headings may in general be multi-leveled, and are sorted lexicographically.
@@ -4584,12 +4628,11 @@ significantly affecting usability.
 In this program, a locator is either a pointer to a section (the usual
 case) or a cross-reference to another index entry. We'll represent
 locators as instances of a |locator| class, and use a single generic
-function,|location|, to dereference them.
+function, |location|, to dereference them.
 
 Section locators have an additional slot for a definition flag, which
 when true indicates that the object referred to by the associated heading
 is defined in the section represented by that locator, not just used.
-
 Such locators will be given a bit of typographic emphasis by the weaver
 when it prints the containing entry.
 
@@ -4698,15 +4741,15 @@ ordinary ones.
               (push (make-locator) (entry-locators entry)))))))
 
 @ And here's the main index entry retrieval method. In fact, this function
-isn't used in this program (although the test suite uses it), since all we
-do with the index is add entries to it and then traverse the whole thing
-and print them all out.
+isn't actually used in this program (although the test suite uses it),
+since all we do with the index is add entries to it and then traverse the
+whole thing and print them all out.
 
 @l
 (defmethod find-index-entries ((index index) heading)
   (let ((entries (index-entries index)))
     (when entries
-      (multiple-value-bind (entry present-p)
+      (multiple-value-bind (entry present-p) ;
           (find-or-insert heading entries :insert-if-not-found nil)
         (when present-p
           (entry-locators entry))))))
@@ -4741,43 +4784,51 @@ function name refers to an ordinary or generic function.
       (and (fboundp function-name)
            (typep (fdefinition function-name) 'generic-function))))
 
+@ The global variable |*index-lexical-variables*| controls whether or not
+the indexer will create entries for lexical variables. Its value is
+{\it not\/} re-initialized on each run.
+
+@<Global variables@>=
+(defvar *index-lexical-variables* nil)
+
 @ Here are a couple of indexing routines that we'll use in the walker below
 for indexing function and variable {\it uses}. They look up the given
 variable or function in a lexical environment object and add an appropriate
 index entry. (We can't use this routine for definitions because the name
-being indexed wouldn't in the environment yet.) We don't currently index
-lexical variables, as that would probably just bulk up the index to no
-particular advantage.
+being indexed might not be in the environment yet.) We don't currently
+index lexical variables, as that would probably just bulk up the index to
+no particular advantage.
 
 @l
-(defun index-variable-use (index variable section env)
+(defun index-variable (index variable section env)
   (multiple-value-bind (type local) (variable-information variable env)
-    (when (member type '(:special :symbol-macro :constant))
+    (when (or (member type '(:special :symbol-macro :constant))
+              (and *index-lexical-variables* (eql type :lexical)))
       (add-index-entry
-        index
-        (list variable
-              (ecase type
-                (:special (make-instance 'variable-heading :special t))
-                (:constant (make-instance 'variable-heading :constant t))
-                (:symbol-macro (make-instance 'symbol-macro-heading ;
-                                              :local local))))
-        section))))
+       index
+       (list variable
+             (ecase type
+               (:lexical (make-instance 'variable-heading))
+               (:special (make-instance 'variable-heading :special t))
+               (:constant (make-instance 'variable-heading :constant t))
+               (:symbol-macro (make-instance 'symbol-macro-heading ;
+                                             :local local))))
+       section))))
 
-(defun index-function-use (index function-name section env)
-  (multiple-value-bind (type local) ;
-      (function-information function-name env)
+(defun index-funcall (index function-name section env)
+  (multiple-value-bind (type local) (function-information function-name env)
     (when (member type '(:function :macro))
       (add-index-entry
-        index
-        (list function-name
-              (ecase type
-                (:function ;
-                 (make-instance 'function-heading
-                                :local local
-                                :generic (generic-function-p function-name)))
-                (:macro ;
-                 (make-instance 'macro-heading :local local))))
-        section))))
+       index
+       (list function-name
+             (ecase type
+               (:function ;
+                (make-instance 'function-heading
+                               :local local
+                               :generic (generic-function-p function-name)))
+               (:macro ;
+                (make-instance 'macro-heading :local local))))
+       section))))
 
 @ To index definitions, we'll need more information from the walker about
 the context in which the variable or function name occurred. In particular,
@@ -4785,29 +4836,32 @@ we'll get the |car| of the defining form as the |operator| argument, which
 is then passed down to |make-sub-heading|.
 
 @l
-(defun index-variable-definition (index variable section &key ;
-                                  operator special &aux
-                                  (constant (eql operator 'defconstant)))
-  (add-index-entry
+(defun index-defvar (index variable section &key operator special)
+  (when (or special *index-lexical-variables*)
+   (add-index-entry
     index
     (list variable ;
-          (make-sub-heading operator :special special :constant constant))
-    section :def t))
-
-(defun index-function-definition (index function-name section &key ;
-                                  operator local generic qualifiers)
-  (add-index-entry
-    index
-    (list (typecase function-name
-            (symbol function-name)
-            (setf-function-name (cadr function-name)))
           (make-sub-heading operator
-                            :function-name function-name
-                            :local local
-                            :generic (or generic ;
-                                         (generic-function-p function-name))
-                            :qualifiers qualifiers))
-    section :def t))
+                            :special special
+                            :constant (eql operator 'defconstant)))
+    section
+    :def t)))
+
+(defun index-defun (index function-name section &key ;
+                    operator local generic qualifiers)
+  (add-index-entry
+   index
+   (list (typecase function-name
+           (symbol function-name)
+           (setf-function-name (cadr function-name)))
+         (make-sub-heading operator
+                           :function-name function-name
+                           :local local
+                           :generic (or generic ;
+                                        (generic-function-p function-name))
+                           :qualifiers qualifiers))
+   section
+   :def t))
 
 @ We'll perform the indexing by walking over the code of each section and
 noting each of the interesting symbols that we find there according to its
@@ -4918,7 +4972,7 @@ locations)|, where each location is either a section number or a list
 @l
 (defun all-index-entries (index)
   (let ((entries))
-    (maptree
+    (map-bst
      (lambda (entry)
        (push (list (mapcar #'heading-name (entry-heading entry))
                    (loop for locator in (entry-locators entry)
@@ -4944,7 +4998,8 @@ entries.
        (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
              (mangled-code (tangle-code-for-indexing *sections*))
              (walker (make-instance 'indexing-walker)))
-         (loop for form in tangled-code and mangled-form in mangled-code
+         (loop with *index-lexical-variables* = nil
+               for form in tangled-code and mangled-form in mangled-code
                as walked-form = (walk-form walker mangled-form)
                do (assert (tree-equal walked-form form)
                           (walked-form mangled-form form)))
@@ -4971,7 +5026,7 @@ off to the next method for the actual expansion.
        (cond (section
               (case (variable-information symbol env)
                 (:symbol-macro
-                 (index-variable-use (walker-index walker) symbol section env)
+                 (index-variable (walker-index walker) symbol section env)
                  (call-next-method walker (cons symbol (cdr form)) env))
                 (t form)))
              (t (call-next-method)))))
@@ -4980,7 +5035,7 @@ off to the next method for the actual expansion.
        (cond (section
               (case (function-information symbol env)
                 (:macro
-                 (index-function-use (walker-index walker) symbol section env)
+                 (index-funcall (walker-index walker) symbol section env)
                  (call-next-method walker (cons symbol (cdr form)) env))
                 (t form)))
              (t (call-next-method)))))
@@ -4991,12 +5046,15 @@ the referents; this is where the reverse-substitution of referring symbols
 takes place.
 
 @l
-(defmethod walk-atomic-form ((walker indexing-walker) form env &optional evalp)
-  (declare (ignore evalp))
+(defmethod walk-atomic-form ((walker indexing-walker) context form env)
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
         (when section
-          (index-variable-use (walker-index walker) symbol section env))
+          (index-variable (walker-index walker) symbol section env)
+          (when (eql context :binding)
+            (index-defvar (walker-index walker) symbol section
+                          :operator 'defvar
+                          :special nil)))
         symbol)
       form))
 
@@ -5014,7 +5072,7 @@ symbol.
   (declare (ignore form))
   (multiple-value-bind (symbol section) (symbol-provenance operator)
     (when section
-      (index-function-use (walker-index walker) symbol section env))))
+      (index-funcall (walker-index walker) symbol section env))))
 
 @t@l
 (define-indexing-test funcall
@@ -5026,7 +5084,7 @@ call down to this function, passing keyword arguments that describe the
 context.
 
 @l
-(defmethod walk-function-name :before
+(defmethod walk-function-name :before ;
     ((walker indexing-walker) function-name env &rest args &key def)
   (let ((index (walker-index walker)))
     (typecase function-name
@@ -5034,17 +5092,17 @@ context.
        (multiple-value-bind (symbol section) (symbol-provenance function-name)
          (when section
            (if def
-               (apply #'index-function-definition ;
+               (apply #'index-defun ;
                       index symbol section :allow-other-keys t args)
-               (index-function-use index symbol section env)))))
+               (index-funcall index symbol section env)))))
       (setf-function-name
        (multiple-value-bind (symbol section) ;
            (symbol-provenance (cadr function-name))
          (when section
            (if def
-               (apply #'index-function-definition ;
+               (apply #'index-defun ;
                       index `(setf ,symbol) section :allow-other-keys t args)
-               (index-function-use index symbol section env))))))))
+               (index-funcall index symbol section env))))))))
 
 @t@l
 (define-indexing-test function-name
@@ -5071,9 +5129,9 @@ defined, by way of |walk-lambda-expression|.
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env)
                 `(,(car form)
-                   ,@(walk-lambda-expression walker (cdr form) env
-                                             :operator (car form)
-                                             :def t)))))
+                  ,@(walk-lambda-expression walker (cdr form) env
+                                            :operator (car form)
+                                            :def t)))))
   (define-defun-like-walker defun)
   (define-defun-like-walker defmacro))
 
@@ -5098,10 +5156,9 @@ special forms. Once again, we'll just skip the macro expansions.
                   ,(multiple-value-bind (symbol section) ;
                        (symbol-provenance (cadr form))
                      (when section
-                       (index-variable-definition (walker-index walker) ;
-                                                  symbol section
-                                                  :operator (car form)
-                                                  :special t))
+                       (index-defvar (walker-index walker) symbol section
+                                     :operator (car form)
+                                     :special t))
                      symbol)
                   ,@(walk-list walker (cddr form) env)))))
   (define-indexing-defvar-walker defvar)
@@ -5142,7 +5199,7 @@ about |special| declarations, so we just throw everything else away.
          '((special x y z)))
   t)
 
-@ Now we'll turn to the various \csc{clos} forms. We'll start with a little
+@ Now we'll turn to the various {\sc clos} forms. We'll start with a little
 macro to pull off method qualifiers from a |defgeneric| form or a method
 description. Syntactically, the qualifiers are any non-list objects
 preceding the specialized \L-list.
@@ -5181,7 +5238,7 @@ descriptions.
   ((foo "PROGN method") ((:def 0))))
 
 @ Method descriptions are very much like |defmethod| forms with an implicit
-function name; this routine walks both. The function-name (if non-null) and
+function name; this routine walks both. The function name (if non-null) and
 qualifiers (if any) should have been walked already; we'll walk the
 specialized \L-list and body forms here.
 
@@ -5202,7 +5259,8 @@ specialized \L-list and body forms here.
 
 @ @<Walk the method description in |form|@>=
 (let* ((operator (pop form))
-       (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q env nil))
+       (qualifiers (mapcar (lambda (q)
+                             (walk-atomic-form walker :method-qualifier q env))
                            (pop-qualifiers form)))
        (lambda-list (pop form))
        (body form))
@@ -5222,7 +5280,8 @@ a method description.
     ((walker indexing-walker) form env &aux
      (operator (pop form))
      (function-name (pop form)) ; don't walk yet: wait for the qualifiers
-     (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q env nil))
+     (qualifiers (mapcar (lambda (q)
+                           (walk-atomic-form walker :method-qualifier q env))
                          (pop-qualifiers form)))
      (lambda-list (pop form))
      (body form))
@@ -5257,7 +5316,7 @@ class names, super-classes, and~accessor methods.
                                        section
                                        :def t))
                     `(,operator
-                      ,(walk-atomic-form walker symbol env nil)
+                      ,(walk-atomic-form walker :class-name symbol env)
                       ,(mapcar (lambda (super)
                                  @<Index the use of the superclass |super|@>)
                                supers)
@@ -5274,7 +5333,7 @@ class names, super-classes, and~accessor methods.
     (add-index-entry (walker-index walker)
                      (list symbol (make-sub-heading operator))
                      section))
-  (walk-atomic-form walker symbol env nil))
+  (walk-atomic-form walker :superclass-name symbol env))
 
 @t@l
 (define-indexing-test defclass
@@ -5296,25 +5355,24 @@ options.
 @l
 (defun walk-slot-specifier (walker spec env)
   (etypecase spec
-    (symbol (walk-atomic-form walker spec env nil))
+    (symbol (walk-atomic-form walker :slot-name spec env))
     (cons (destructuring-bind (name &rest options) spec
             (loop for (opt-name opt-value) on options by #'cddr
                   if (member opt-name '(:reader :writer :accessor))
                     do @<Index |opt-value| as a slot access method@>)
-            `(,(walk-atomic-form walker name env nil)
+            `(,(walk-atomic-form walker :slot-name name env)
               ,@(walk-list walker options env))))))
 
 @ @<Index |opt-value| as a slot access method@>=
 (multiple-value-bind (symbol section) (symbol-provenance opt-value)
   (when section
-    (index-function-definition (walker-index walker) symbol section ;
-                               :operator 'defmethod
-                               :generic t)
+    (index-defun (walker-index walker) symbol section ;
+                 :operator 'defmethod ;
+                 :generic t)
     (when (eql opt-name :accessor)
-      (index-function-definition (walker-index walker) ;
-                                 `(setf ,symbol) section
-                                 :operator 'defmethod
-                                 :generic t))))
+      (index-defun (walker-index walker) `(setf ,symbol) section ;
+                   :operator 'defmethod ;
+                   :generic t))))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index
@@ -5333,7 +5391,7 @@ of all of the interesting symbols so encountered.
 @l
 (set-weave-dispatch 'index
   (lambda (stream index)
-    (maptree (lambda (entry) (write entry :stream stream))
+    (map-bst (lambda (entry) (write entry :stream stream))
              (index-entries index))))
 
 (set-weave-dispatch 'index-entry

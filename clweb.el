@@ -72,9 +72,13 @@ any existing code for that section; otherwise, it will be replaced."
                   (end-of-buffer (point-max))))
            (temp-file (make-temp-file "clweb")))
       (write-region start end temp-file t 'nomsg)
-      (comint-simple-send (inferior-lisp-proc)
-                          (format "(load-sections-from-temp-file %S %S)"
-                                  temp-file (not (null arg)))))))
+      (let ((string (format "(clweb:load-sections-from-temp-file %S %S)"
+                            temp-file (not (null arg)))))
+        (cond ((fboundp 'slime-interactive-eval)
+               (slime-interactive-eval string))
+              ((fboundp 'inferior-lisp-proc)
+               (comint-simple-send (inferior-lisp-proc) string))
+              (t (error "Unable to find superior or inferior Lisp")))))))
 
 (define-derived-mode clweb-mode lisp-mode "CLWEB"
   "Major mode for editing CLWEB programs.
@@ -99,8 +103,32 @@ any existing code for that section; otherwise, it will be replaced."
               ("\\(^\\|[^@]\\)@\\(>\\)[^=]" 2 "> bn")
               ("\\(^\\|[^@]\\)@\\(>\\)\\+?\\(=\\)" (2 "> bn") (3 "> b")))))))
 
-(define-key clweb-mode-map "\M-n" 'forward-section)
-(define-key clweb-mode-map "\M-p" 'backward-section)
+(define-key clweb-mode-map "\C-c\C-n" 'forward-section)
+(define-key clweb-mode-map "\C-c\C-p" 'backward-section)
 (define-key clweb-mode-map "\C-c\C-s" 'eval-section)
 
 (add-to-list 'auto-mode-alist '("\\.clw" . clweb-mode))
+
+(eval-after-load 'slime-repl
+  '(progn
+     (defslime-repl-shortcut clweb-weave ("weave")
+       (:handler (lambda (filename)
+                   (interactive
+                    (list (expand-file-name
+                           (read-file-name "File: " nil nil nil nil))))
+                   (slime-save-some-lisp-buffers)
+                   (slime-repl-shortcut-eval
+                    `(cl:namestring
+                      (clweb:weave ,(slime-to-lisp-filename filename))))))
+       (:one-liner "Weave a web."))
+     (defslime-repl-shortcut clweb-tangle-and-load ("tangle-and-load" "tl")
+       (:handler (lambda (filename)
+                   (interactive
+                    (list (expand-file-name
+                           (read-file-name "File: " nil nil nil nil))))
+                   (slime-save-some-lisp-buffers)
+                   (slime-repl-shortcut-eval
+                    `(cl:load
+                      (clweb:tangle-file
+                       ,(slime-to-lisp-filename filename))))))
+       (:one-liner "Tangle and load a web."))))

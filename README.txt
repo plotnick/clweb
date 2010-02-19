@@ -1,6 +1,6 @@
-This is CLWEB, a literate programming system for Common Lisp.  This file
+This is CLWEB, a literate programming system for Common Lisp. This file
 describes how to get started with CLWEB; it is not a user manual or an
-introduction to literate programming in general.  A full user manual is
+introduction to literate programming in general. A full user manual is
 forthcoming; in the meantime, please see the CWEB user manual by Knuth
 and Levy, or Knuth's "Literate Programming" (CSLI: 1992).
 
@@ -21,7 +21,7 @@ The first thing to do is to compile and load the CLWEB system:
     * (use-package "CLWEB")
     T
 
-Now suppose you wanted to weave the CLWEB program itself.  You might say:
+Now suppose you wanted to weave the CLWEB program itself. You might say:
 
     * (weave "clweb")
     ; weaving WEB from #P"clweb.clw"
@@ -50,13 +50,19 @@ Now suppose you wanted to weave the CLWEB program itself.  You might say:
     $
 
 The numbers that WEAVE prints are the section numbers the weaver sees; the
-ones preceeded by stars are the `starred', or major, sections.  TeX also
+ones preceded by stars are the `starred', or major, sections. TeX also
 prints the starred section numbers along with the page numbers in square
 brackets.
 
+To use CLWEB for your own projects, you need to have the file `clwebmac.tex'
+somewhere in TeX's search path. One way to do this (on the author's system,
+anyway) is to install a copy of or a symlink to the version included in the
+distribution in a directory like `~/texmf/tex/plain'; see the documentation
+for your TeX distribution for more information, esp. the Kpathsea library.
+
 The CLWEB tangler can be used in two different ways: to produce a compiled
 file that can be used with LOAD, or to load the contents of a CLWEB file
-directly into a running Lisp image.  In the first case, you would use
+directly into a running Lisp image. In the first case, you would use
 TANGLE-FILE:
 
     * (compile-file "clweb")
@@ -68,7 +74,7 @@ TANGLE-FILE:
     NIL
     *
 
-You should now have a fresh copy of `clweb.lisp' and `clweb.fasl'.  You
+You should now have a fresh copy of `clweb.lisp' and `clweb.fasl'. You
 shouldn't ever edit the former directly; it's only an intermediate file.
 
 During development, the other mode of tangling is often more useful:
@@ -80,17 +86,11 @@ During development, the other mode of tangling is often more useful:
 The tangled contents of `clweb.clw' have now been loaded directly into the
 Lisp environment.
 
-The code has been tested under SBCL, Allegro CL, and CLISP.  As of March,
-2009, only Allegro works completely correctly.  SBCL is perfectly usable,
-but very occasionally (only once in the entire CLWEB system itself) will
-get the indentation wrong during weaving; the problem is due to known bugs
-in SBCL's stream library, and should be fixed upstream soon.  CLISP works
-fine for tangling, but its prettyprinter seems to be completely broken: the
-output of the weaver is totally wrong, and cannot be run through TeX.
-Reports of the experience of attempting to run the system under other
-Common Lisp implementations would be welcome, along with any other
-questions, bug-reports, patches, comments, or suggestions; please email
-them to Alex Plotnick <plotnick@cs.brandeis.edu>.
+Currently, CLWEB only runs under SBCL and Allegro Common Lisp. Ports to
+other Lisp implementations are underway. Reports of the experience of
+attempting to run the system under other Common Lisp implementations would
+be welcome, along with any other questions, bug-reports, patches, comments,
+or suggestions; please email them to Alex Plotnick <plotnick@cs.brandeis.edu>.
 
 The author gratefully acknowledges the encouragement and support of Ross
 Shaull, who made him believe that at least one other person in the world
