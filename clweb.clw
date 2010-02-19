@@ -3002,9 +3002,8 @@ re-reads such strings and picks up any inner-Lisp material.
          (named-section (and name (find-section name)))
          (code (section-code section)))
     (print-TeX stream commentary)
-    (fresh-line stream)
-    (cond ((and commentary code) (format stream "\\Y\\B~%"))
-          (code (format stream "\\B~%")))
+    (cond ((and commentary code) (format stream "~&\\Y\\B~%"))
+          (code (format stream "~&\\B~%")))
     (when named-section
       (print-section-name stream named-section)
       (format stream "${}~:[\\mathrel+~;~]\\E{}$~%"
