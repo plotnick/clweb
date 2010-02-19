@@ -3253,7 +3253,7 @@ alignment tabs, and makes the resulting \TeX\ much simpler.
       (newline (find-next-newline list))
       (next-indent (cdadr newline)))
      ((or (endp list)
-          (and (eq list newline) next-indent (< next-indent block-indent)))
+          (and (eq list newline) next-indent (< 0 next-indent block-indent)))
       (values (if (notany #'newlinep block)
                   (nreverse block)
                   (make-logical-block (nreverse block)))

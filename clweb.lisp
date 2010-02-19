@@ -1401,7 +1401,7 @@
                    (NEXT-INDENT (CDADR NEWLINE)))
                   ((OR (ENDP LIST)
                        (AND (EQ LIST NEWLINE) NEXT-INDENT
-                            (< NEXT-INDENT BLOCK-INDENT)))
+                            (< 0 NEXT-INDENT BLOCK-INDENT)))
                    (VALUES
                     (IF (NOTANY #'NEWLINEP BLOCK)
                         (NREVERSE BLOCK)
