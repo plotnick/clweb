@@ -1172,7 +1172,9 @@ evaluated constructs, such as \.{\#.} and~\.{\#+}/\.{\#-}.
 
 @ Our first marker is for newlines, which we preserve for the purposes of
 indentation. They are represented in code forms by an unbound marker, so
-the tangler will ignore them.
+the tangler will ignore them. We'll interpret two newlines in a row as
+ending a paragraph, as in \TeX; the weaver will insert a bit of extra
+vertical space when it encounters such markers.
 
 Note that we don't set a macro character for |#\Newline| in inner-Lisp mode,
 since indentation is completely ignored there.
@@ -1180,18 +1182,28 @@ since indentation is completely ignored there.
 @l
 (defclass newline-marker (marker)
   ((indentation :accessor indentation :initform nil)))
+(defclass par-marker (newline-marker) ())
 (defun newlinep (obj) (typep obj 'newline-marker))
 
 (set-macro-character #\Newline
-                     (lambda (stream char)
-                       (declare (ignore stream char))
-                       (make-instance 'newline-marker))
-                     nil (readtable-for-mode :lisp))
+  (lambda (stream char)
+    (declare (ignore char))
+    (case (peek-char nil stream nil *eof* t)
+      (#\Newline (read-char stream t nil t)
+                 (make-instance 'par-marker))
+      (otherwise (make-instance 'newline-marker))))
+  nil (readtable-for-mode :lisp))
 
 @t@l
 (deftest read-newline
   (newlinep (with-input-from-string (s (format nil "~%"))
               (with-mode :lisp (read s))))
+  t)
+
+(deftest read-par
+  (typep (with-input-from-string (s (format nil "~%~%"))
+           (with-mode :lisp (read s)))
+         'par-marker)
   t)
 
 @ The rest of the reader macro functions for standard macro characters are
@@ -1485,6 +1497,7 @@ symbols; they need not even be atoms.
       (declare (ignore char))
       (list *backquote* (read stream t nil t)))
     nil (readtable-for-mode mode))
+
   (set-macro-character #\,
     (lambda (stream char)
       (declare (ignore char))
@@ -2355,13 +2368,6 @@ They differ only in how they are typeset in the woven output.
 (dolist (sub-char '(#\^ #\. #\:))
   (set-control-code sub-char #'index-entry-reader '(:TeX :lisp)))
 
-@ When we're accumulating forms from the code part of a section, we'll
-interpret two newlines in a row as ending a paragraph, as in \TeX.
-
-@l
-(defclass par-marker (newline-marker) ())
-(defvar *par* (make-instance 'par-marker))
-
 @ We need one last utility before coming to the main section reader.
 When we're accumulating text, we don't want to bother with empty strings.
 So we use the following macro, which is like |push|, but does nothing if
@@ -2472,7 +2478,7 @@ where we evaluate \.{@@e} forms.
           (section (go commentary))
           (start-code-marker ;
            @<Complain about starting a section without a commentary part@>)
-          (newline-marker @<Maybe push the newline marker@>)
+          (newline-marker (when code (push form code)))
           (evaluated-form-marker (let ((form (marker-value form)))
                                    (let ((*evaluating* t)
                                          (*readtable* (readtable-for-mode nil)))
@@ -2506,16 +2512,6 @@ where we evaluate \.{@@e} forms.
 ~:[~;~:*at position ~D in file ~A.~]~:@>" ;
 @.Can't start a section...@>
                        position (or pathname input-stream))))))
-
-@ We won't push a newline marker if no code has been accumulated yet, and
-we'll push a paragraph marker instead if there are two newlines in a row.
-
-@<Maybe push...@>=
-(unless (null code)
-  (cond ((newlinep (car code))
-         (pop code)
-         (push *par* code))
-        (t (push form code))))
 
 @ We trim trailing whitespace from the last string in |commentary|, leading
 whitespace from the first, and any trailing newline marker from |code|.
@@ -3311,7 +3307,7 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
          (obj (pprint-pop) next))
         (nil)
       (cond ((newlinep obj)
-             (format stream "\\cr~:@_")
+             (format stream "\\cr~:[~;\\Y~]~:@_" (typep obj 'par-marker))
              (setq indent (indentation obj))
              (pprint-exit-if-list-exhausted)
              (setq next (pprint-pop)))

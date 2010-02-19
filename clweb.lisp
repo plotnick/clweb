@@ -437,11 +437,16 @@
                          (WRITE (MARKER-VALUE MARKER) :STREAM STREAM))))
 (DEFCLASS NEWLINE-MARKER (MARKER)
           ((INDENTATION :ACCESSOR INDENTATION :INITFORM NIL)))
+(DEFCLASS PAR-MARKER (NEWLINE-MARKER) NIL)
 (DEFUN NEWLINEP (OBJ) (TYPEP OBJ 'NEWLINE-MARKER))
 (SET-MACRO-CHARACTER #\Newline
                      (LAMBDA (STREAM CHAR)
-                       (DECLARE (IGNORE STREAM CHAR))
-                       (MAKE-INSTANCE 'NEWLINE-MARKER))
+                       (DECLARE (IGNORE CHAR))
+                       (CASE (PEEK-CHAR NIL STREAM NIL *EOF* T)
+                         (#\Newline
+                          (READ-CHAR STREAM T NIL T)
+                          (MAKE-INSTANCE 'PAR-MARKER))
+                         (OTHERWISE (MAKE-INSTANCE 'NEWLINE-MARKER))))
                      NIL (READTABLE-FOR-MODE :LISP))
 (DEFCLASS EMPTY-LIST-MARKER (MARKER) NIL (:DEFAULT-INITARGS :VALUE 'NIL))
 (DEFVAR *EMPTY-LIST* (MAKE-INSTANCE 'EMPTY-LIST-MARKER))
@@ -905,8 +910,6 @@
   (VALUES))
 (DOLIST (SUB-CHAR '(#\^ #\. #\:))
   (SET-CONTROL-CODE SUB-CHAR #'INDEX-ENTRY-READER '(:TEX :LISP)))
-(DEFCLASS PAR-MARKER (NEWLINE-MARKER) NIL)
-(DEFVAR *PAR* (MAKE-INSTANCE 'PAR-MARKER))
 (DEFMACRO MAYBE-PUSH (OBJ PLACE &AUX (G (GENSYM)))
   `(LET ((,G ,OBJ))
      (WHEN
@@ -986,10 +989,7 @@
                   (SETQ SECTION FORM
                         COMMENTARY 'NIL
                         CODE 'NIL))
-                 (NEWLINE-MARKER
-                  (UNLESS (NULL CODE)
-                    (COND ((NEWLINEP (CAR CODE)) (POP CODE) (PUSH *PAR* CODE))
-                          (T (PUSH FORM CODE)))))
+                 (NEWLINE-MARKER (WHEN CODE (PUSH FORM CODE)))
                  (EVALUATED-FORM-MARKER
                   (LET ((FORM (MARKER-VALUE FORM)))
                     (LET ((*EVALUATING* T)
@@ -1444,7 +1444,8 @@
          (OBJ (PPRINT-POP) NEXT))
         (NIL)
       (COND
-       ((NEWLINEP OBJ) (FORMAT STREAM "\\cr~:@_")
+       ((NEWLINEP OBJ)
+        (FORMAT STREAM "\\cr~:[~;\\Y~]~:@_" (TYPEP OBJ 'PAR-MARKER))
         (SETQ INDENT (INDENTATION OBJ)) (PPRINT-EXIT-IF-LIST-EXHAUSTED)
         (SETQ NEXT (PPRINT-POP)))
        (T (FORMAT STREAM "~@[~[~;\\1~;\\1~:;\\2~]~]~W" INDENT OBJ)

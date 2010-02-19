@@ -176,6 +176,13 @@
             (WITH-MODE :LISP
               (READ S))))
          T)
+(DEFTEST READ-PAR
+         (TYPEP
+          (WITH-INPUT-FROM-STRING (S (FORMAT NIL "~%~%"))
+            (WITH-MODE :LISP
+              (READ S)))
+          'PAR-MARKER)
+         T)
 (DEFMACRO READ-FROM-STRING-WITH-CHARPOS
           (STRING
            &OPTIONAL (EOF-ERROR-P T) (EOF-VALUE NIL)
