@@ -2,7 +2,7 @@
 @*Initialization.
 @l
 @e
-(defpackage "TEST" (:use "COMMON-LISP"))
+(defpackage @x"TEST" (:use "COMMON-LISP"))
 @e
 (in-package "TEST")
 
