@@ -769,10 +769,10 @@
 (DEFTEST INDEXING-WALK-DECLARATION-SPECIFIERS
          (EQUAL
           (WALK-DECLARATION-SPECIFIERS (MAKE-INSTANCE 'INDEXING-WALKER)
-                                       '((TYPE FOO X) (SPECIAL X Y Z)
-                                         (OPTMIZE DEBUG))
+                                       '((TYPE FOO X) (SPECIAL X Y) (IGNORE Z)
+                                         (OPTIMIZE DEBUG))
                                        NIL)
-          '((SPECIAL X Y Z)))
+          '((SPECIAL X Y) (IGNORE Z) (OPTIMIZE DEBUG)))
          T)
 (DEFINE-INDEXING-TEST DEFGENERIC
  ((:SECTION :CODE

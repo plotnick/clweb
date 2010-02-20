@@ -5185,24 +5185,29 @@ given specifiers. That's not sufficient for our purposes here, though,
 because we need to replace referring symbols with their referents;
 otherwise, the declarations would apply to the wrong symbols.
 
-Walking general declaration expressions is difficult, mostly because of the
-shorthand notation for type declarations. Fortunately, we only need to care
-about |special| declarations, so we just throw everything else away.
+Because of the shorthand notation for type declarations, walking general
+declaration expressions is difficult. However, we don't care about type
+declarations, since they're not allowed to affect program semantics.
 
 @l
 (defmethod walk-declaration-specifiers ((walker indexing-walker) decls env)
   (loop for (identifier . data) in decls
-        if (eql identifier 'special)
-          collect `(special ,@(walk-list walker data env))))
+        if (member identifier '(special ignore ignorable notinline))
+          collect `(,identifier ,@(walk-list walker data env))
+        else if (member identifier '(optimize))
+          collect (cons identifier data)))
 
 @t@l
 (deftest indexing-walk-declaration-specifiers
   (equal (walk-declaration-specifiers (make-instance 'indexing-walker)
                                       '((type foo x)
-                                        (special x y z)
-                                        (optmize debug))
+                                        (special x y)
+                                        (ignore z)
+                                        (optimize debug))
                                       nil)
-         '((special x y z)))
+         '((special x y)
+           (ignore z)
+           (optimize debug)))
   t)
 
 @ Now we'll turn to the various {\sc clos} forms. We'll start with a little
