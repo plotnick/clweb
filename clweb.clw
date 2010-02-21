@@ -86,7 +86,8 @@ errors and warnings that might be signaled while processing a web.
 (defpackage @x"CLWEB"
   (:use "COMMON-LISP"
         #+sbcl "SB-CLTL2"
-        #+allegro "SYS")
+        #+allegro "SYS"
+        #+ccl "CCL")
   (:export "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
@@ -575,7 +576,8 @@ trailing whitespace and replaces all runs of one or more whitespace
 characters with a single space.
 
 @l
-(defun whitespacep (char) (find char *whitespace* :test #'char=))
+(unless (fboundp 'whitespacep) ; CCL, at least, provides a suitable definition
+  (defun whitespacep (char) (find char *whitespace* :test #'char=)))
 
 (defun squeeze (string)
   (loop with squeezing = nil
@@ -1629,7 +1631,7 @@ of Franz,~Inc.\ for his help in diagnosing this issue.
 
 @l
 (deftype defun-like ()
-  '(cons (member defun defmacro defvar defparameter macrolet cond)))
+  '(cons (member defun defmacro defvar defparameter macrolet)))
 
 (defun pprint-defun-like (xp list &rest args)
   (declare (ignore args))
@@ -1637,7 +1639,14 @@ of Franz,~Inc.\ for his help in diagnosing this issue.
           list))
 
 #+allegro
-(set-tangle-dispatch 'defun-like #'pprint-defun-like)
+(set-tangle-dispatch 'defun-like #'pprint-defun-like 1)
+
+@ Both Allegro Common Lisp and Clozure Common Lisp get |cond| wrong in
+basically the same way.
+
+@l
+#+(or allegro ccl)
+(set-tangle-dispatch '(cons (member cond)) (pprint-dispatch '(identity)) 1)
 
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
@@ -2740,7 +2749,7 @@ sections' code should be written.
                     (*readtable* *readtable*)
                     (*package* *package*))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
-  (declare (ignore output-file tests-file))
+  (declare (ignorable output-file tests-file))
   (when verbose (format t "~&; tangling web from ~A:~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
@@ -2832,7 +2841,7 @@ If successful, |weave| returns the truename of the output file.
               (*readtable* *readtable*)
               (*package* *package*))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
-  (declare (ignore tests-file))
+  (declare (ignorable tests-file))
   (when verbose (format t "~&; weaving web from ~A:~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
@@ -2993,9 +3002,8 @@ re-reads such strings and picks up any inner-Lisp material.
          (named-section (and name (find-section name)))
          (code (section-code section)))
     (print-TeX stream commentary)
-    (fresh-line stream)
-    (cond ((and commentary code) (format stream "\\Y\\B~%"))
-          (code (format stream "\\B~%")))
+    (cond ((and commentary code) (format stream "~&\\Y\\B~%"))
+          (code (format stream "~&\\B~%")))
     (when named-section
       (print-section-name stream named-section)
       (format stream "${}~:[\\mathrel+~;~]\\E{}$~%"
@@ -5177,24 +5185,29 @@ given specifiers. That's not sufficient for our purposes here, though,
 because we need to replace referring symbols with their referents;
 otherwise, the declarations would apply to the wrong symbols.
 
-Walking general declaration expressions is difficult, mostly because of the
-shorthand notation for type declarations. Fortunately, we only need to care
-about |special| declarations, so we just throw everything else away.
+Because of the shorthand notation for type declarations, walking general
+declaration expressions is difficult. However, we don't care about type
+declarations, since they're not allowed to affect program semantics.
 
 @l
 (defmethod walk-declaration-specifiers ((walker indexing-walker) decls env)
   (loop for (identifier . data) in decls
-        if (eql identifier 'special)
-          collect `(special ,@(walk-list walker data env))))
+        if (member identifier '(special ignore ignorable notinline))
+          collect `(,identifier ,@(walk-list walker data env))
+        else if (member identifier '(optimize))
+          collect (cons identifier data)))
 
 @t@l
 (deftest indexing-walk-declaration-specifiers
   (equal (walk-declaration-specifiers (make-instance 'indexing-walker)
                                       '((type foo x)
-                                        (special x y z)
-                                        (optmize debug))
+                                        (special x y)
+                                        (ignore z)
+                                        (optimize debug))
                                       nil)
-         '((special x y z)))
+         '((special x y)
+           (ignore z)
+           (optimize debug)))
   t)
 
 @ Now we'll turn to the various {\sc clos} forms. We'll start with a little
@@ -5413,8 +5426,10 @@ of all of the interesting symbols so encountered.
       (let ((heading (pprint-pop)))
         (cond ((symbolp heading) (format stream "\\(~W\\)" heading))
               (t (format stream "~[\\.~;\\9~]{~/clweb::print-TeX/}"
-                         (position (type-of heading) ;
-                                   '(tt-heading custom-heading))
+                         (typecase heading
+                           (tt-heading 0)
+                           (custom-heading 1)
+                           (otherwise -1))
                          (read-TeX-from-string (heading-name heading))))))
       (pprint-exit-if-list-exhausted)
       (write-char #\Space stream))))

@@ -3,7 +3,7 @@
 (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
   #+:SBCL (require 'sb-cltl2))
 (DEFPACKAGE "CLWEB"
-  (:USE "COMMON-LISP" #+:SBCL "SB-CLTL2" #+:ALLEGRO "SYS")
+  (:USE "COMMON-LISP" #+:SBCL "SB-CLTL2" #+:ALLEGRO "SYS" #+:CCL "CCL")
   (:EXPORT "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
@@ -232,7 +232,8 @@
                              (RETURN (VALUES ALT T))))))))
                   (VALUES NODE T))
                  (VALUES NODE NIL))))
-(DEFUN WHITESPACEP (CHAR) (FIND CHAR *WHITESPACE* :TEST #'CHAR=))
+(UNLESS (FBOUNDP 'WHITESPACEP)
+  (DEFUN WHITESPACEP (CHAR) (FIND CHAR *WHITESPACE* :TEST #'CHAR=)))
 (DEFUN SQUEEZE (STRING)
   (LOOP WITH SQUEEZING = NIL
         FOR CHAR ACROSS (STRING-TRIM *WHITESPACE* STRING)
@@ -605,12 +606,14 @@
                                            ,*COMMA-DOT*))
                                (CADR LIST))))
 (DEFTYPE DEFUN-LIKE ()
-  '(CONS (MEMBER DEFUN DEFMACRO DEFVAR DEFPARAMETER MACROLET COND)))
+  '(CONS (MEMBER DEFUN DEFMACRO DEFVAR DEFPARAMETER MACROLET)))
 (DEFUN PPRINT-DEFUN-LIKE (XP LIST &REST ARGS)
   (DECLARE (IGNORE ARGS))
   (FORMAT XP "~:<~3I~W~^ ~@_~W~^ ~:_~:/cl:pprint-fill/~^~1I~@{ ~_~W~^~}~:>"
           LIST))
-#+:ALLEGRO (set-tangle-dispatch 'defun-like #'pprint-defun-like)
+#+:ALLEGRO (set-tangle-dispatch 'defun-like #'pprint-defun-like 1)
+#+(:OR :ALLEGRO
+   :CCL) (set-tangle-dispatch '(cons (member cond)) (pprint-dispatch '(identity)) 1)
 (DEFCLASS FUNCTION-MARKER (QUOTE-MARKER) NIL)
 (DEFUN SHARPSIGN-QUOTE-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE SUB-CHAR ARG))
@@ -1112,7 +1115,7 @@
         (TESTS-FILE (APPLY #'TESTS-FILE-PATHNAME OUTPUT-FILE "LISP" ARGS))
         (*READTABLE* *READTABLE*) (*PACKAGE* *PACKAGE*))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
-  (DECLARE (IGNORE OUTPUT-FILE TESTS-FILE))
+  (DECLARE (IGNORABLE OUTPUT-FILE TESTS-FILE))
   (WHEN VERBOSE (FORMAT T "~&; tangling web from ~A:~%" INPUT-FILE))
   (SETF (FILL-POINTER *SECTIONS*) 0)
   (SETF *CURRENT-SECTION* NIL)
@@ -1182,7 +1185,7 @@
                             INDEX-FILE)))
         (*READTABLE* *READTABLE*) (*PACKAGE* *PACKAGE*))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
-  (DECLARE (IGNORE TESTS-FILE))
+  (DECLARE (IGNORABLE TESTS-FILE))
   (WHEN VERBOSE (FORMAT T "~&; weaving web from ~A:~%" INPUT-FILE))
   (SETF (FILL-POINTER *SECTIONS*) 0)
   (SETF *CURRENT-SECTION* NIL)
@@ -1274,9 +1277,8 @@
          (NAMED-SECTION (AND NAME (FIND-SECTION NAME)))
          (CODE (SECTION-CODE SECTION)))
     (PRINT-TEX STREAM COMMENTARY)
-    (FRESH-LINE STREAM)
-    (COND ((AND COMMENTARY CODE) (FORMAT STREAM "\\Y\\B~%"))
-          (CODE (FORMAT STREAM "\\B~%")))
+    (COND ((AND COMMENTARY CODE) (FORMAT STREAM "~&\\Y\\B~%"))
+          (CODE (FORMAT STREAM "~&\\B~%")))
     (WHEN NAMED-SECTION
       (PRINT-SECTION-NAME STREAM NAMED-SECTION)
       (FORMAT STREAM "${}~:[\\mathrel+~;~]\\E{}$~%"
@@ -2316,8 +2318,10 @@
   (DEFINE-INDEXING-DEFVAR-WALKER DEFCONSTANT))
 (DEFMETHOD WALK-DECLARATION-SPECIFIERS ((WALKER INDEXING-WALKER) DECLS ENV)
            (LOOP FOR (IDENTIFIER . DATA) IN DECLS
-                 IF (EQL IDENTIFIER 'SPECIAL)
-                 COLLECT `(SPECIAL ,@(WALK-LIST WALKER DATA ENV))))
+                 IF (MEMBER IDENTIFIER '(SPECIAL IGNORE IGNORABLE NOTINLINE))
+                 COLLECT `(,IDENTIFIER ,@(WALK-LIST WALKER DATA ENV)) ELSE
+                 IF (MEMBER IDENTIFIER '(OPTIMIZE))
+                 COLLECT (CONS IDENTIFIER DATA)))
 (DEFMACRO POP-QUALIFIERS (PLACE)
   `(LOOP UNTIL (LISTP (CAR ,PLACE))
          COLLECT (POP ,PLACE)))
@@ -2460,7 +2464,10 @@
        (COND ((SYMBOLP HEADING) (FORMAT STREAM "\\(~W\\)" HEADING))
              (T
               (FORMAT STREAM "~[\\.~;\\9~]{~/clweb::print-TeX/}"
-                      (POSITION (TYPE-OF HEADING) '(TT-HEADING CUSTOM-HEADING))
+                      (TYPECASE HEADING
+                        (TT-HEADING 0)
+                        (CUSTOM-HEADING 1)
+                        (OTHERWISE -1))
                       (READ-TEX-FROM-STRING (HEADING-NAME HEADING))))))
      (PPRINT-EXIT-IF-LIST-EXHAUSTED)
      (WRITE-CHAR #\  STREAM))))
