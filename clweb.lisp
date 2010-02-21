@@ -551,9 +551,13 @@
                          (WRITE-CHAR (READ-CHAR STREAM T NIL T) S))))))
 (SET-MACRO-CHARACTER #\; #'COMMENT-READER NIL (READTABLE-FOR-MODE :LISP))
 (DEFVAR *BACKQUOTE* (MAKE-SYMBOL "BACKQUOTE"))
-(DEFVAR *COMMA* (MAKE-SYMBOL "COMMA"))
-(DEFVAR *COMMA-ATSIGN* (MAKE-SYMBOL "COMMA-ATSIGN"))
-(DEFVAR *COMMA-DOT* (MAKE-SYMBOL "COMMA-DOT"))
+(DEFUN BACKQUOTEP (X) (EQ X *BACKQUOTE*))
+(DEFTYPE BACKQUOTE () '(CONS (SATISFIES BACKQUOTEP)))
+(DEFCLASS COMMA NIL ((FORM :READER COMMA-FORM :INITARG :FORM)))
+(DEFCLASS SPLICING-COMMA (COMMA)
+          ((MODIFIER :READER COMMA-MODIFIER :INITARG :MODIFIER)))
+(DEFMETHOD COMMA-FORM :AROUND ((COMMA COMMA)) (TANGLE (CALL-NEXT-METHOD)))
+(DEFUN COMMAP (OBJ) (TYPEP OBJ 'COMMA))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\`
                        (LAMBDA (STREAM CHAR)
@@ -564,56 +568,47 @@
                        (LAMBDA (STREAM CHAR)
                          (DECLARE (IGNORE CHAR))
                          (CASE (PEEK-CHAR NIL STREAM T NIL T)
-                           (#\@
-                            (READ-CHAR STREAM T NIL T)
-                            (LIST *COMMA-ATSIGN* (READ STREAM T NIL T)))
-                           (#\.
-                            (READ-CHAR STREAM T NIL T)
-                            (LIST *COMMA-DOT* (READ STREAM T NIL T)))
-                           (OTHERWISE (LIST *COMMA* (READ STREAM T NIL T)))))
+                           ((#\@ #\.)
+                            (MAKE-INSTANCE 'SPLICING-COMMA :MODIFIER
+                                           (READ-CHAR STREAM T NIL T) :FORM
+                                           (READ STREAM T NIL T)))
+                           (OTHERWISE
+                            (MAKE-INSTANCE 'COMMA :FORM
+                                           (READ STREAM T NIL T)))))
                        NIL (READTABLE-FOR-MODE MODE)))
 (DEFMACRO BACKQUOTE (X) (BQ-PROCESS X))
 (SETF (MACRO-FUNCTION *BACKQUOTE*) (MACRO-FUNCTION 'BACKQUOTE))
 (DEFUN BQ-PROCESS (X &AUX (X (TANGLE X)))
-  (COND ((VECTORP X) `(APPLY #'VECTOR ,(BQ-PROCESS (COERCE X 'LIST))))
-        ((ATOM X) `',X)
-        ((EQ (CAR X) *BACKQUOTE*) (BQ-PROCESS (BQ-PROCESS (CADR X))))
-        ((EQ (CAR X) *COMMA*) (CADR X))
-        ((EQ (CAR X) *COMMA-ATSIGN*) (ERROR ",@~S after `" (CADR X)))
-        ((EQ (CAR X) *COMMA-DOT*) (ERROR ",.~S after `" (CADR X)))
-        (T
-         (DO ((P X (CDR P))
-              (Q 'NIL (CONS (BRACKET (CAR P)) Q)))
-             ((ATOM P)
-              (CONS 'APPEND (NRECONC Q (AND P (LIST (LIST 'QUOTE P))))))
-           (WHEN (EQ (CAR P) *COMMA*)
-             (UNLESS (NULL (CDDR P)) (ERROR "Malformed ,~S" P))
-             (RETURN (CONS 'APPEND (NRECONC Q (LIST (CADR P))))))
-           (WHEN (EQ (CAR P) *COMMA-ATSIGN*) (ERROR "Dotted ,@~S" P))
-           (WHEN (EQ (CAR P) *COMMA-DOT*) (ERROR "Dotted ,.~S" P))))))
+  (TYPECASE X
+    (VECTOR `(APPLY #'VECTOR ,(BQ-PROCESS (COERCE X 'LIST))))
+    (SPLICING-COMMA (ERROR ",~C~S after `" (COMMA-MODIFIER X) (COMMA-FORM X)))
+    (COMMA (COMMA-FORM X))
+    (ATOM `',X)
+    (BACKQUOTE (BQ-PROCESS (BQ-PROCESS (CADR X))))
+    (T
+     (DO ((P X (CDR P))
+          (Q 'NIL (CONS (BRACKET (CAR P)) Q)))
+         ((AND (ATOM P) (NOT (COMMAP P)))
+          (CONS 'APPEND (NRECONC Q (AND P (LIST (LIST 'QUOTE P))))))
+       (TYPECASE P
+         (SPLICING-COMMA
+          (ERROR "Dotted ,~C~S" (COMMA-MODIFIER P) (COMMA-FORM P)))
+         (COMMA (RETURN (CONS 'APPEND (NRECONC Q (LIST (COMMA-FORM P)))))))))))
 (DEFUN BRACKET (X)
-  (COND ((ATOM X) `(LIST ,(BQ-PROCESS X)))
-        ((EQ (CAR X) *COMMA*) `(LIST ,(CADR X)))
-        ((EQ (CAR X) *COMMA-ATSIGN*) (CADR X))
-        ((EQ (CAR X) *COMMA-DOT*) (CADR X)) (T `(LIST ,(BQ-PROCESS X)))))
-(SET-TANGLE-DISPATCH `(CONS (EQL ,*BACKQUOTE*))
-                     (LAMBDA (STREAM LIST) (FORMAT STREAM "`~W" (CADR LIST))))
-(SET-TANGLE-DISPATCH `(CONS (MEMBER ,*COMMA* ,*COMMA-ATSIGN* ,*COMMA-DOT*))
-                     (LAMBDA (STREAM LIST)
-                       (FORMAT STREAM "~[,~;,@~;,.~]~W"
-                               (POSITION (CAR LIST)
-                                         `(,*COMMA* ,*COMMA-ATSIGN*
-                                           ,*COMMA-DOT*))
-                               (CADR LIST))))
-(DEFTYPE DEFUN-LIKE ()
-  '(CONS (MEMBER DEFUN DEFMACRO DEFVAR DEFPARAMETER MACROLET)))
-(DEFUN PPRINT-DEFUN-LIKE (XP LIST &REST ARGS)
-  (DECLARE (IGNORE ARGS))
-  (FORMAT XP "~:<~3I~W~^ ~@_~W~^ ~:_~:/cl:pprint-fill/~^~1I~@{ ~_~W~^~}~:>"
-          LIST))
-#+:ALLEGRO (set-tangle-dispatch 'defun-like #'pprint-defun-like 1)
-#+(:OR :ALLEGRO
-   :CCL) (set-tangle-dispatch '(cons (member cond)) (pprint-dispatch '(identity)) 1)
+  (TYPECASE X
+    (SPLICING-COMMA (COMMA-FORM X))
+    (COMMA `(LIST ,(COMMA-FORM X)))
+    (T `(LIST ,(BQ-PROCESS X)))))
+(SET-TANGLE-DISPATCH 'BACKQUOTE
+                     (LAMBDA (STREAM OBJ) (FORMAT STREAM "`~W" (CADR OBJ))))
+(SET-TANGLE-DISPATCH 'SPLICING-COMMA
+                     (LAMBDA (STREAM OBJ)
+                       (FORMAT STREAM ",~C~W" (COMMA-MODIFIER OBJ)
+                               (COMMA-FORM OBJ)))
+                     1)
+(SET-TANGLE-DISPATCH 'COMMA
+                     (LAMBDA (STREAM OBJ)
+                       (FORMAT STREAM ",~W" (COMMA-FORM OBJ))))
 (DEFCLASS FUNCTION-MARKER (QUOTE-MARKER) NIL)
 (DEFUN SHARPSIGN-QUOTE-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE SUB-CHAR ARG))
@@ -1479,15 +1474,16 @@
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\C{~/clweb::print-TeX/}"
                               (READ-TEX-FROM-STRING (COMMENT-TEXT OBJ)))))
-(SET-WEAVE-DISPATCH `(CONS (EQL ,*BACKQUOTE*))
+(SET-WEAVE-DISPATCH 'BACKQUOTE
                     (LAMBDA (STREAM OBJ) (FORMAT STREAM "\\`~W" (CADR OBJ))))
-(SET-WEAVE-DISPATCH `(CONS (MEMBER ,*COMMA* ,*COMMA-ATSIGN* ,*COMMA-DOT*))
+(SET-WEAVE-DISPATCH 'SPLICING-COMMA
                     (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM "\\CO{~[~;@~;.~]}~W"
-                              (POSITION (CAR OBJ)
-                                        `(,*COMMA* ,*COMMA-ATSIGN*
-                                          ,*COMMA-DOT*))
-                              (CADR OBJ))))
+                      (FORMAT STREAM "\\CO{~C}~W" (COMMA-MODIFIER OBJ)
+                              (SLOT-VALUE OBJ 'FORM)))
+                    1)
+(SET-WEAVE-DISPATCH 'COMMA
+                    (LAMBDA (STREAM OBJ)
+                      (FORMAT STREAM "\\CO{}~W" (SLOT-VALUE OBJ 'FORM))))
 (SET-WEAVE-DISPATCH 'FUNCTION-MARKER
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\#\\'~S" (QUOTED-FORM OBJ)))
