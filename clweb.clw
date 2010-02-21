@@ -2749,7 +2749,7 @@ sections' code should be written.
                     (*readtable* *readtable*)
                     (*package* *package*))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
-  (declare (ignore output-file tests-file))
+  (declare (ignorable output-file tests-file))
   (when verbose (format t "~&; tangling web from ~A:~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
@@ -2841,7 +2841,7 @@ If successful, |weave| returns the truename of the output file.
               (*readtable* *readtable*)
               (*package* *package*))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
-  (declare (ignore tests-file))
+  (declare (ignorable tests-file))
   (when verbose (format t "~&; weaving web from ~A:~%" input-file))
   @<Initialize global variables@>
   (with-open-file (input input-file
