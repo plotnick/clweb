@@ -86,11 +86,11 @@ During development, the other mode of tangling is often more useful:
 The tangled contents of `clweb.clw' have now been loaded directly into the
 Lisp environment.
 
-Currently, CLWEB only runs under SBCL and Allegro Common Lisp. Ports to
-other Lisp implementations are underway. Reports of the experience of
-attempting to run the system under other Common Lisp implementations would
-be welcome, along with any other questions, bug-reports, patches, comments,
-or suggestions; please email them to Alex Plotnick <plotnick@cs.brandeis.edu>.
+Currently, CLWEB runs under SBCL, Allegro Common Lisp, and Clozure Common
+Lisp. Reports of the experience of attempting to run the system under other
+Common Lisp implementations would be welcome, along with any other
+questions, bug-reports, patches, comments, or suggestions; please email
+them to Alex Plotnick <plotnick@cs.brandeis.edu>.
 
 The author gratefully acknowledges the encouragement and support of Ross
 Shaull, who made him believe that at least one other person in the world
