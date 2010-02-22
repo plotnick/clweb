@@ -1711,45 +1711,30 @@ asterisk must be composed entirely of the characters `0' and~`1', which
 it uses to construct a |simple-bit-vector|. It supports the same kind of
 length abbreviation that \.{\#()} does.
 
-Note the use of the word `token' above. By defining \.{\#*} in terms of the
-{\it token\/} following the \.{*}, the authors of the standard have made it
-very, very difficult for a portable program to emulate the specified behavior,
-since only the built-in reader knows how to tokenize for the current
-readtable. What we do is resort to a dirty trick: we set up an echo stream,
-use the standard reader to parse the bit vector, then build our marker from
-the echoed characters.
-
 @l
 (defclass bit-vector-marker (simple-vector-marker) ()
   (:default-initargs :element-type 'bit))
 
 (defun simple-bit-vector-reader (stream sub-char arg)
   (declare (ignore sub-char))
-  (let ((*readtable* (readtable-for-mode nil)))
-    (read-with-echo (stream vector bits :prefix (format nil "#~@[~D~]*" arg))
-      (apply #'make-instance 'bit-vector-marker
-             :elements @<Build a bit vector...@>
-             (if arg (list :length arg))))))
+  (apply #'make-instance 'bit-vector-marker
+         :elements (coerce @<Read `0's and `1's from |stream|@> 'bit-vector)
+         (when arg `(:length ,arg))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\* #'simple-bit-vector-reader ;
                                 (readtable-for-mode mode)))
 
-
-@ The string |bits| now contains the `0' and~`1' characters that make up
-the bit vector. But it might also contain the delimiter that terminates the
-token, so we have to be careful.
-
-@<Build a bit vector from the characters in |bits|@>=
-(map 'bit-vector
-     (lambda (c) (ecase c (#\0 0) (#\1 1)))
-     (subseq bits 0 (let ((n (length bits)))
-                      (case (elt bits (1- n)) ((#\0 #\1) n) (t (1- n))))))
+@ @<Read `0's and `1's...@>=
+(loop for char = (read-char stream nil #\Space t)
+      while (or (char= char #\0) (char= char #\1))
+      collect (ecase char (#\0 0) (#\1 1))
+      finally (unread-char char stream))
 
 @t@l
 (deftest read-bit-vector
-  (marker-value (read-form-from-string "#5*101"))
-  #5*101)
+  (marker-value (read-form-from-string "#6*101"))
+  #6*101)
 
 @ Sharpsign dot permits read-time evaluation. Ordinarily, of course, the
 form evaluated is lost, as only the result of the evaluation is returned.

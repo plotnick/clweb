@@ -657,17 +657,14 @@
           (:DEFAULT-INITARGS :ELEMENT-TYPE 'BIT))
 (DEFUN SIMPLE-BIT-VECTOR-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE SUB-CHAR))
-  (LET ((*READTABLE* (READTABLE-FOR-MODE NIL)))
-    (READ-WITH-ECHO (STREAM VECTOR BITS :PREFIX (FORMAT NIL "#~@[~D~]*" ARG))
-      (APPLY #'MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS
-             (MAP 'BIT-VECTOR (LAMBDA (C) (ECASE C (#\0 0) (#\1 1)))
-                  (SUBSEQ BITS 0
-                          (LET ((N (LENGTH BITS)))
-                            (CASE (ELT BITS (1- N))
-                              ((#\0 #\1) N)
-                              (T (1- N))))))
-             (IF ARG
-                 (LIST :LENGTH ARG))))))
+  (APPLY #'MAKE-INSTANCE 'BIT-VECTOR-MARKER :ELEMENTS
+         (COERCE
+          (LOOP FOR CHAR = (READ-CHAR STREAM NIL #\  T)
+                WHILE (OR (CHAR= CHAR #\0) (CHAR= CHAR #\1))
+                COLLECT (ECASE CHAR (#\0 0) (#\1 1))
+                FINALLY (UNREAD-CHAR CHAR STREAM))
+          'BIT-VECTOR)
+         (WHEN ARG `(:LENGTH ,ARG))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\* #'SIMPLE-BIT-VECTOR-READER
                                 (READTABLE-FOR-MODE MODE)))
