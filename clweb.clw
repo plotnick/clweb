@@ -1706,10 +1706,10 @@ abbreviation.
   (marker-value (read-form-from-string "#5(:a :b :c)"))
   #(:a :b :c :c :c))
 
-@ Sharpsign asterisk is similar, but the token following the asterisk must
-be composed entirely of \.{0}s and \.{1}s, from which a |simple-bit-vector|
-is constructed. It supports the same kind of abbreviation that \.{\#()}
-does.
+@ Sharpsign asterisk also creates a vector, but the token following the
+asterisk must be composed entirely of the characters `0' and~`1', which
+it uses to construct a |simple-bit-vector|. It supports the same kind of
+length abbreviation that \.{\#()} does.
 
 Note the use of the word `token' above. By defining \.{\#*} in terms of the
 {\it token\/} following the \.{*}, the authors of the standard have made it
