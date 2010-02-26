@@ -76,6 +76,8 @@ any existing code for that section; otherwise, it will be replaced."
                             temp-file (not (null arg)))))
         (cond ((fboundp 'slime-interactive-eval)
                (slime-interactive-eval string))
+              ((fboundp 'fi:eval-in-lisp)
+               (fi:eval-in-lisp string))
               ((fboundp 'inferior-lisp-proc)
                (comint-simple-send (inferior-lisp-proc) string))
               (t (error "Unable to find superior or inferior Lisp")))))))

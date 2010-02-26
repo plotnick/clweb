@@ -1319,7 +1319,7 @@
                       (PRINT-XREFS STREAM #\Q
                                    (REMOVE SECTION (CITED-BY SECTION)))))
 (DEFPARAMETER *PRINT-ESCAPE-LIST*
-  '((" \\%&#$^_~<>" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
+  '((" \\%&#$^_~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
 (DEFUN PRINT-ESCAPED
        (STREAM STRING
         &REST ARGS
@@ -1366,7 +1366,9 @@
   (LET ((GROUP-P
          (COND
           ((MEMBER SYMBOL LAMBDA-LIST-KEYWORDS) (WRITE-STRING "\\K{" STREAM))
-          ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM)))))
+          ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM))))
+        (*PRINT-ESCAPE-LIST*
+         `(("<" . "$<$") (">" . "$>$") ,@*PRINT-ESCAPE-LIST*)))
     (PRINT-ESCAPED STREAM (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL))
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
