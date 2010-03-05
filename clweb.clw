@@ -4358,7 +4358,7 @@ to |*index-packages*|.
 (defvar *index-packages* nil)
 
 @ @<Initialize global...@>=
-(setq *index-packages* (list (find-package "COMMON-LISP-USER")))
+(setq *index-packages* nil)
 
 @t@l
 (deftest index-package
