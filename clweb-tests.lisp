@@ -776,9 +776,9 @@
          (EQUAL
           (WALK-DECLARATION-SPECIFIERS (MAKE-INSTANCE 'INDEXING-WALKER)
                                        '((TYPE FOO X) (SPECIAL X Y) (IGNORE Z)
-                                         (OPTIMIZE DEBUG))
+                                         (OPTIMIZE (SPEED 3) (SAFETY 0)))
                                        NIL)
-          '((SPECIAL X Y) (IGNORE Z) (OPTIMIZE DEBUG)))
+          '((SPECIAL X Y) (OPTIMIZE (SPEED 3) (SAFETY 0))))
          T)
 (DEFINE-INDEXING-TEST DEFGENERIC
  ((:SECTION :CODE

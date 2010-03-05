@@ -5173,15 +5173,19 @@ otherwise, the declarations would apply to the wrong symbols.
 
 Because of the shorthand notation for type declarations, walking general
 declaration expressions is difficult. However, we don't care about type
-declarations, since they're not allowed to affect program semantics.
+declarations, since they're not allowed to affect program semantics. We
+therefore just throw out everything except |special| and |optimize|
+declarations. (The latter are preserved only because CCL's macro-expansion
+machinery uses blatantly unsafe code, and depends on local declarations to
+lower the safety level.)
 
 @l
 (defmethod walk-declaration-specifiers ((walker indexing-walker) decls env)
   (loop for (identifier . data) in decls
-        if (member identifier '(special ignore ignorable notinline))
-          collect `(,identifier ,@(walk-list walker data env))
-        else if (member identifier '(optimize))
-          collect (cons identifier data)))
+        if (eql identifier 'special)
+          collect `(special ,@(walk-list walker data env))
+        else if (eql identifier 'optimize)
+          collect `(optimize ,@data)))
 
 @t@l
 (deftest indexing-walk-declaration-specifiers
@@ -5189,11 +5193,10 @@ declarations, since they're not allowed to affect program semantics.
                                       '((type foo x)
                                         (special x y)
                                         (ignore z)
-                                        (optimize debug))
+                                        (optimize (speed 3) (safety 0)))
                                       nil)
          '((special x y)
-           (ignore z)
-           (optimize debug)))
+           (optimize (speed 3) (safety 0))))
   t)
 
 @ Now we'll turn to the various {\sc clos} forms. We'll start with a little
