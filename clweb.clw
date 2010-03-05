@@ -70,9 +70,8 @@ top-level tangler and weaver functions mentioned above, there's also
 |load-sections-from-temp-file|, which is conceptually part of the tangler,
 but is a special-purpose routine designed to be used in conjunction with an
 editor such as Emacs to provide incremental redefinition of sections; the
-user will generally never need to call it directly. There's a flag,
-|*index-lexical-variables*|, that controls whether or not the indexer
-should create entries for lexical variables; the default is |nil|. The
+user will generally never need to call it directly. Then there are a few
+global variables that control various operations of the weaver. The
 remainder of the exported symbols are condition classes for the various
 errors and warnings that might be signaled while processing a web.
 
@@ -92,6 +91,8 @@ errors and warnings that might be signaled while processing a web.
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "*WEAVE-PRINT*"
+           "*WEAVE-VERBOSE*"
            "*INDEX-LEXICAL-VARIABLES*"
            "AMBIGUOUS-PREFIX-ERROR"
            "SECTION-NAME-CONTEXT-ERROR"
@@ -2853,8 +2854,10 @@ If successful, |weave| returns the truename of the output file.
                                   index-file)))
 
 @ @<Global variables@>=
-(defvar *weave-verbose* t)
-(defvar *weave-print* t)
+(defvar *weave-verbose* t
+  "The default for the :VERBOSE argument to WEAVE.")
+(defvar *weave-print* t
+  "The default for the :PRINT argument to WEAVE.")
 
 @ The individual sections and their contents are printed using the pretty
 printer with a customized dispatch table.
@@ -4355,7 +4358,8 @@ to |*index-packages*|.
        (member (symbol-package object) *index-packages*)))
 
 @ @<Global variables@>=
-(defvar *index-packages* nil)
+(defvar *index-packages* nil
+  "The list of packages whose symbols should be indexed.")
 
 @ @<Initialize global...@>=
 (setq *index-packages* nil)
@@ -4782,7 +4786,8 @@ the indexer will create entries for lexical variables. Its value is
 {\it not\/} re-initialized on each run.
 
 @<Global variables@>=
-(defvar *index-lexical-variables* nil)
+(defvar *index-lexical-variables* nil
+  "If this flag is non-nil, the indexer will index lexical variables.")
 
 @ Here are a couple of indexing routines that we'll use in the walker below
 for indexing function and variable {\it uses}. They look up the given
