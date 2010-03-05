@@ -83,7 +83,7 @@ errors and warnings that might be signaled while processing a web.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   #+sbcl (require 'sb-cltl2))
 @e
-(defpackage @x"CLWEB"
+(defpackage "CLWEB"
   (:use "COMMON-LISP"
         #+sbcl "SB-CLTL2"
         #+allegro "SYS"
@@ -2301,9 +2301,10 @@ citations, and so are not expanded.
 designator for a list of packages, and informs the indexing sub-system
 that symbols in those packages are to be indexed. It returns the form.
 
-The usual idiom is to use this control code in a |defpackage| form; e.g.,
-\((defpackage @@x\.{"FOO"} $\ldots$)\) will index the symbols in the package
-named \.{FOO}.
+This control code probably won't be needed terribly often, since the
+indexer automatically adds the current package (i.e., the value of
+|*package*| at the time of indexing) to the list of packages whose
+symbols should be indexed.
 
 Note that this is {\it completely different\/} than the \.{@@x} control
 code of \WEB\ and \CWEB, which is part of their change-file system.
@@ -2321,7 +2322,7 @@ code of \WEB\ and \CWEB, which is part of their change-file system.
 (deftest index-package-reader
   (let ((*index-packages* nil))
     (read-form-from-string "@x\"CLWEB\"")
-    (eql (car *index-packages*) (find-package "CLWEB")))
+    (not (null (interesting-symbol-p 'index-package-reader))))
   t)
 
 @ These next control codes are used to manually create index entries.
@@ -4338,7 +4339,7 @@ the walker classes defined in this program.
 @*Indexing. Having constructed our code walker, we can now use it to
 produce an index of the symbols in a web. We'll say a symbol is
 {\it interesting\/} if it is interned in one of the packages listed
-in |*index-packages*|. The user should add packages to this list using
+in |*index-packages*|. The user can add packages to this list using
 the \.{@@x} control code, which calls the following function. It takes
 a designator for a list of package designators, and adds each package
 to |*index-packages*|.
@@ -4349,14 +4350,26 @@ to |*index-packages*|.
   (dolist (package packages)
     (pushnew (find-package package) *index-packages*)))
 
+(defun interesting-symbol-p (object)
+  (and (symbolp object)
+       (member (symbol-package object) *index-packages*)))
+
 @ @<Global variables@>=
 (defvar *index-packages* nil)
 
 @ @<Initialize global...@>=
 (setq *index-packages* (list (find-package "COMMON-LISP-USER")))
 
-@t For testing the indexer, we need to make sure that the \CLWEB\ package
-is in |*index-packages*|.
+@t@l
+(deftest index-package
+  (let ((*index-packages* nil))
+    (index-package "KEYWORD")
+    (values (interesting-symbol-p nil)
+            (not (null (interesting-symbol-p :foo)))))
+  nil t)
+
+@t We need to make sure that the \CLWEB\ package is in |*index-packages*|
+when testing the indexer.
 
 @l
 (index-package "CLWEB")
@@ -4867,8 +4880,7 @@ semantics of Common Lisp, since we can't walk pre-tangled code.
 @l
 (defun substitute-symbols (form section &aux symbols)
   (labels ((get-symbols (form)
-             (cond ((and (symbolp form)
-                         (member (symbol-package form) *index-packages*))
+             (cond ((interesting-symbol-p form)
                     (pushnew form symbols))
                    ((atom form) nil)
                    (t (get-symbols (car form))
@@ -5368,6 +5380,7 @@ of all of the interesting symbols so encountered.
                        (index *index*)
                        (walker (make-instance 'indexing-walker :index index)))
   (let ((*evaluating* t))
+    (index-package *package*)
     (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
       (walk-form walker form))))
 
