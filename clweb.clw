@@ -10,11 +10,11 @@
 \def\CLWEB{{\tt CLWEB}}
 \def\EOF{{\sc eof}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
-\def\<#1\>{$\langle${\it #1\/}$\rangle$} % metasyntactic variable
+\def\<#1>{\leavevmode\hbox{$\mkern-2mu\langle${\it #1\/}$\rangle$}}
 \def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
 
 @*Introduction. This is \CLWEB, a literate programming system for Common
-Lisp by Alex Plotnick \<plotnick@@cs.brandeis.edu\>. It is modeled
+Lisp by Alex Plotnick \<plotnick@@cs.brandeis.edu>. It is modeled
 after the \CWEB\ system by Silvio Levy and Donald E.~Knuth, which was in
 turn adapted from Knuth's original \WEB\ system. It shares with those
 systems not only their underlying philosophy, but also most of their syntax.
@@ -1823,7 +1823,7 @@ the actual value, and store the radix in our marker.
     (set-dispatch-macro-character #\# sub-char #'radix-reader ;
                                   (readtable-for-mode mode))))
 
-@ @<Call the standard reader macro function for \.{\#\<|sub-char|\>}@>=
+@ @<Call the standard reader macro function for \.{\#\<|sub-char|>}@>=
 (funcall (get-dispatch-macro-character #\# sub-char (readtable-for-mode nil))
          stream sub-char arg)
 
@@ -3061,12 +3061,12 @@ how, and when.
 The following routine is the basis for most of the escaping. It writes
 |string| to the output stream designated by |stream|, escaping the
 characters given in the a-list |*print-escape-list*|. The entries in this
-a-list should be of the form `(\<characters\>~.~\<replacement\>)',
-where \<replacement\> describes how to escape each of the characters
-in \<characters\>. Suppose $c$ is a character in |string| that
-appears in one of the \<characters\> strings. If the corresponding
-\<replacement\> is a single character, then |print-escaped| will
-output it prior to every occurrence of $c$. If \<replacement\> is a
+a-list should be of the form `(\<characters>~.~\<replacement>)',
+where \<replacement> describes how to escape each of the characters
+in \<characters>. Suppose $c$ is a character in |string| that
+appears in one of the \<characters> strings. If the corresponding
+\<replacement> is a single character, then |print-escaped| will
+output it prior to every occurrence of $c$. If \<replacement> is a
 string, it will be output {\it instead of\/} every occurrence of $c$ in
 the input. Otherwise, $c$ will be output without escaping.
 
@@ -3463,7 +3463,7 @@ of |enclose| on all implementations (note that it's shadowed in
 the package definition at the beginning of the program). Thanks
 to Duane Rettig of Franz,~Inc.\ for the idea behind this trivial
 implementation (post to comp.lang.lisp of 18~Oct, 2004, message-id
-\<4is97u4vv.fsf@@franz.com\>).
+\<4is97u4vv.fsf@@franz.com>).
 @^Allegro Common Lisp@>
 
 @l
@@ -4393,7 +4393,7 @@ when testing the indexer.
 
 @ Before we proceed, let's establish some terminology. Formally, an
 {\it index\/} is an ordered collection of {\it entries}, each of which
-is a (\<heading\>, \<locator\>) pair: the {\it locator} indicates where the
+is a (\<heading>, \<locator>) pair: the {\it locator} indicates where the
 object referred to by the {\it heading} may be found. A list of entries
 with the same heading is called an {\it entry list}, or sometimes just an
 {\it entry\/}; the latter is an abuse of terminology, but useful and
