@@ -5410,19 +5410,19 @@ of all of the interesting symbols so encountered.
 We'll be extra fancy and try to coalesce adjacent locators, so that, e.g.,
 if |foo| is used in sections 1, 2, and~3, the entry will be printed as
 `|foo|:~1--3'. The function |coalesce-locators| takes a sorted list of
-locators and returns a list of locators and |section-locator-range|
-instances. Note that definitional locators will never be part of a range.
+locators and returns a list of locators and |section-range| instances.
+Note that definitional locators will never be part of a range.
 
 @l
-(defclass section-locator-range ()
+(defclass section-range ()
   ((start :reader start-section :initarg :start)
    (end :reader end-section :initarg :end)))
 
 (defun coalesce-locators (locators)
-  (flet ((maybe-make-locator-range (start end)
+  (flet ((maybe-make-section-range (start end)
            (cond ((eql start end) start)
                  ((and start end)
-                  (make-instance 'section-locator-range ;
+                  (make-instance 'section-range ;
                                  :start (location start) ;
                                  :end (location end))))))
     (do* ((locators locators (cdr locators))
@@ -5431,9 +5431,9 @@ instances. Note that definitional locators will never be part of a range.
           start end)
          ((endp locators) ;
           (nreconc coalesced-locators ;
-                   (ensure-list (maybe-make-locator-range start end))))
+                   (ensure-list (maybe-make-section-range start end))))
       (flet ((maybe-push-range (start end)
-               (let ((range (maybe-make-locator-range start end)))
+               (let ((range (maybe-make-section-range start end)))
                  (when range (push range coalesced-locators)))))
         (cond ((locator-definition-p loc)
                (maybe-push-range start end)
@@ -5447,9 +5447,9 @@ instances. Note that definitional locators will never be part of a range.
                  (setq start loc end start)))))))
 
 @t@l
-(defmethod location ((loclist section-locator-range))
-  (list (start-section loclist)
-        (end-section loclist)))
+(defmethod location ((range section-range))
+  (list (start-section range)
+        (end-section range)))
 
 (deftest (coalesce-locators 1)
   (mapcar (lambda (sections)
@@ -5495,11 +5495,11 @@ instances. Note that definitional locators will never be part of a range.
              (sort (copy-list (entry-locators entry)) #'<
                    :key (lambda (loc) (section-number (location loc))))))))
 
-(set-weave-dispatch 'section-locator-range
-  (lambda (stream loclist)
+(set-weave-dispatch 'section-range
+  (lambda (stream range)
     (format stream "\\hbox{~D--~D}"
-            (section-number (start-section loclist))
-            (section-number (end-section loclist)))))
+            (section-number (start-section range))
+            (section-number (end-section range)))))
 
 (set-weave-dispatch 'section-locator
   (lambda (stream loc)
