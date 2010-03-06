@@ -2083,7 +2083,7 @@
 (DEFCLASS LOCATOR NIL NIL)
 (DEFCLASS SECTION-LOCATOR (LOCATOR)
           ((SECTION :ACCESSOR LOCATION :INITARG :SECTION)
-           (DEF :ACCESSOR LOCATOR-DEFINITION-P :INITARG :DEF)))
+           (DEF :ACCESSOR LOCATOR-DEFINITION-P :INITARG :DEF :INITFORM NIL)))
 (DEFCLASS XREF-LOCATOR (LOCATOR)
           ((HEADING :ACCESSOR LOCATION :INITARG :HEADING)))
 (DEFCLASS SEE-LOCATOR (XREF-LOCATOR) NIL)
@@ -2439,6 +2439,38 @@
     (INDEX-PACKAGE *PACKAGE*)
     (DOLIST (FORM (TANGLE-CODE-FOR-INDEXING SECTIONS) (WALKER-INDEX WALKER))
       (WALK-FORM WALKER FORM))))
+(DEFCLASS SECTION-LOCATOR-RANGE NIL
+          ((START :READER START-SECTION :INITARG :START)
+           (END :READER END-SECTION :INITARG :END)))
+(DEFUN COALESCE-LOCATORS (LOCATORS)
+  (FLET ((MAYBE-MAKE-LOCATOR-RANGE (START END)
+           (COND ((EQL START END) START)
+                 ((AND START END)
+                  (MAKE-INSTANCE 'SECTION-LOCATOR-RANGE :START (LOCATION START)
+                                 :END (LOCATION END))))))
+    (DO* ((LOCATORS LOCATORS (CDR LOCATORS))
+          (LOC (CAR LOCATORS) (CAR LOCATORS))
+          (COALESCED-LOCATORS 'NIL)
+          START
+          END)
+         ((ENDP LOCATORS)
+          (NRECONC COALESCED-LOCATORS
+                   (ENSURE-LIST (MAYBE-MAKE-LOCATOR-RANGE START END))))
+      (FLET ((MAYBE-PUSH-RANGE (START END)
+               (LET ((RANGE (MAYBE-MAKE-LOCATOR-RANGE START END)))
+                 (WHEN RANGE (PUSH RANGE COALESCED-LOCATORS)))))
+        (COND
+         ((LOCATOR-DEFINITION-P LOC) (MAYBE-PUSH-RANGE START END)
+          (PUSH LOC COALESCED-LOCATORS)
+          (SETQ START NIL
+                END NIL))
+         ((AND END
+               (= (SECTION-NUMBER (LOCATION LOC))
+                  (1+ (SECTION-NUMBER (LOCATION END)))))
+          (SETQ END LOC))
+         (T (MAYBE-PUSH-RANGE START END)
+          (SETQ START LOC
+                END START)))))))
 (SET-WEAVE-DISPATCH 'INDEX
                     (LAMBDA (STREAM INDEX)
                       (MAP-BST (LAMBDA (ENTRY) (WRITE ENTRY :STREAM STREAM))
@@ -2448,9 +2480,16 @@
                       (FORMAT STREAM
                               "\\I~/clweb::print-entry-heading/~{, ~W~}.~%"
                               (ENTRY-HEADING ENTRY)
-                              (SORT (COPY-LIST (ENTRY-LOCATORS ENTRY)) #'< :KEY
-                                    (LAMBDA (LOC)
-                                      (SECTION-NUMBER (LOCATION LOC)))))))
+                              (COALESCE-LOCATORS
+                               (SORT (COPY-LIST (ENTRY-LOCATORS ENTRY)) #'<
+                                     :KEY
+                                     (LAMBDA (LOC)
+                                       (SECTION-NUMBER (LOCATION LOC))))))))
+(SET-WEAVE-DISPATCH 'SECTION-LOCATOR-RANGE
+                    (LAMBDA (STREAM LOCLIST)
+                      (FORMAT STREAM "\\hbox{~D--~D}"
+                              (SECTION-NUMBER (START-SECTION LOCLIST))
+                              (SECTION-NUMBER (END-SECTION LOCLIST)))))
 (SET-WEAVE-DISPATCH 'SECTION-LOCATOR
                     (LAMBDA (STREAM LOC)
                       (FORMAT STREAM "~:[~D~;\\[~D]~]"

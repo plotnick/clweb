@@ -4,6 +4,7 @@
   (REQUIRE 'RT)
   (LOOP FOR SYMBOL BEING EACH EXTERNAL-SYMBOL OF (FIND-PACKAGE "RT")
         DO (IMPORT SYMBOL)))
+(DEFMETHOD SECTION-NUMBER ((SECTION INTEGER)) SECTION)
 (DEFTEST CURRENT-SECTION
          (LET ((*SECTIONS* (MAKE-ARRAY 1 :FILL-POINTER 0)))
            (EQL (MAKE-INSTANCE 'SECTION) *CURRENT-SECTION*))
@@ -805,3 +806,24 @@
  ((FOO-A2 "generic function") ((:DEF 0)))
  ((FOO-B "generic function") ((:DEF 1)))
  ((FOO-B "primary setf method") ((:DEF 1))))
+(DEFMETHOD LOCATION ((LOCLIST SECTION-LOCATOR-RANGE))
+           (LIST (START-SECTION LOCLIST) (END-SECTION LOCLIST)))
+(DEFTEST (COALESCE-LOCATORS 1)
+         (MAPCAR
+          (LAMBDA (SECTIONS)
+            (MAPCAR #'LOCATION
+                    (COALESCE-LOCATORS
+                     (MAPCAR
+                      (LAMBDA (N) (MAKE-INSTANCE 'SECTION-LOCATOR :SECTION N))
+                      SECTIONS))))
+          '((1 3 5 7) (1 2 3 5 7) (1 3 4 5 7) (1 2 3 5 6 7) (1 2 3 5 6 7 9)))
+         ((1 3 5 7) ((1 3) 5 7) (1 (3 5) 7) ((1 3) (5 7)) ((1 3) (5 7) 9)))
+(DEFTEST (COALESCE-LOCATORS 2)
+         (MAPCAR #'LOCATION
+                 (COALESCE-LOCATORS
+                  `(,(MAKE-INSTANCE 'SECTION-LOCATOR :SECTION 1 :DEF T)
+                    ,@(MAPCAR
+                       (LAMBDA (N) (MAKE-INSTANCE 'SECTION-LOCATOR :SECTION N))
+                       '(2 3 5))
+                    ,(MAKE-INSTANCE 'SECTION-LOCATOR :SECTION 6 :DEF T))))
+         (1 (2 3) 5 6))

@@ -186,6 +186,12 @@ which might be named or unnamed.
    (code :accessor section-code :initarg :code))
   (:default-initargs :name nil :commentary nil :code nil))
 
+@t It's occasionally useful in testing to be able to use numbers as if
+they were sections, at least for numbering purposes.
+
+@l
+(defmethod section-number ((section integer)) section)
+
 @ Sections introduced with \.{@@*} (`starred' sections) begin a new major
 group of sections, and get some special formatting during weaving. The
 control code \.{@@*} should be immediately followed by a title for this
@@ -4645,7 +4651,7 @@ when it prints the containing entry.
 
 (defclass section-locator (locator)
   ((section :accessor location :initarg :section)
-   (def :accessor locator-definition-p :initarg :def)))
+   (def :accessor locator-definition-p :initarg :def :initform nil)))
 
 (defclass xref-locator (locator)
   ((heading :accessor location :initarg :heading)))
@@ -5401,6 +5407,79 @@ of all of the interesting symbols so encountered.
       (walk-form walker form))))
 
 @ All that remains now is to write the index entries out to the index file.
+We'll be extra fancy and try to coalesce adjacent locators, so that, e.g.,
+if |foo| is used in sections 1, 2, and~3, the entry will be printed as
+`|foo|:~1--3'. The function |coalesce-locators| takes a sorted list of
+locators and returns a list of locators and |section-locator-range|
+instances. Note that definitional locators will never be part of a range.
+
+@l
+(defclass section-locator-range ()
+  ((start :reader start-section :initarg :start)
+   (end :reader end-section :initarg :end)))
+
+(defun coalesce-locators (locators)
+  (flet ((maybe-make-locator-range (start end)
+           (cond ((eql start end) start)
+                 ((and start end)
+                  (make-instance 'section-locator-range ;
+                                 :start (location start) ;
+                                 :end (location end))))))
+    (do* ((locators locators (cdr locators))
+          (loc (car locators) (car locators))
+          (coalesced-locators '())
+          start end)
+         ((endp locators) ;
+          (nreconc coalesced-locators ;
+                   (ensure-list (maybe-make-locator-range start end))))
+      (flet ((maybe-push-range (start end)
+               (let ((range (maybe-make-locator-range start end)))
+                 (when range (push range coalesced-locators)))))
+        (cond ((locator-definition-p loc)
+               (maybe-push-range start end)
+               (push loc coalesced-locators)
+               (setq start nil end nil))
+              ((and end ;
+                    (= (section-number (location loc)) ;
+                       (1+ (section-number (location end)))))
+               (setq end loc))
+              (t (maybe-push-range start end)
+                 (setq start loc end start)))))))
+
+@t@l
+(defmethod location ((loclist section-locator-range))
+  (list (start-section loclist)
+        (end-section loclist)))
+
+(deftest (coalesce-locators 1)
+  (mapcar (lambda (sections)
+            (mapcar #'location
+                    (coalesce-locators
+                     (mapcar (lambda (n)
+                               (make-instance 'section-locator :section n))
+                             sections))))
+          '((1 3 5 7)
+            (1 2 3 5 7)
+            (1 3 4 5 7)
+            (1 2 3 5 6 7)
+            (1 2 3 5 6 7 9)))
+  ((1 3 5 7)
+   ((1 3) 5 7)
+   (1 (3 5) 7)
+   ((1 3) (5 7))
+   ((1 3) (5 7) 9)))
+
+(deftest (coalesce-locators 2)
+  (mapcar #'location
+          (coalesce-locators
+           `(,(make-instance 'section-locator :section 1 :def t)
+             ,@(mapcar (lambda (n)
+                         (make-instance 'section-locator :section n))
+                       '(2 3 5))
+             ,(make-instance 'section-locator :section 6 :def t))))
+  (1 (2 3) 5 6))
+
+@ Finally, here are the pretty-printing routines for the index itself.
 
 @l
 (set-weave-dispatch 'index
@@ -5412,8 +5491,15 @@ of all of the interesting symbols so encountered.
   (lambda (stream entry)
     (format stream "\\I~/clweb::print-entry-heading/~{, ~W~}.~%"
             (entry-heading entry)
-            (sort (copy-list (entry-locators entry)) #'<
-                  :key (lambda (loc) (section-number (location loc)))))))
+            (coalesce-locators
+             (sort (copy-list (entry-locators entry)) #'<
+                   :key (lambda (loc) (section-number (location loc))))))))
+
+(set-weave-dispatch 'section-locator-range
+  (lambda (stream loclist)
+    (format stream "\\hbox{~D--~D}"
+            (section-number (start-section loclist))
+            (section-number (end-section loclist)))))
 
 (set-weave-dispatch 'section-locator
   (lambda (stream loc)
