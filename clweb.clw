@@ -579,6 +579,7 @@ characters with a single space.
 @l
 (unless (fboundp 'whitespacep) ; CCL, at least, provides a suitable definition
   (defun whitespacep (char) (find char *whitespace* :test #'char=)))
+@^Clozure Common Lisp@>
 
 (defun squeeze (string)
   (loop with squeezing = nil
@@ -831,6 +832,7 @@ returning a list containing the single object so read.
 being called in an environment where the global read buffer is bound and
 initialized. It would be nice if that wasn't the case and we could elide
 the following nonsense.
+@^SBCL@>
 
 @l
 (defmacro with-read-buffer ((&rest args) &body body)
@@ -2036,6 +2038,7 @@ reader macro functions that implement the control codes.
   ;; The CL standard does not say that calling |make-dispatch-macro-character|
   ;; on a character that's already a dispatching macro character is supposed
   ;; to signal an error, but SBCL does so anyway; hence the |ignore-errors|.
+@^SBCL@> ;
   (ignore-errors
     (make-dispatch-macro-character #\@ t (readtable-for-mode mode))))
 
@@ -3442,6 +3445,7 @@ Allegro Common Lisp has an additional function,
 |ensure-portable-walking-environment|, that needs to be called on
 any environment object that a portable walker uses; we'll provide
 a trivial definition for other Lisps.
+@^Allegro Common Lisp@>
 
 @l
 (unless (fboundp 'ensure-portable-walking-environment)
@@ -3454,6 +3458,7 @@ the package definition at the beginning of the program). Thanks
 to Duane Rettig of Franz,~Inc.\ for the idea behind this trivial
 implementation (post to comp.lang.lisp of 18~Oct, 2004, message-id
 \<4is97u4vv.fsf@@franz.com\>).
+@^Allegro Common Lisp@>
 
 @l
 (defun enclose (lambda-expression &optional env ;
@@ -3462,6 +3467,7 @@ implementation (post to comp.lang.lisp of 18~Oct, 2004, message-id
 
 @ The following code for |parse-macro| is obviously extremely
 implementation-specific; a portable version would be much more complex.
+@^Allegro Common Lisp@>
 
 @l
 (eval-when  (:compile-toplevel :load-toplevel :execute)
@@ -3478,6 +3484,7 @@ the {\it end\/} of the list of returned values, they {\it changed\/}
 the order from the one specified by~\cltl, so that their new value is
 the second value returned, and what should be second is now fourth.
 Thanks, Franz!
+@^Allegro Common Lisp@>
 
 @l
 (defmacro reorder-env-information (fn orig)
@@ -5183,6 +5190,7 @@ therefore just throw out everything except |special| and |optimize|
 declarations. (The latter are preserved only because CCL's macro-expansion
 machinery uses blatantly unsafe code, and depends on local declarations to
 lower the safety level.)
+@^Clozure Common Lisp@>
 
 @l
 (defmethod walk-declaration-specifiers ((walker indexing-walker) decls env)
