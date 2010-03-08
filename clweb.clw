@@ -216,16 +216,22 @@ code they're designed to exercise.
 
 @l
 (defclass test-section (section)
-  ((test-for :accessor test-for-section :initform *current-section*)))
+  ((test-for :accessor test-for-section)))
 
 (defclass starred-test-section (test-section starred-section) ())
 
-@ There can also be \TeX\ text preceding the start of the first section
-(i.e., before the first \.{@@\ } or \.{@@*}), called {\it limbo text}.
-Limbo text is generally used to define document-specific formatting
-macros, set up fonts, \etc. The weaver passes it through virtually verbatim
-to the output file (only replacing occurrences of `\.{@@@@}' with~`\.{@@}'),
-and the tangler ignores it completely.
+(defmethod initialize-instance :after ;
+    ((section test-section) &rest initargs &key)
+  (declare (ignore initargs))
+  (setf (test-for-section section) ;
+        (elt *sections* (1- (fill-pointer *sections*)))))
+
+@ There can also be \TeX\ text preceding the start of the first section (i.e.,
+before the first \.{@@\ } or \.{@@*}), called {\it limbo text}. Limbo text
+is generally used to define document-specific formatting macros, set up
+fonts, \etc. The weaver passes it through virtually verbatim to the output
+file (only replacing occurrences of `\.{@@@@}' with~`\.{@@}'), and the
+tangler ignores it completely.
 
 A single instance of the class |limbo-section| contains the limbo text in
 its |commentary| slot; it will never have a code part.
@@ -2993,7 +2999,9 @@ re-reads such strings and picks up any inner-Lisp material.
             (format stream "~@<\\+~@;~W~;\\cr~:>" form)
             (format stream "~W~:[\\par~;~]" form (newlinep form))))
       (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}
-    (when (and (typep section 'test-section) (section-code section))
+    (when (and (not named-section)
+               (typep section 'test-section)
+               (section-code section))
       (format stream "\\T~P~D.~%"
               (length (section-code section))
               (section-number (test-for-section section))))
