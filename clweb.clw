@@ -220,7 +220,7 @@ code they're designed to exercise.
 
 (defclass starred-test-section (test-section starred-section) ())
 
-(defmethod initialize-instance :after ;
+(defmethod initialize-instance :after 
     ((section test-section) &rest initargs &key)
   (declare (ignore initargs))
   (setf (test-for-section section) ;
@@ -4350,7 +4350,7 @@ the walker classes defined in this program.
 @l
 (defclass tracing-walker (walker) ())
 
-(defmethod walk-atomic-form :before
+(defmethod walk-atomic-form :before ;
     ((walker tracing-walker) context form env)
   (format t "; walking atomic form ~S (~S)~@[ (~(~A~) variable)~]~%"
           form context (and (symbolp form) (variable-information form env))))
