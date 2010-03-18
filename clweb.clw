@@ -5344,8 +5344,8 @@ class names, super-classes, and~accessor methods.
                                        :def t))
                     `(,operator
                       ,(walk-atomic-form walker :class-name symbol env)
-                      ,(mapcar (lambda (super)
-                                 @<Index the use of the superclass |super|@>)
+                      ,(mapcar (lambda (super) ;
+                                 @<Index the use of the superclass |super|@>) ;
                                supers)
                       ,(mapcar (lambda (spec) ;
                                  (walk-slot-specifier walker spec env)) ;
