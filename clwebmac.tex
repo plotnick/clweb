@@ -18,8 +18,8 @@
 \let\2=\qquad
 
 {\catcode`\(=\active \catcode`\)=\active
- \gdef({\char`\(\kern.025em}
- \gdef){\char`\)\kern.025em}
+ \gdef({{\rm\char`\(}\kern.025em}
+ \gdef){\/{\rm\char`\)}\kern.025em}
  \gdef\activeparens{\catcode`\(=\active \catcode`\)=\active}}
 {\catcode`\*=\active
  \gdef\activestar{\catcode`\*=\active \def*{\leavevmode$\ast$}}}
