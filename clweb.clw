@@ -220,6 +220,8 @@ code they're designed to exercise.
 
 (defclass starred-test-section (test-section starred-section) ())
 
+(defun test-section-p (x) (typep x 'test-section))
+
 (defmethod initialize-instance :after 
     ((section test-section) &rest initargs &key)
   (declare (ignore initargs))
@@ -2922,9 +2924,11 @@ file.
             (weave (index-sections sections) idx))
           (with-output-file (scn sections-file)
             (map-bst (lambda (section)
-                       (weave (make-instance 'section-name-index-entry ;
-                                             :named-section section) ;
-                              scn))
+                       (unless (every #'test-section-p ;
+                                      (named-section-sections section))
+                         (weave (make-instance 'section-name-index-entry ;
+                                               :named-section section)
+                                scn)))
                      *named-sections*))
           (format out "~&\\inx~%\\fin~%\\con~%"))
         (format out "~&\\end~%")

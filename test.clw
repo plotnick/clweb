@@ -28,7 +28,9 @@ and X trebled."
 
 @t And here's a test for the simple function defined above.
 @l
-(deftest foo (foo 2) 10)
+(deftest foo @<Call |foo| with an argument of |2|@> 10)
+
+@t@<Call |foo|...@>=(foo 2)
 
 @*Bar. The function |bar| returns the first four natural numbers (including 0),
 and demonstrates how a named section may be defined piecewise.
