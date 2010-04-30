@@ -216,17 +216,18 @@ code they're designed to exercise.
 
 @l
 (defclass test-section (section)
-  ((test-for :accessor test-for-section)))
+  ((test-for :accessor test-for-section :initform nil)))
 
 (defclass starred-test-section (test-section starred-section) ())
 
 (defun test-section-p (x) (typep x 'test-section))
 
-(defmethod initialize-instance :after 
+(defmethod initialize-instance :after ;
     ((section test-section) &rest initargs &key)
   (declare (ignore initargs))
-  (setf (test-for-section section) ;
-        (elt *sections* (1- (fill-pointer *sections*)))))
+  (when (> (fill-pointer *sections*) 0)
+    (setf (test-for-section section) ;
+          (elt *sections* (1- (fill-pointer *sections*))))))
 
 @ There can also be \TeX\ text preceding the start of the first section (i.e.,
 before the first \.{@@\ } or \.{@@*}), called {\it limbo text}. Limbo text
