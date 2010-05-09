@@ -22,7 +22,7 @@ Readers unfamiliar with either of them---or with literate programming in
 general---should consult the \CWEB\ manual or Knuth's {\it \ldq Literate
 Programming\/\rdq} ({\sc csli}:~1992).
 
-This is a priliminary, $\beta$-quality release of the system.
+This is a preliminary, $\beta$-quality release of the system.
 To obtain the latest version, please visit\break
 \hbox{\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}}\,.
 
