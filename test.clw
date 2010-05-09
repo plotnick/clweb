@@ -42,6 +42,16 @@ and demonstrates how a named section may be defined piecewise.
 @ @<Natural...@>=@<The only even...@>
 @ @<Natural...@>=3
 
+@ Here's a form that uses a named section that contains multiple forms
+which should be spliced into place.
+
+@l
+(defvar *sum*
+  (@<Put the first three natural numbers in |a|, |b|, and |c|@>
+    (+ a b c)))
+
+@ @<Put the first three...@>=destructuring-bind (a b c &rest args) (bar)
+
 @ Here's a section with no code. None at all. Not even a scrap. It exists
 just so that we can make sure that in such an eventuality, everything is
 copacetic.
