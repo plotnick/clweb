@@ -122,8 +122,8 @@ after the tests have been loaded.
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (require 'rt)
-  (loop for symbol being each external-symbol of (find-package "RT")
-        do (import symbol)))
+  (do-external-symbols (symbol (find-package "RT"))
+    (import symbol)))
 
 @ We'll define our global variables and condition classes as we need them,
 but we'd like them to appear near the top of the tangled output.
