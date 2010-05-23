@@ -2440,7 +2440,7 @@ inner-Lisp material is not recognized in limbo text.
 
 @ The commentary part that begins a section consists of \TeX\ text and
 inner-Lisp material surrounded by \pb. It is terminated by either the start
-of a new section, the beginning of the code part, or \EOF. If a code part
+of a new section, the beginning of the code part, or \EOF\null. If a code part
 is detected, we also set the name of the current section, which may be |nil|.
 
 @<Accumulate \TeX-mode material in |commentary|@>=
@@ -3031,7 +3031,7 @@ and~\.{\\ETs} (for between the last of three or more).
 @l
 (defun print-xrefs (stream kind xrefs)
   (when xrefs
-    ;; This was 16 lines of code over two sections in \CWEB. I love |format|.
+    ;; This was 16 lines of code over two sections in \CWEB\null. I love |format|.
     (format stream "\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}.~%"
             kind (sort (mapcar #'section-number xrefs) #'<))))
 
