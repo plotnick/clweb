@@ -31,7 +31,7 @@ control codes, but which is primary depends on your point of view. The
 \CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
 something like writing \TeX\ documents, but with an additional `C mode'
 that is added to \TeX's horizontal mode, vertical mode, and math mode.''
-The same applies, {\it mutatis mutandis,} to the current system, but one
+The same applies, {\it mutatis mutandis}, to the current system, but one
 might just as easily think of a web as some code with documentation blocks
 and special control codes sprinkled throughout, or as a completely separate
 language containing blocks that happen to have the syntax (more or less) of
@@ -47,7 +47,7 @@ Most of the \CLWEB\ control codes are quite similar to the ones used in
 codes.
 
 @ A literate programming system provides two primary operations:
-{\it tangling\/} and {\it weaving\/}. The tangler prepares a literate 
+{\it tangling\/} and {\it weaving}. The tangler prepares a literate 
 program, or {\it web}, for evaluation by a machine, while the weaver
 prepares it for typesetting and subsequent reading by a human. These
 operations reflect the two uses of a literate program, and the two
@@ -108,7 +108,7 @@ errors and warnings that might be signaled while processing a web.
 @t*Test suite. The test suite for this system uses Richard Waters's
 {\sc rt} library, a copy of which is included in the distribution. For more
 information on {\sc rt}, see Richard C.~Waters, ``Supporting the Regression
-Testing of Lisp Programs,'' {\it SIGPLAN Lisp Pointers}~4, no.~2 (1991):
+Testing of Lisp Programs,'' {\it SIGPLAN Lisp Pointers\/}~4, no.~2 (1991):
 47--53.
 
 We use the sleazy trick of manually importing the external symbols of
@@ -150,7 +150,7 @@ that the results are appended together.
               (apply #'mapappend function (mapcar #'cdr args)))))
 
 @*Sections. The fundamental unit of a web is the {\it section}, which may
-be either {\it named\/} or~{\it unnamed\/}. Named sections are conceptually
+be either {\it named\/} or~{\it unnamed}. Named sections are conceptually
 very much like parameterless macros, except that they can be defined
 piecemeal. The tangler replaces references to a named section with all of
 the code defined in all of the sections with that name. (This is where the
@@ -164,7 +164,7 @@ Every section is assigned a number, which the weaver uses for generating
 cross-references. The numbers themselves never appear in the source file:
 they are generated automatically by the system.
 
-Aside from a name, a section may have a {\it commentary part\/}, optionally
+Aside from a name, a section may have a {\it commentary part}, optionally
 followed by a {\it code part}. (We don't support the `middle' part of a
 section that \WEB\ and \CWEB's sections have, since the kinds of definitions
 that can appear there are essentially irrelevant in Lisp.)  The commentary
@@ -863,7 +863,7 @@ the following nonsense.
 impossible to automatically indent Common Lisp code without a complete
 static analysis. And so we don't try. What we do instead is assume that the
 input is indented correctly, and try to approximate that on output; we call
-this process {\it indentation tracking\/}.
+this process {\it indentation tracking}.
 
 The way we do this is to record the the column number, or {\it character
 position}, of every Lisp form in the input, and use those positions to
@@ -873,7 +873,7 @@ We'll define a {\it charpos stream\/} as an object that tracks the
 character position of an underlying stream. Note that these aren't
 instances of |stream| (and can't be, without relying on an extension to
 Common Lisp like Gray streams). But they contain a standard composite
-stream we'll call a {\it proxy stream} which is hooked up to the underlying
+stream we'll call a {\it proxy stream\/} which is hooked up to the underlying
 stream whose position they're tracking, and it's these proxy streams that
 we'll pass around, so that the standard stream functions will all work.
 
@@ -1134,7 +1134,7 @@ solution to this problem: we define reader macro functions for all of the
 standard macro characters that return markers that let us reconstruct, to
 varying degrees of accuracy, what was originally given in the source.
 
-If a marker is {\it bound}---i.e., if |marker-boundp| returns non-nil when
+If a marker is {\it bound\/}---i.e., if |marker-boundp| returns non-nil when
 called with it as an argument---then the tangler will call |marker-value|
 to obtain the associated value. (The weaver will never ask for a marker's
 value.) Otherwise, the marker will be silently dropped from its containing
@@ -2811,8 +2811,8 @@ is not supplied, the value of |*weave-print*| is used.
 
 Finally, the |external-format| argument specifies the external file format
 to be used when opening both the input file and the output file.
-{\it N.B.:} standard \TeX\ only handles 8-bit characters, and the encodings
-for non-printable-{\sc ascii} characters vary widely.
+{\it N.B.\/}: standard \TeX\ only handles 8-bit characters, and the
+encodings for non-printable-{\sc ascii} characters vary widely.
 
 If successful, |weave| returns the truename of the output file. 
 
@@ -3919,7 +3919,7 @@ so we just push it onto the new \L-list and prepare for the next parameter.
 
 @ Watch the order here: in the non-simple-|var| case, both the init
 form and the pattern (if any) need to be walked in an environment
-{\it unaugmented} with any supplied-p-parameter.
+{\it unaugmented\/} with any supplied-p-parameter.
 
 @<Process |arg| as an optional parameter@>=
 (etypecase arg
@@ -4406,8 +4406,8 @@ when testing the indexer.
 
 @ Before we proceed, let's establish some terminology. Formally, an
 {\it index\/} is an ordered collection of {\it entries}, each of which
-is a (\<heading>, \<locator>) pair: the {\it locator} indicates where the
-object referred to by the {\it heading} may be found. A list of entries
+is a (\<heading>, \<locator>) pair: the {\it locator\/} indicates where the
+object referred to by the {\it heading\/} may be found. A list of entries
 with the same heading is called an {\it entry list}, or sometimes just an
 {\it entry\/}; the latter is an abuse of terminology, but useful and
 usually clear in context.
@@ -4972,7 +4972,7 @@ named-section expansion.
 (defvar *indexing* nil)
 
 @ The top-level indexing routine will use this function to obtain the
-completely tangled code with referring symbols, and {\it that}'s what
+completely tangled code with referring symbols, and {\it that\/}'s what
 we'll walk.
 
 @l
