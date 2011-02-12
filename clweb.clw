@@ -2839,12 +2839,15 @@ If successful, |weave| returns the truename of the output file.
              (> (length *test-sections*) 1)) ; there's always a limbo section
     (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
     (weave-sections *test-sections*
+                    :input-file input-file
                     :output-file tests-file
                     :print print
                     :verbose verbose
-                    :external-format external-format))
+                    :external-format external-format
+                    :tests t))
     (when verbose (format t "~&; weaving sections to ~A~%" output-file))
     (weave-sections *sections*
+                    :input-file input-file
                     :output-file output-file
                     :index-file index-file
                     :sections-file sections-file
@@ -2888,7 +2891,7 @@ file.
 
 @l
 (defun weave-sections (sections &key
-                       output-file index-file sections-file
+                       input-file output-file index-file sections-file tests
                        (verbose *weave-verbose*)
                        (print *weave-print*)
                        (external-format :default))
@@ -2909,6 +2912,11 @@ file.
                     ,@body)))
       (with-output-file (out output-file)
         (format out "\\input clwebmac~%")
+        (when tests
+          (format out "\\def\\progname{~/clweb::print-escaped/}~%"
+                  (if input-file
+                      (string-capitalize (pathname-name input-file))
+                      "program")))
         (if print
             (pprint-logical-block (nil nil :per-line-prefix "; ")
               (map nil
@@ -2983,9 +2991,8 @@ re-reads such strings and picks up any inner-Lisp material.
 @ % FIXME: This needs to be broken up and documented.
 @l
 (defun print-section (stream section)
-  (format stream "~&\\~:[M~;N{1}~]{~:[~;T~]~D}" ; \.{\{1\}} should be depth
+  (format stream "~&\\~:[M~;N{1}~]{~D}" ; \.{\{1\}} should be depth
           (typep section 'starred-section)
-          (typep section 'test-section)
           (section-number section))
   (let* ((commentary (section-commentary section))
          (name (section-name section))

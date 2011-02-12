@@ -1,5 +1,6 @@
 \input cwebmac
 
+\font\eightit=cmti8
 \font\tenss=cmss10
 \font\tenssi=cmssi10
 \font\tenssb=cmssdc10
@@ -47,9 +48,13 @@
 \def\L{\leavevmode$\lambda$}
 \def\K#1{\hbox{\it#1\/\kern.05em}} % lambda-list keyword
 \def\RC#1{{\it #1}} % read-time conditional
-\def\T{\note{This test exercises code in or around section}} % xref for test
-\def\Ts{\note{These tests exercise code in or around section}} % xref for tests
+\def\T{\exnote{This test exercises code in or around {\it\progname\/} section}}
+\def\Ts{\exnote{These tests exercise code in or around {\it\progname\/} section}}
 \def\X#1:#2\X{\ifmmode\gdef\XX{\null$\null}\else\gdef\XX{}\fi %$% section name
   \XX$\langle\,${\mainfont\let\I=\ne#2\eightrm\kern.5em
     \ifacro{\pdfnote#1.}\else#1\fi}$\,\rangle$\XX}
 
+% We don't want to actually make hyperlinks between the test notes and the
+% main program sections.
+\def\nolink#1#2{#1}
+\def\exnote#1#2.{{\let\pdflink\nolink \let\it\eightit \note{#1}{#2}.}}
