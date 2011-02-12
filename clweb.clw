@@ -1,6 +1,7 @@
 % -*-CLWEB-*-
 \font\sc=cmcsc10
 \font\tenec=ecrm1000
+\font\eighttt=cmtt8
 \def\ldq{{\tenec \char'23}} % left guillemet
 \def\rdq{{\tenec \char'24}} % right guillemet
 \def\pb{\.{|...|}} % program brackets
@@ -9,6 +10,7 @@
 \def\CWEB{{\tt CWEB}}
 \def\CLWEB{{\tt CLWEB}}
 \def\EOF{{\sc eof}}
+\def\progname{{\eighttt CLWEB}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\<#1>{\leavevmode\hbox{$\mkern-2mu\langle${\it #1\/}$\rangle$}}
 \def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
