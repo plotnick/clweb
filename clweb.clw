@@ -1853,6 +1853,36 @@ the actual value, and store the radix in our marker.
   14
   15)
 
+@ Sharpsign~$n$A constructs an $n$-dimensional array. We don't need any
+particularly special handling, but we have to override it anyway because
+the standard reader will be confused by finding markers where it expects
+sequences.
+
+@l
+(defclass array-marker (marker)
+  ((rank :reader array-marker-rank :initarg :rank)
+   (initial-contents :reader array-marker-initial-contents ;
+                     :initarg :initial-contents)))
+
+(defmethod marker-boundp ((marker array-marker)) t)
+(defmethod marker-value ((marker array-marker))
+  (loop with contents = (tangle (array-marker-initial-contents marker))
+        repeat (array-marker-rank marker)
+        for seq = contents then (elt seq 0)
+        collect (length seq) into dimensions
+        finally (return (make-array dimensions :initial-contents contents))))
+
+(defun array-reader (stream sub-char arg)
+  (declare (ignore sub-char))
+  (unless arg (simple-reader-error stream "no rank supplied with #A"))
+  (make-instance 'array-marker ;
+                 :rank arg ;
+                 :initial-contents (read stream t nil t)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\A #'array-reader ;
+                                (readtable-for-mode mode)))
+
 @ Sharpsign~S requires determining the standard constructor function of the
 structure type named, which we simply can't do portably. So we cache the
 form as given, then dump it out to a string and let the standard reader
@@ -3424,6 +3454,13 @@ which see.
   (lambda (stream obj)
     (format stream "$~VR_{~2:*~D}$"
             (radix-marker-base obj) (marker-value obj))))
+
+@ @l
+(set-weave-dispatch 'array-marker
+  (lambda (stream obj)
+    (format stream "\\#~DA~W"
+            (array-marker-rank obj)
+            (array-marker-initial-contents obj))))
 
 @ @l
 (set-weave-dispatch 'structure-marker
