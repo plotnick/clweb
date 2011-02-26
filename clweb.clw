@@ -2950,14 +2950,19 @@ file.
                       (string-capitalize (pathname-name input-file))
                       "program")))
         (if print
-            (pprint-logical-block (nil nil :per-line-prefix "; ")
-              (map nil
-                   (lambda (section)
-                     (format t "~:[~;~:@_*~]~D~:_ "
+            (flet ((weave (section)
+                     (format t "~:[~;*~]~D"
                              (typep section 'starred-section)
                              (section-number section))
-                     (weave section out))
-                   sections))
+                     (weave section out)))
+              (pprint-logical-block (nil (coerce sections 'list) ;
+                                         :per-line-prefix ";  ")
+                (weave (pprint-pop))
+                (loop
+                  (pprint-exit-if-list-exhausted)
+                  (write-char #\Space)
+                  (pprint-newline :fill)
+                  (weave (pprint-pop)))))
             (map nil (lambda (section) (weave section out)) sections))
         (when index-file
           (when verbose (format t "~&; writing the index to ~A~%" index-file))

@@ -1245,14 +1245,17 @@
                      (STRING-CAPITALIZE (PATHNAME-NAME INPUT-FILE))
                      "program")))
        (IF PRINT
-           (PPRINT-LOGICAL-BLOCK (NIL NIL :PER-LINE-PREFIX "; ")
-             (MAP NIL
-                  (LAMBDA (SECTION)
-                    (FORMAT T "~:[~;~:@_*~]~D~:_ "
-                            (TYPEP SECTION 'STARRED-SECTION)
+           (FLET ((WEAVE (SECTION)
+                    (FORMAT T "~:[~;*~]~D" (TYPEP SECTION 'STARRED-SECTION)
                             (SECTION-NUMBER SECTION))
-                    (WEAVE SECTION OUT))
-                  SECTIONS))
+                    (WEAVE SECTION OUT)))
+             (PPRINT-LOGICAL-BLOCK
+                 (NIL (COERCE SECTIONS 'LIST) :PER-LINE-PREFIX ";  ")
+               (WEAVE (PPRINT-POP))
+               (LOOP (PPRINT-EXIT-IF-LIST-EXHAUSTED)
+                     (WRITE-CHAR #\ )
+                     (PPRINT-NEWLINE :FILL)
+                     (WEAVE (PPRINT-POP)))))
            (MAP NIL (LAMBDA (SECTION) (WEAVE SECTION OUT)) SECTIONS))
        (WHEN INDEX-FILE
          (WHEN VERBOSE (FORMAT T "~&; writing the index to ~A~%" INDEX-FILE))
