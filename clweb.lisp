@@ -401,16 +401,18 @@
 (DEFMACRO WITH-REWIND-STREAM
           ((VAR STREAM &OPTIONAL (REWIND 'REWIND))
            &BODY BODY
-           &AUX (OUT (GENSYM)))
-  `(WITH-OPEN-STREAM (,OUT (MAKE-STRING-OUTPUT-STREAM))
-     (WITH-OPEN-STREAM (,VAR (MAKE-ECHO-STREAM ,STREAM ,OUT))
-       (FLET ((,REWIND ()
-                (SETQ ,VAR
-                        (MAKE-CONCATENATED-STREAM
-                         (MAKE-STRING-INPUT-STREAM
-                          (GET-OUTPUT-STREAM-STRING ,OUT))
-                         ,VAR))))
-         ,@BODY))))
+           &AUX (IN (GENSYM)) (OUT (GENSYM)) (CLOSING (GENSYM)))
+  `(LET* ((,OUT (MAKE-STRING-OUTPUT-STREAM))
+          (,VAR (MAKE-ECHO-STREAM ,STREAM ,OUT))
+          (,CLOSING (LIST ,OUT ,VAR)))
+     (FLET ((,REWIND ()
+              (LET ((,IN
+                     (MAKE-STRING-INPUT-STREAM
+                      (GET-OUTPUT-STREAM-STRING ,OUT))))
+                (PROG1 (SETQ ,VAR (MAKE-CONCATENATED-STREAM ,IN ,VAR))
+                  (PUSH ,VAR ,CLOSING)
+                  (PUSH ,IN ,CLOSING)))))
+       (UNWIND-PROTECT (PROGN ,@BODY) (MAP NIL #'CLOSE ,CLOSING)))))
 (DEFMACRO READ-WITH-ECHO
           ((STREAM OBJECT ECHOED &KEY PREFIX)
            &BODY BODY

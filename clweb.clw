@@ -1046,29 +1046,36 @@ is bound to a proxy stream the tracks the character position for |stream|.
 @ Sometimes we'll want to look more than one character ahead in a stream.
 This macro lets us do so, after a fashion: it executes |body| in a lexical
 environment where |var| is bound to a stream whose input comes from
-|stream| and |rewind| is a local function that `rewinds' that stream to its
-state prior to any reads executed in the body.
+|stream| and |rewind| is bound to a local function that `rewinds' that
+stream to its state prior to any reads that were executed in the body.
+If |rewind| is invoked more than once, each subsequent invocation will
+rewind to the state just after the previous one.
 
 @l
 (defmacro with-rewind-stream ((var stream &optional (rewind 'rewind))
-                              &body body &aux (out (gensym)))
-  `(with-open-stream (,out (make-string-output-stream))
-     (with-open-stream (,var (make-echo-stream ,stream ,out))
-       (flet ((,rewind ()
-                (setq ,var (make-concatenated-stream
-                            (make-string-input-stream ;
-                             (get-output-stream-string ,out))
-                            ,var))))
-         ,@body))))
+                              &body body &aux ;
+                              (in (gensym)) (out (gensym)) (closing (gensym)))
+  `(let* ((,out (make-string-output-stream))
+          (,var (make-echo-stream ,stream ,out))
+          (,closing (list ,out ,var)))
+     (flet ((,rewind ()
+              (let ((,in (make-string-input-stream
+                          (get-output-stream-string ,out))))
+                (prog1 (setq ,var (make-concatenated-stream ,in ,var))
+                  (push ,var ,closing)
+                  (push ,in ,closing)))))
+       (unwind-protect (progn ,@body)
+         (map nil #'close ,closing)))))
 
 @t@l
 (deftest rewind-stream
-  (with-rewind-stream (s (make-string-input-stream "abcdef"))
-    (values (read-char s)
-            (read-char s)
-            (read-char s)
-            (progn (rewind) (read-char s))
-            (progn (rewind) (read-line s))))
+  (with-input-from-string (s "abcdef")
+    (with-rewind-stream (r s)
+      (values (read-char r)
+              (read-char r)
+              (read-char r)
+              (progn (rewind) (read-char r))
+              (progn (rewind) (read-line r)))))
   #\a #\b #\c #\a "bcdef")
 
 @ And sometimes, we'll want to call |read| on a stream, and keep a copy of
