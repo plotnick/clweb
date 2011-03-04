@@ -143,10 +143,11 @@
                      (GET-OUTPUT-STREAM-STRING STRING-STREAM))))
          0 3 0 3 #.(FORMAT NIL "012~%abc"))
 (DEFTEST REWIND-STREAM
-         (WITH-REWIND-STREAM (S (MAKE-STRING-INPUT-STREAM "abcdef"))
-           (VALUES (READ-CHAR S) (READ-CHAR S) (READ-CHAR S)
-                   (PROGN (REWIND) (READ-CHAR S))
-                   (PROGN (REWIND) (READ-LINE S))))
+         (WITH-INPUT-FROM-STRING (S "abcdef")
+           (WITH-REWIND-STREAM (R S)
+             (VALUES (READ-CHAR R) (READ-CHAR R) (READ-CHAR R)
+                     (PROGN (REWIND) (READ-CHAR R))
+                     (PROGN (REWIND) (READ-LINE R)))))
          #\a #\b #\c #\a "bcdef")
 (DEFTEST READ-WITH-ECHO
          (READ-WITH-ECHO ((MAKE-STRING-INPUT-STREAM ":foo :bar") OBJECT CHARS)
