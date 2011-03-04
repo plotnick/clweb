@@ -1052,8 +1052,8 @@ If |rewind| is invoked more than once, each subsequent invocation will
 rewind to the state just after the previous one.
 
 @l
-(defmacro with-rewind-stream ((var stream &optional (rewind 'rewind))
-                              &body body &aux ;
+(defmacro with-rewind-stream ((var stream &optional (rewind 'rewind)) ;
+                              &body body &aux
                               (in (gensym)) (out (gensym)) (closing (gensym)))
   `(let* ((,out (make-string-output-stream))
           (,var (make-echo-stream ,stream ,out))
