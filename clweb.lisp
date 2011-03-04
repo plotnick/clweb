@@ -414,28 +414,24 @@
                   (PUSH ,IN ,CLOSING)))))
        (UNWIND-PROTECT (PROGN ,@BODY) (MAP NIL #'CLOSE ,CLOSING)))))
 (DEFMACRO READ-WITH-ECHO
-          ((STREAM OBJECT ECHOED &KEY PREFIX)
+          ((STREAM OBJECT ECHOED)
            &BODY BODY
-           &AUX (OUT (GENSYM)) (ECHO (GENSYM)) (REWIND (GENSYM))
-           (RAW-OUTPUT (GENSYM)) (LENGTH (GENSYM)))
+           &AUX (OUT (GENSYM)) (ECHO (GENSYM)) (RAW-OUTPUT (GENSYM))
+           (LENGTH (GENSYM)))
   `(WITH-OPEN-STREAM (,OUT (MAKE-STRING-OUTPUT-STREAM))
      (WITH-OPEN-STREAM (,ECHO (MAKE-ECHO-STREAM ,STREAM ,OUT))
-       (WITH-OPEN-STREAM
-           (,REWIND
-            (MAKE-CONCATENATED-STREAM
-             ,@(WHEN PREFIX `((MAKE-STRING-INPUT-STREAM ,PREFIX))) ,ECHO))
-         (LET* ((,OBJECT (READ-PRESERVING-WHITESPACE ,REWIND))
-                (,RAW-OUTPUT (GET-OUTPUT-STREAM-STRING ,OUT))
-                (,LENGTH (LENGTH ,RAW-OUTPUT))
-                (,ECHOED
-                 (SUBSEQ ,RAW-OUTPUT 0
-                         (IF (OR (EOF-P (PEEK-CHAR NIL ,REWIND NIL *EOF*))
-                                 (TOKEN-DELIMITER-P
-                                  (ELT ,RAW-OUTPUT (1- ,LENGTH))))
-                             ,LENGTH
-                             (1- ,LENGTH)))))
-           (DECLARE (IGNORABLE ,OBJECT ,ECHOED))
-           ,@BODY)))))
+       (LET* ((,OBJECT (READ-PRESERVING-WHITESPACE ,ECHO))
+              (,RAW-OUTPUT (GET-OUTPUT-STREAM-STRING ,OUT))
+              (,LENGTH (LENGTH ,RAW-OUTPUT))
+              (,ECHOED
+               (SUBSEQ ,RAW-OUTPUT 0
+                       (IF (OR (EOF-P (PEEK-CHAR NIL ,ECHO NIL *EOF*))
+                               (TOKEN-DELIMITER-P
+                                (ELT ,RAW-OUTPUT (1- ,LENGTH))))
+                           ,LENGTH
+                           (1- ,LENGTH)))))
+         (DECLARE (IGNORABLE ,OBJECT ,ECHOED))
+         ,@BODY))))
 (DEFUN SET-TANGLE-DISPATCH (TYPE-SPECIFIER FUNCTION &OPTIONAL (PRIORITY 0))
   (SET-PPRINT-DISPATCH TYPE-SPECIFIER FUNCTION PRIORITY
                        *TANGLE-PPRINT-DISPATCH*))

@@ -1082,32 +1082,26 @@ rewind to the state just after the previous one.
 the characters that |read| actually scans. This macro reads from |stream|,
 then executes the |body| forms with |object| bound to the object returned
 by |read| and |echoed| bound to a variable containing the characters so
-consumed. If |prefix| is supplied, it should be a string that will be
-concatenated onto the front of |stream| prior to reading.
+consumed.
 
 @l
-(defmacro read-with-echo ((stream object echoed &key prefix) &body body &aux
-                          (out (gensym)) (echo (gensym)) (rewind (gensym))
+(defmacro read-with-echo ((stream object echoed) &body body &aux
+                          (out (gensym)) (echo (gensym))
                           (raw-output (gensym)) (length (gensym)))
   `(with-open-stream (,out (make-string-output-stream))
      (with-open-stream (,echo (make-echo-stream ,stream ,out))
-       (with-open-stream (,rewind (make-concatenated-stream
-                                   ,@(when prefix
-                                       `((make-string-input-stream ,prefix)))
-                                   ,echo))
-         (let* ((,object (read-preserving-whitespace ,rewind))
-                (,raw-output (get-output-stream-string ,out))
-                (,length (length ,raw-output))
-                (,echoed (subseq ,raw-output
-                                 0
-                                 (if (or (eof-p ;
-                                          (peek-char nil ,rewind nil *eof*))
-                                         (token-delimiter-p ;
-                                          (elt ,raw-output (1- ,length))))
-                                     ,length
-                                     (1- ,length)))))
-           (declare (ignorable ,object ,echoed))
-           ,@body)))))
+       (let* ((,object (read-preserving-whitespace ,echo))
+              (,raw-output (get-output-stream-string ,out))
+              (,length (length ,raw-output))
+              (,echoed (subseq ,raw-output
+                               0
+                               (if (or (eof-p (peek-char nil ,echo nil *eof*))
+                                       (token-delimiter-p ;
+                                        (elt ,raw-output (1- ,length))))
+                                   ,length
+                                   (1- ,length)))))
+         (declare (ignorable ,object ,echoed))
+         ,@body))))
 
 @t@l
 (deftest read-with-echo
