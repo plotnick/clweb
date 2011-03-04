@@ -1952,7 +1952,7 @@ This routine, adapted from SBCL, interprets such an expression.
     (featurep '(:and :a (:or :c :b) (:not :d))))
   t)
 
-@ For sharpsign +/--, we use the same sort of trick we used for \.{\#.}
+@ For sharpsign $+/-$, we use the same sort of trick we used for \.{\#.}
 above: we have a marker that returns the appropriate value when tangling for
 evaluation, but returns a `pseudo-marker' when tangling to a file, so that
 we can preserve the original form.
