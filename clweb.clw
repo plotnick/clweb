@@ -1105,13 +1105,15 @@ consumed.
 
 @t@l
 (deftest read-with-echo
-  (read-with-echo ((make-string-input-stream ":foo :bar") object chars)
-    (values object chars))
+  (with-input-from-string (stream  ":foo :bar")
+    (read-with-echo (stream object chars)
+      (values object chars)))
   :foo ":foo ")
 
 (deftest read-with-echo-to-eof
-  (read-with-echo ((make-string-input-stream ":foo") object chars)
-    (values object chars))
+  (with-input-from-string (stream ":foo")
+    (read-with-echo (stream object chars)
+      (values object chars)))
   :foo ":foo")
 
 @ We'll define specialized pretty-printing routines for some of the
