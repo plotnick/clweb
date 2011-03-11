@@ -699,7 +699,7 @@ having code parts, but later tests will.
   "foo")
 
 @*Reading. We distinguish five distinct modes for reading. Limbo mode is
-used for \TeX\ text that proceeds the first section in a file. \TeX\ mode
+used for \TeX\ text that precedes the first section in a file. \TeX\ mode
 is used for reading the commentary that begins a section. Lisp mode is
 used for reading the code part of a section; inner-Lisp mode is for
 reading Lisp forms that are embedded within \TeX\ material. And finally,
