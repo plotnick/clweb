@@ -3199,16 +3199,37 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
 
 @l
 (defun print-symbol (stream symbol)
-  (let ((group-p (cond ((member symbol lambda-list-keywords)
-                        (write-string "\\K{" stream))
-                       ((keywordp symbol)
-                        (write-string "\\:{" stream))))
-        (*print-escape-list* `(("<" . "$<$") (">" . "$>$") ;
-                               ,@*print-escape-list*)))
-    (print-escaped stream (write-to-string symbol :escape nil :pretty nil))
+  (let* ((group-p (cond ((member symbol lambda-list-keywords)
+                         (write-string "\\K{" stream))
+                        ((keywordp symbol)
+                         (write-string "\\:{" stream))))
+         (string (write-to-string symbol :escape nil :pretty nil)))
+    (multiple-value-bind (prefix suffix)
+        @<Split |string| into a prefix and nicely formatted suffix@>
+      (print-escaped stream prefix)
+      (when suffix (write-string suffix stream)))
     (when group-p (write-string "}" stream))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
+
+@ Certain mathematical suffixes also get a bit of fancy formatting.
+
+@<Split |string|...@>=
+(block split-string
+  (flet ((replace-suffix (suffix replacement)
+           (let ((prefix-end (max 0 (- (length string) (length suffix)))))
+             (when (string= string suffix :start1 prefix-end)
+               (return-from split-string ;
+                 (values (subseq string 0 prefix-end) replacement))))))
+    (replace-suffix "/=" "$\\neq$")
+    (replace-suffix "<=" "$\\leq$")
+    (replace-suffix ">=" "$\\geq$")
+    (replace-suffix "<" "$<$")
+    (replace-suffix ">" "$>$")
+    (replace-suffix "-" "$-$")
+    (replace-suffix "+" "$+$")
+    (replace-suffix "=" "$=$"))
+  string)
 
 @ A few symbols get special replacements.
 
@@ -3220,11 +3241,7 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
                   (write-string ,replacement stream))
                 1)))
   (weave-symbol lambda "\\L")
-  (weave-symbol pi "$\\pi$")
-  (weave-symbol - "$-$")
-  (weave-symbol 1- "1$-$")
-  (weave-symbol <= "$\\le$")
-  (weave-symbol >= "$\\ge$"))
+  (weave-symbol pi "$\\pi$"))
 
 @ Next, we turn to list printing, and the tricky topic of indentation.
 On the assumption that the human writing a web is smarter than a program

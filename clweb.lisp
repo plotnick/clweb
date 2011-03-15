@@ -1397,13 +1397,30 @@
     CHAR))
 (SET-WEAVE-DISPATCH 'CHARACTER #'PRINT-CHAR)
 (DEFUN PRINT-SYMBOL (STREAM SYMBOL)
-  (LET ((GROUP-P
-         (COND
-          ((MEMBER SYMBOL LAMBDA-LIST-KEYWORDS) (WRITE-STRING "\\K{" STREAM))
-          ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM))))
-        (*PRINT-ESCAPE-LIST*
-         `(("<" . "$<$") (">" . "$>$") ,@*PRINT-ESCAPE-LIST*)))
-    (PRINT-ESCAPED STREAM (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL))
+  (LET* ((GROUP-P
+          (COND
+           ((MEMBER SYMBOL LAMBDA-LIST-KEYWORDS) (WRITE-STRING "\\K{" STREAM))
+           ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM))))
+         (STRING (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL)))
+    (MULTIPLE-VALUE-BIND (PREFIX SUFFIX)
+        (BLOCK SPLIT-STRING
+          (FLET ((REPLACE-SUFFIX (SUFFIX REPLACEMENT)
+                   (LET ((PREFIX-END
+                          (MAX 0 (- (LENGTH STRING) (LENGTH SUFFIX)))))
+                     (WHEN (STRING= STRING SUFFIX :START1 PREFIX-END)
+                       (RETURN-FROM SPLIT-STRING
+                         (VALUES (SUBSEQ STRING 0 PREFIX-END) REPLACEMENT))))))
+            (REPLACE-SUFFIX "/=" "$\\neq$")
+            (REPLACE-SUFFIX "<=" "$\\leq$")
+            (REPLACE-SUFFIX ">=" "$\\geq$")
+            (REPLACE-SUFFIX "<" "$<$")
+            (REPLACE-SUFFIX ">" "$>$")
+            (REPLACE-SUFFIX "-" "$-$")
+            (REPLACE-SUFFIX "+" "$+$")
+            (REPLACE-SUFFIX "=" "$=$"))
+          STRING)
+      (PRINT-ESCAPED STREAM PREFIX)
+      (WHEN SUFFIX (WRITE-STRING SUFFIX STREAM)))
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
 (MACROLET ((WEAVE-SYMBOL (SYMBOL REPLACEMENT)
@@ -1413,11 +1430,7 @@
                                     (WRITE-STRING ,REPLACEMENT STREAM))
                                   1)))
   (WEAVE-SYMBOL LAMBDA "\\L")
-  (WEAVE-SYMBOL PI "$\\pi$")
-  (WEAVE-SYMBOL - "$-$")
-  (WEAVE-SYMBOL 1- "1$-$")
-  (WEAVE-SYMBOL <= "$\\le$")
-  (WEAVE-SYMBOL >= "$\\ge$"))
+  (WEAVE-SYMBOL PI "$\\pi$"))
 (DEFSTRUCT (LOGICAL-BLOCK (:CONSTRUCTOR MAKE-LOGICAL-BLOCK (LIST))) LIST)
 (DEFUN ANALYZE-INDENTATION (LIST-MARKER)
   (DECLARE (TYPE LIST-MARKER LIST-MARKER))
