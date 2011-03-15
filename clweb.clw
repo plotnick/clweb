@@ -1924,7 +1924,7 @@ parse it when we need the value.
                 (read-form-from-string "#S(person :name \"James\")")))
   "James")
 
-@ Sharpsign + and~-- provide read-time conditionalization based on
+@ Sharpsign $+$ and~$-$ provide read-time conditionalization based on
 feature expressions, described in section~24.1.2 of the CL standard.
 This routine, adapted from SBCL, interprets such an expression.
 
