@@ -3212,7 +3212,10 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
 
 (set-weave-dispatch 'symbol #'print-symbol)
 
-@ Certain mathematical suffixes also get a bit of fancy formatting.
+@ Symbols with certain suffixes also get a bit of fancy formatting. 
+We test for suffixes one at a time, and if we find a match, we return
+two values: the portion of |string| before the suffix and the suffix
+replacement. Otherwise, we just return the string.
 
 @<Split |string|...@>=
 (block split-string
