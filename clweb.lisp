@@ -40,6 +40,9 @@
 (DEFVAR *WEAVE-VERBOSE* T "The default for the :VERBOSE argument to WEAVE.")
 (DEFVAR *WEAVE-PRINT* T "The default for the :PRINT argument to WEAVE.")
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
+(DEFVAR *PRINT-SYMBOL-SUFFIXES*
+  '(("/=" . "$\\neq$") ("<=" . "$\\leq$") (">=" . "$\\geq$") ("<" . "$<$")
+    (">" . "$>$") ("-" . "$-$") ("+" . "$+$") ("=" . "$=$")))
 (DEFVAR *INDEX-PACKAGES*
   NIL
   "The list of packages whose symbols should be indexed.")
@@ -1403,22 +1406,17 @@
            ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM))))
          (STRING (WRITE-TO-STRING SYMBOL :ESCAPE NIL :PRETTY NIL)))
     (MULTIPLE-VALUE-BIND (PREFIX SUFFIX)
-        (BLOCK SPLIT-STRING
-          (FLET ((REPLACE-SUFFIX (SUFFIX REPLACEMENT)
-                   (LET ((PREFIX-END
-                          (MAX 0 (- (LENGTH STRING) (LENGTH SUFFIX)))))
-                     (WHEN (STRING= STRING SUFFIX :START1 PREFIX-END)
-                       (RETURN-FROM SPLIT-STRING
-                         (VALUES (SUBSEQ STRING 0 PREFIX-END) REPLACEMENT))))))
-            (REPLACE-SUFFIX "/=" "$\\neq$")
-            (REPLACE-SUFFIX "<=" "$\\leq$")
-            (REPLACE-SUFFIX ">=" "$\\geq$")
-            (REPLACE-SUFFIX "<" "$<$")
-            (REPLACE-SUFFIX ">" "$>$")
-            (REPLACE-SUFFIX "-" "$-$")
-            (REPLACE-SUFFIX "+" "$+$")
-            (REPLACE-SUFFIX "=" "$=$"))
-          STRING)
+        (LOOP WITH STRING-LENGTH = (LENGTH STRING)
+              FOR (SUFFIX
+                   . REPLACEMENT) IN *PRINT-SYMBOL-SUFFIXES* AS PREFIX-END = (MAX
+                                                                              0
+                                                                              (-
+                                                                               STRING-LENGTH
+                                                                               (LENGTH
+                                                                                SUFFIX)))
+              WHEN (STRING= STRING SUFFIX :START1 PREFIX-END)
+              DO (RETURN (VALUES (SUBSEQ STRING 0 PREFIX-END) REPLACEMENT))
+              FINALLY (RETURN STRING))
       (PRINT-ESCAPED STREAM PREFIX)
       (WHEN SUFFIX (WRITE-STRING SUFFIX STREAM)))
     (WHEN GROUP-P (WRITE-STRING "}" STREAM))))

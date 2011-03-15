@@ -3218,21 +3218,27 @@ two values: the portion of |string| before the suffix and the suffix
 replacement. Otherwise, we just return the string.
 
 @<Split |string|...@>=
-(block split-string
-  (flet ((replace-suffix (suffix replacement)
-           (let ((prefix-end (max 0 (- (length string) (length suffix)))))
-             (when (string= string suffix :start1 prefix-end)
-               (return-from split-string ;
-                 (values (subseq string 0 prefix-end) replacement))))))
-    (replace-suffix "/=" "$\\neq$")
-    (replace-suffix "<=" "$\\leq$")
-    (replace-suffix ">=" "$\\geq$")
-    (replace-suffix "<" "$<$")
-    (replace-suffix ">" "$>$")
-    (replace-suffix "-" "$-$")
-    (replace-suffix "+" "$+$")
-    (replace-suffix "=" "$=$"))
-  string)
+(loop with string-length = (length string)
+      for (suffix . replacement) in *print-symbol-suffixes*
+      as prefix-end = (max 0 (- string-length (length suffix)))
+      when (string= string suffix :start1 prefix-end)
+        do (return (values (subseq string 0 prefix-end) replacement))
+      finally (return string))
+
+@ We'll keep the suffixes in a global variable in case the user wants to
+override them for whatever reason. The format is simply a list of pairs
+of the form `(\<suffix>~.~\<replacement>)'.
+
+@<Global variables@>=
+(defvar *print-symbol-suffixes*
+  '(("/=" . "$\\neq$")
+    ("<=" . "$\\leq$")
+    (">=" . "$\\geq$")
+    ("<" . "$<$")
+    (">" . "$>$")
+    ("-" . "$-$")
+    ("+" . "$+$")
+    ("=" . "$=$")))
 
 @ A few symbols get special replacements.
 
