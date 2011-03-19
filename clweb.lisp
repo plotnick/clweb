@@ -1378,16 +1378,18 @@
 (DEFUN PRINT-STRING (STREAM STRING)
   (LOOP WITH *PRINT-ESCAPE-LIST* = `(("{*}" . #\\) ("\\" . "\\\\\\\\")
                                      ("\"" . "\\\\\"") ,@*PRINT-ESCAPE-LIST*)
-        FOR LAST = 0 THEN (1+ NEWLINE)
+        FOR LAST = 0 THEN (IF (CHAR= (ELT STRING (1- NEWLINE)) #\~)
+                              (POSITION-IF-NOT #'WHITESPACEP STRING :START
+                                               NEWLINE)
+                              (1+ NEWLINE))
         FOR NEWLINE = (POSITION #\Newline STRING :START LAST) AS LINE = (SUBSEQ
                                                                          STRING
                                                                          LAST
                                                                          NEWLINE)
         DO (FORMAT STREAM "\\.{~:[~;\"~]~/clweb::print-escaped/~:[~;\"~]}"
                    (ZEROP LAST) LINE (NULL NEWLINE))
-        WHEN NEWLINE
-        DO (FORMAT STREAM "\\cr~:@_") ELSE
-        DO (LOOP-FINISH)))
+        WHILE NEWLINE
+        DO (FORMAT STREAM "\\cr~:@_")))
 (SET-WEAVE-DISPATCH 'STRING #'PRINT-STRING)
 (DEFUN PRINT-CHAR (STREAM CHAR)
   (LET ((GRAPHICP (AND (GRAPHIC-CHAR-P CHAR) (STANDARD-CHAR-P CHAR)))

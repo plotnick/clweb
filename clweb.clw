@@ -3160,7 +3160,10 @@ value if they require specialized escaping.
     (print-escaped s "foo#{bar}*baz"))
   "foo\\#$\\{$bar$\\}$*baz")
 
-@ We need to be careful about embedded newlines in string literals.
+@ We print strings one line at a time, being careful to properly end each
+alignment row. As a special nicety for |format| strings, if the last
+character before a newline is a~`\.{\~}', we skip any whitespace following
+the newline.
 
 @l
 (defun print-string (stream string)
@@ -3168,12 +3171,15 @@ value if they require specialized escaping.
                                      ("\\" . "\\\\\\\\")
                                      ("\"" . "\\\\\"")
                                      ,@*print-escape-list*)
-        for last = 0 then (1+ newline)
+        for last = 0 then (if (char= (elt string (1- newline)) #\~)
+                              (position-if-not #'whitespacep string ;
+                                                :start newline)
+                              (1+ newline))
         for newline = (position #\Newline string :start last)
         as line = (subseq string last newline)
         do (format stream "\\.{~:[~;\"~]~/clweb::print-escaped/~:[~;\"~]}"
                    (zerop last) line (null newline))
-        when newline do (format stream "\\cr~:@_") else do (loop-finish)))
+        while newline do (format stream "\\cr~:@_")))
 
 (set-weave-dispatch 'string #'print-string)
 
