@@ -392,7 +392,7 @@ to traverse it in-order, applying some function to each node.
 @l
 (defgeneric map-bst (function tree))
 
-(defmethod map-bst (function (tree (eql nil)))
+(defmethod map-bst (function (tree null))
   (declare (ignore function)))
 (defmethod map-bst (function (tree binary-search-tree))
   (map-bst function (left-child tree))
