@@ -2256,7 +2256,7 @@
     (SUBLIS
      (MAP 'LIST
           (LAMBDA (SYM)
-            (LET ((REFSYM (MAKE-SYMBOL (SYMBOL-NAME SYM))))
+            (LET ((REFSYM (COPY-SYMBOL SYM)))
               (SETF (SYMBOL-VALUE REFSYM) SYM)
               (SETF (GET REFSYM 'SECTION) SECTION)
               (CONS SYM REFSYM)))

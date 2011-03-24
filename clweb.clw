@@ -5005,7 +5005,7 @@ semantics of Common Lisp, since we can't walk pre-tangled code.
     (get-symbols form)
     (sublis (map 'list
                  (lambda (sym)
-                   (let ((refsym (make-symbol (symbol-name sym))))
+                   (let ((refsym (copy-symbol sym)))
                      (setf (symbol-value refsym) sym)
                      (setf (get refsym 'section) section)
                      (cons sym refsym)))
