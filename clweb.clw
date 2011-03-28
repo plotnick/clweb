@@ -2757,9 +2757,16 @@ the default table.
 
 @ The file tangler operates by writing out the tangled code to a Lisp source
 file and then invoking the file compiler on that file. The arguments are
-essentially the same as those to |compile-file|, except for the
-|tests-file| keyword argument, which specifies the file to which the test
-sections' code should be written.
+essentially the same as those to |compile-file|, except for the |tests-file|
+keyword argument, which specifies the file to which the test sections' code
+should be written (see~|tests-file-pathname|, above, for the defaulting).
+
+We return the values returned by invoking |compile-file| on the tangled
+file, but we actually compile the tests file, if any, {\it after\/} the
+tangled file, on the assumption that the tests might require a module
+provided by the output file. Note that this might cause the output file
+to be unintentionally loaded; the work-around is to disable production
+of the tests file by supplying |:tests-file nil|.
 
 @l
 (defun tangle-file (input-file &rest args &key
@@ -2787,7 +2794,7 @@ sections' code should be written.
                             :direction :output
                             :if-exists :supersede
                             :external-format external-format)
-             (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%"
+             (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%" ;
                      input-file)
              (let ((*evaluating* nil)
                    (*print-pprint-dispatch* *tangle-pprint-dispatch*)
@@ -2795,17 +2802,19 @@ sections' code should be written.
                @<Output a form that sets the source pathname@>
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
-    (when (and tests-file
+    (when (and tests-file ;
                (> (length *test-sections*) 1)) ; there's always a limbo section
       (when verbose (format t "~&; writing tests to ~A~%" tests-file))
-      (write-forms *test-sections* tests-file)
-      (compile-file tests-file ; use default output file
-                    :verbose verbose
-                    :print print
-                    :external-format external-format))
+      (write-forms *test-sections* tests-file))
     (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
     (write-forms *sections* lisp-file)
-    (apply #'compile-file lisp-file :allow-other-keys t args)))
+    (multiple-value-prog1
+        (apply #'compile-file lisp-file :allow-other-keys t args)
+      (when tests-file
+        (compile-file tests-file ; use default output file
+                      :verbose verbose
+                      :print print
+                      :external-format external-format)))))
 
 @ @<Merge defaults for tangler...@>=
 (input-file (merge-pathnames input-file ;
