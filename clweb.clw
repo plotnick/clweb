@@ -82,7 +82,7 @@ errors and warnings that might be signaled while processing a web.
 
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  #+sbcl (require 'sb-cltl2))
+  #+sbcl (require "SB-CLTL2"))
 @e
 (defpackage "CLWEB"
   (:use "COMMON-LISP"
@@ -125,7 +125,7 @@ after the tests have been loaded.
 (in-package "CLWEB")
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (require 'rt)
+  (require "RT")
   (do-external-symbols (symbol (find-package "RT"))
     (import symbol)))
 
