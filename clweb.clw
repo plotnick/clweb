@@ -2843,10 +2843,7 @@ tangling.
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
 
-@<Condition classes@>=
-(define-condition unused-named-section-warning (simple-warning) ())
-
-@ @<Complain about any unused...@>=
+@<Complain about any unused...@>=
 (let ((unused-sections '()))
   (flet ((note-unused-section (section)
            (when (null (used-by section))
@@ -2858,6 +2855,9 @@ warnings about unused named sections.
                  :format-control "Unused named section <~A>."
                  :format-arguments (list (section-name section))))
          (sort unused-sections #'< :key #'section-number))))
+
+@ @<Condition classes@>=
+(define-condition unused-named-section-warning (simple-warning) ())
 
 @*The weaver. The top-level weaver interface is modeled after
 |compile-file|. The function |weave| reads the \WEB\ |input-file| and
