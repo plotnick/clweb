@@ -93,6 +93,8 @@ errors and warnings that might be signaled while processing a web.
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "*TANGLE-FILE-PATHNAME*"
+           "*TANGLE-FILE-TRUENAME*"
            "*WEAVE-PRINT*"
            "*WEAVE-VERBOSE*"
            "*INDEX-LEXICAL-VARIABLES*"
@@ -2767,6 +2769,8 @@ sections' code should be written.
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
                     @<Merge defaults for tangler file names@>
+                    (*tangle-file-pathname* input-file)
+                    (*tangle-file-truename* (truename *tangle-file-pathname*))
                     (*readtable* *readtable*)
                     (*package* *package*))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
@@ -2783,11 +2787,12 @@ sections' code should be written.
                             :direction :output
                             :if-exists :supersede
                             :external-format external-format)
-             (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT." ;
+             (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%"
                      input-file)
              (let ((*evaluating* nil)
                    (*print-pprint-dispatch* *tangle-pprint-dispatch*)
                    (*print-level* nil))
+               @<Output a form that sets the source pathname@>
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
     (when (and tests-file
@@ -2810,6 +2815,30 @@ sections' code should be written.
 (lisp-file (merge-pathnames (make-pathname :type "LISP" :case :common) ;
                             output-file))
 (tests-file (apply #'tests-file-pathname output-file "LISP" args))
+
+@ During tangling, we bind |*tangle-file-pathname*| and
+|*tangle-file-truename*| in the same way that |compile-file| binds
+|*compile-file-pathname*| and |*compile-file-truename*|.
+
+@<Global variables@>=
+(defvar *tangle-file-pathname* nil)
+(defvar *tangle-file-truename* nil)
+
+@ Allegro Common Lisp uses the variable |*source-pathname*| to locate
+definitions in source files. If we override that, we can get it to look
+in the \CLWEB\ file instead of the tangled Lisp file.
+@^Allegro Common Lisp@>
+
+We have to do this output as a string rather than a form because the
+package |"EXCL"| might not exist in the implementation with which we're
+tangling.
+
+@<Output a form that sets...@>=
+(format output
+        "#+ALLEGRO~
+         ~&(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)~
+         ~&  (SETQ EXCL:*SOURCE-PATHNAME* ~S))~%"
+        *tangle-file-pathname*)
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
