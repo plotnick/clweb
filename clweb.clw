@@ -1881,9 +1881,8 @@ the real and imaginary parts of a complex number.
 @t@l
 (deftest read-complex
   (let ((marker (read-form-from-string "#C(0 1)")))
-    (= (marker-value marker)
-       (complex 0 1)))
-  t)
+    (marker-value marker))
+  #C(0 1))
 
 @ Sharpsign~$n$A constructs an $n$-dimensional array. We don't need any
 particularly special handling, but we have to override it anyway because
