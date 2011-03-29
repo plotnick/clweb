@@ -1858,6 +1858,33 @@ the actual value, and store the radix in our marker.
   14
   15)
 
+@ Sharpsign~C reads a list of two real numbers representing, respectively,
+the real and imaginary parts of a complex number.
+
+@l
+(defclass complex-marker (marker)
+  ((components :reader complex-components :initarg :components)))
+
+(defmethod marker-boundp ((marker complex-marker)) t)
+(defmethod marker-value ((marker complex-marker))
+  (apply #'complex (tangle (complex-components marker))))
+
+(defun complex-reader (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (make-instance 'complex-marker
+                 :components (read stream t nil t)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\C #'complex-reader ;
+                                (readtable-for-mode mode)))
+
+@t@l
+(deftest read-complex
+  (let ((marker (read-form-from-string "#C(0 1)")))
+    (= (marker-value marker)
+       (complex 0 1)))
+  t)
+
 @ Sharpsign~$n$A constructs an $n$-dimensional array. We don't need any
 particularly special handling, but we have to override it anyway because
 the standard reader will be confused by finding markers where it expects
@@ -3532,6 +3559,11 @@ which see.
   (lambda (stream obj)
     (format stream "$~VR_{~2:*~D}$"
             (radix-marker-base obj) (marker-value obj))))
+
+@ @l
+(set-weave-dispatch 'complex-marker
+  (lambda (stream obj)
+    (format stream "\\#C~W" (complex-components obj))))
 
 @ @l
 (set-weave-dispatch 'array-marker
