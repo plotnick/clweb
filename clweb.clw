@@ -1914,6 +1914,13 @@ sequences.
   (set-dispatch-macro-character #\# #\A #'array-reader ;
                                 (readtable-for-mode mode)))
 
+@t@l
+(deftest read-array
+  (let ((marker (read-form-from-string "#2A((1 2 3) (4 5 6))")))
+    (equalp (marker-value marker)
+            #2A((1 2 3) (4 5 6))))
+  t)
+
 @ Sharpsign~S requires determining the standard constructor function of the
 structure type named, which we simply can't do portably. So we cache the
 form as given, then dump it out to a string and let the standard reader
