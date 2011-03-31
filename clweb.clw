@@ -4770,7 +4770,8 @@ descriptive names in the interface.
 (defun make-type-heading (type &rest args)
   (apply #'make-instance (type-heading-class-name type) args))
 
-@ {\it Et voil\`a!}
+@ {\it Et voil\`a!\/} Note that a name is derived from the class name if no
+|:name| option is provided.
 
 @l
 (define-type-heading function ()
