@@ -5057,23 +5057,10 @@ being indexed might not be in the environment yet.)
        section))))
 
 @ To index definitions, we'll need some information from the walker about
-the context in which the variable or function name occurred. In particular,
-we'll get the |car| of the defining form as the |operator| argument.
+the context in which the function name occurred. In particular, we'll get
+the |car| of the defining form as the |operator| argument.
 
 @l
-(defun index-defvar (index variable section env &key operator special &aux
-                     (constant (or (constantp variable env)
-                                   (eql operator 'defconstant))))
-  (when (or special *index-lexical-variables*)
-   (add-index-entry
-    index
-    (list variable ;
-          (make-type-heading 'variable
-                             :special (and special (not constant))
-                             :constant constant))
-    section
-    :def t)))
-
 (defun index-defun (index function-name section &key ;
                     operator local generic qualifiers)
   (add-index-entry
@@ -5289,7 +5276,7 @@ off to the next method for the actual expansion.
 
 @ The only atoms we care about indexing are referring symbols. We'll return
 the referents; this is where the reverse-substitution of referring symbols
-takes place.
+takes place. It's also where much of the actual indexing gets done.
 
 @l
 (defmethod walk-atomic-form ((walker indexing-walker) context form env &key def)
@@ -5297,15 +5284,17 @@ takes place.
       (multiple-value-bind (symbol section) (symbol-provenance form)
         (when section
           (index-variable (walker-index walker) symbol section env)
-          (flet ((index-symbol (type)
+          (flet ((index-symbol (type &rest args)
                    (add-index-entry (walker-index walker)
-                                    (list symbol (make-type-heading type))
-                                    section
-                                    :def def)))
+                                    (list symbol ;
+                                          (apply #'make-type-heading type args))
+                                    section :def def)))
            (case context
-             (:binding (index-defvar (walker-index walker) symbol section env
-                                     :operator 'defvar
-                                     :special nil))
+             (:binding (when *index-lexical-variables*
+                         (setq def t) ; lexical bindings are always definitions
+                         (index-symbol 'variable)))
+             (:special-binding (index-symbol 'variable :special t))
+             (:constant-binding (index-symbol 'variable :constant t))
              (:class (index-symbol 'class))
              (:condition-class (index-symbol 'condition-class))
              (:method-combination (index-symbol 'method-combination)))))
@@ -5403,21 +5392,15 @@ defined, by way of |walk-lambda-expression|.
 special forms. Once again, we'll just skip the macro expansions.
 
 @l
-(macrolet ((define-indexing-defvar-walker (operator)
+(macrolet ((define-indexing-defvar-walker (operator type)
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env)
                 `(,(car form)
-                  ,(multiple-value-bind (symbol section) ;
-                       (symbol-provenance (cadr form))
-                     (when section
-                       (index-defvar (walker-index walker) symbol section env
-                                     :operator (car form)
-                                     :special t))
-                     symbol)
+                  ,(walk-atomic-form walker ,type (cadr form) env :def t)
                   ,@(walk-list walker (cddr form) env)))))
-  (define-indexing-defvar-walker defvar)
-  (define-indexing-defvar-walker defparameter)
-  (define-indexing-defvar-walker defconstant))
+  (define-indexing-defvar-walker defvar :special-binding)
+  (define-indexing-defvar-walker defparameter :special-binding)
+  (define-indexing-defvar-walker defconstant :constant-binding))
 
 @t@l
 (define-indexing-test defvar
