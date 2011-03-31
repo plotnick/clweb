@@ -26,11 +26,6 @@
  \gdef\activestar{\catcode`\*=\active \def*{\leavevmode$\ast$}}}
 {\obeyspaces\global\let =\ } % let active space = control space
 
-\def\:#1{\hbox{\it:\/#1\/\kern.05em}} % keyword
-\def\'{'\kern.025em} % quote
-\def\`{`\kern.025em} % backquote
-\def\#{\char`\#}
-\def\&{\char`\&}
 \def\B{\bgroup % go into Lisp mode
   \rightskip=0pt plus 100pt minus 10pt
   \parindent=0pt
@@ -39,7 +34,13 @@
   \exhyphenpenalty 10000
   \let\!=\cleartabs
   \IB}
-\def\IB{\activeparens\activestar\codefont\obeyspaces} % (inner-)Lisp mode
+\def\IB{\activeparens\activestar
+  \def\#{\char`\#}% sharpsign
+  \def\&{\char`\&}% ampersand
+  \def\:##1{\hbox{\it:\/##1\/\kern.05em}}% keyword symbol
+  \def\'{'\kern.025em}% quote
+  \def\`{`\kern.025em}% backquote
+  \codefont\obeyspaces}
 \def\({\bgroup\IB\it} % go into inner-Lisp mode
 \def\){\/\egroup} % end inner-Lisp mode
 \def\C#1{{\cmntfont #1}} % comment
