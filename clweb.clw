@@ -5097,6 +5097,43 @@ without significantly affecting usability.
   (symbol (if qualifiers 'method 'function))
   (setf-function-name 'method))
 
+@ We'll use this next generic function to index symbols that occur in
+various contexts during the walk. The primary method provided here just
+attempts to index variable use.
+
+@l
+(defgeneric index-symbol (index context symbol env &key section def))
+
+(defmethod index-symbol (index context symbol env &key section def)
+  (declare (ignore context def))
+  (index-variable index symbol section env))
+
+@ Since basically all of the methods on |index-symbol| will be after
+methods that specialize on the |context| parameter and generate the
+same kind of two-leveled index entries, we can use the following macro
+to define them in a concise way.
+
+@l
+(defmacro define-symbol-indexer (context type &rest args)
+  `(defmethod index-symbol :after ;
+       (index (context (eql ,context)) symbol env &key section def)
+     (declare (ignore env))
+     (add-index-entry index ;
+                      (list symbol (make-type-heading ,type ,@args)) ;
+                      section :def def)))
+
+@ We'll define this one method for lexical bindings by hand, since we need
+the conditional.
+
+@l
+(defmethod index-symbol :after ;
+    (index (context (eql :binding)) symbol env &key section def)
+  (declare (ignore env))
+  (when *index-lexical-variables*
+    (add-index-entry index ;
+                     (list symbol (make-type-heading 'variable)) ;
+                     section :def def)))
+
 @ We'll perform the indexing by walking over the code of each section and
 noting each of the interesting symbols that we find there according to its
 semantic role. In theory, this should be a straightforward task for any
@@ -5276,30 +5313,20 @@ off to the next method for the actual expansion.
 
 @ The only atoms we care about indexing are referring symbols. We'll return
 the referents; this is where the reverse-substitution of referring symbols
-takes place. It's also where much of the actual indexing gets done.
+takes place. It's also where much of the actual indexing gets done, by way
+of the call to |index-symbol|.
 
 @l
-(defmethod walk-atomic-form ((walker indexing-walker) context form env &key def)
+(defmethod walk-atomic-form :around ;
+    ((walker indexing-walker) context form env &key def)
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
         (when section
-          (index-variable (walker-index walker) symbol section env)
-          (flet ((index-symbol (type &rest args)
-                   (add-index-entry (walker-index walker)
-                                    (list symbol ;
-                                          (apply #'make-type-heading type args))
-                                    section :def def)))
-           (case context
-             (:binding (when *index-lexical-variables*
-                         (setq def t) ; lexical bindings are always definitions
-                         (index-symbol 'variable)))
-             (:special-binding (index-symbol 'variable :special t))
-             (:constant-binding (index-symbol 'variable :constant t))
-             (:class (index-symbol 'class))
-             (:condition-class (index-symbol 'condition-class))
-             (:method-combination (index-symbol 'method-combination)))))
-        symbol)
-      form))
+          (index-symbol (walker-index walker) context symbol env ;
+                        :section section ;
+                        :def def))
+        (call-next-method walker context symbol env))
+      (call-next-method walker context form env)))
 
 @t@l
 (define-indexing-test atom
@@ -5401,6 +5428,9 @@ special forms. Once again, we'll just skip the macro expansions.
   (define-indexing-defvar-walker defvar :special-binding)
   (define-indexing-defvar-walker defparameter :special-binding)
   (define-indexing-defvar-walker defconstant :constant-binding))
+
+(define-symbol-indexer :special-binding 'variable :special t)
+(define-symbol-indexer :constant-binding 'variable :constant t)
 
 @t@l
 (define-indexing-test defvar
@@ -5569,6 +5599,9 @@ class names, super-classes, and~accessor methods.
   (define-defclass-walker defclass :class)
   (define-defclass-walker define-condition :condition-class))
 
+(define-symbol-indexer :class 'class)
+(define-symbol-indexer :condition-class 'condition-class)
+
 @t@l
 (define-indexing-test defclass
   ((:section :code ((defclass foo ()
@@ -5617,6 +5650,8 @@ method combination types. We'll skip the expansion.
   `(,(car form)
     ,(walk-atomic-form walker :method-combination (cadr form) env :def t)
     ,@(walk-list walker (cddr form) env)))
+
+(define-symbol-indexer :method-combination 'method-combination)
 
 @t@l
 (define-indexing-test define-method-combination
