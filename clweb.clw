@@ -4758,8 +4758,8 @@ descriptive names in the interface.
     (intern (with-standard-io-syntax (format nil "~A-HEADING" name)))))
 
 (defmacro define-type-heading (name &optional slots &rest options)
-  (flet ((option (indicator)
-           (cdr (find-if (lambda (option) (eq (car option) indicator))
+  (flet ((option (indicator) ;
+           (cdr (find-if (lambda (option) (eq (car option) indicator)) ;
                          options))))
     `(defclass ,(type-heading-class-name name) (type-heading)
        ,slots
@@ -4777,9 +4777,7 @@ descriptive names in the interface.
   (:modifiers :local :generic :setf))
 
 (define-type-heading method
-  ((qualifiers :reader method-heading-qualifiers
-               :initarg :qualifiers
-               :initform nil))
+  (@<Method heading slots@>)
   (:modifiers :setf))
 
 (define-type-heading macro ()
@@ -4799,11 +4797,11 @@ descriptive names in the interface.
 
 @t@l
 (deftest function-heading-name
-  (values (heading-name (make-instance 'function-heading))
-          (heading-name (make-instance 'function-heading :local t))
-          (heading-name (make-instance 'function-heading :generic t :local nil))
-          (heading-name (make-instance 'function-heading :setf t))
-          (heading-name (make-instance 'function-heading :setf t :local t)))
+  (values (heading-name (make-type-heading 'function))
+          (heading-name (make-type-heading 'function :local t))
+          (heading-name (make-type-heading 'function :generic t :local nil))
+          (heading-name (make-type-heading 'function :setf t))
+          (heading-name (make-type-heading 'function :setf t :local t)))
   "function"
   "local function"
   "generic function"
@@ -4811,12 +4809,26 @@ descriptive names in the interface.
   "local setf function")
 
 (deftest variable-heading-name
-  (values (heading-name (make-instance 'variable-heading))
-          (heading-name (make-instance 'variable-heading :special t))
-          (heading-name (make-instance 'variable-heading :constant t)))
+  (values (heading-name (make-type-heading 'variable))
+          (heading-name (make-type-heading 'variable :special t))
+          (heading-name (make-type-heading 'variable :constant t)))
   "variable"
   "special variable"
   "constant variable")
+
+(deftest macro-heading-name
+  (values (heading-name (make-type-heading 'macro))
+          (heading-name (make-type-heading 'symbol-macro))
+          (heading-name (make-type-heading 'symbol-macro :local t)))
+  "macro"
+  "symbol macro"
+  "local symbol macro")
+
+(deftest class-heading-name
+  (values (heading-name (make-type-heading 'class))
+          (heading-name (make-type-heading 'condition-class)))
+  "class"
+  "condition class")
 
 @ For method headings, we'll prepend the list of qualifiers if present;
 otherwise, we'll call them `primary'.
@@ -4826,11 +4838,17 @@ otherwise, we'll call them `primary'.
   (mapcar #'string-downcase ;
           (or (method-heading-qualifiers heading) '(:primary))))
 
+@ @<Method heading slots@>=
+(qualifiers :reader method-heading-qualifiers
+            :initarg :qualifiers
+            :initform nil)
+
 @t@l
 (deftest method-heading-name
-  (values (heading-name (make-instance 'method-heading))
-          (heading-name (make-instance 'method-heading
-                                       :qualifiers '(:before :during :after))))
+  (values (heading-name (make-type-heading 'method))
+          (heading-name (make-type-heading 'method ;
+                                           :qualifiers ;
+                                           '(:before :during :after))))
   "primary method"
   "before during after method")
 

@@ -688,25 +688,33 @@
          "big, fat, juicy, steak"
          "delicious, big, fat, juicy, Kobe, steak, from Japan")
 (DEFTEST FUNCTION-HEADING-NAME
-         (VALUES (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING))
-                 (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING :LOCAL T))
+         (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION :LOCAL T))
                  (HEADING-NAME
-                  (MAKE-INSTANCE 'FUNCTION-HEADING :GENERIC T :LOCAL NIL))
-                 (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING :SETF T))
-                 (HEADING-NAME
-                  (MAKE-INSTANCE 'FUNCTION-HEADING :SETF T :LOCAL T)))
+                  (MAKE-TYPE-HEADING 'FUNCTION :GENERIC T :LOCAL NIL))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION :SETF T))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION :SETF T :LOCAL T)))
          "function" "local function" "generic function" "setf function"
          "local setf function")
 (DEFTEST VARIABLE-HEADING-NAME
-         (VALUES (HEADING-NAME (MAKE-INSTANCE 'VARIABLE-HEADING))
-                 (HEADING-NAME (MAKE-INSTANCE 'VARIABLE-HEADING :SPECIAL T))
-                 (HEADING-NAME (MAKE-INSTANCE 'VARIABLE-HEADING :CONSTANT T)))
+         (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'VARIABLE))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'VARIABLE :SPECIAL T))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'VARIABLE :CONSTANT T)))
          "variable" "special variable" "constant variable")
+(DEFTEST MACRO-HEADING-NAME
+         (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'MACRO))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'SYMBOL-MACRO))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'SYMBOL-MACRO :LOCAL T)))
+         "macro" "symbol macro" "local symbol macro")
+(DEFTEST CLASS-HEADING-NAME
+         (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'CLASS))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'CONDITION-CLASS)))
+         "class" "condition class")
 (DEFTEST METHOD-HEADING-NAME
-         (VALUES (HEADING-NAME (MAKE-INSTANCE 'METHOD-HEADING))
+         (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'METHOD))
                  (HEADING-NAME
-                  (MAKE-INSTANCE 'METHOD-HEADING :QUALIFIERS
-                                 '(:BEFORE :DURING :AFTER))))
+                  (MAKE-TYPE-HEADING 'METHOD :QUALIFIERS
+                                     '(:BEFORE :DURING :AFTER))))
          "primary method" "before during after method")
 (DEFMETHOD PRINT-OBJECT ((ENTRY INDEX-ENTRY) STREAM)
   (PRINT-UNREADABLE-OBJECT (ENTRY STREAM :TYPE T :IDENTITY NIL)
