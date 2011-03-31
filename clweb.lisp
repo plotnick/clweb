@@ -1604,7 +1604,7 @@
 (DEFGENERIC AUGMENT-WALKER-ENVIRONMENT
     (WALKER ENV &REST ARGS))
 (DEFGENERIC WALK-ATOMIC-FORM
-    (WALKER CONTEXT FORM ENV))
+    (WALKER CONTEXT FORM ENV &KEY))
 (DEFGENERIC WALK-COMPOUND-FORM
     (WALKER OPERATOR FORM ENV))
 (DEFGENERIC WALK-FUNCTION-NAME
@@ -1659,7 +1659,7 @@
   (DO ((FORM LIST (CDR FORM))
        (NEWFORM NIL (CONS (WALK-FORM WALKER (CAR FORM) ENV) NEWFORM)))
       ((ATOM FORM) (NRECONC NEWFORM FORM))))
-(DEFMETHOD WALK-ATOMIC-FORM ((WALKER WALKER) CONTEXT FORM ENV)
+(DEFMETHOD WALK-ATOMIC-FORM ((WALKER WALKER) CONTEXT FORM ENV &KEY)
   (DECLARE (IGNORE CONTEXT ENV))
   FORM)
 (DEFMETHOD WALK-COMPOUND-FORM ((WALKER WALKER) OPERATOR FORM ENV)
@@ -2355,15 +2355,24 @@
            (T FORM)))
         (T (CALL-NEXT-METHOD)))))
     (T FORM)))
-(DEFMETHOD WALK-ATOMIC-FORM ((WALKER INDEXING-WALKER) CONTEXT FORM ENV)
+(DEFMETHOD WALK-ATOMIC-FORM
+           ((WALKER INDEXING-WALKER) CONTEXT FORM ENV &KEY DEF)
   (IF (SYMBOLP FORM)
       (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
           (SYMBOL-PROVENANCE FORM)
         (WHEN SECTION
           (INDEX-VARIABLE (WALKER-INDEX WALKER) SYMBOL SECTION ENV)
-          (WHEN (EQL CONTEXT :BINDING)
-            (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION ENV :OPERATOR
-                          'DEFVAR :SPECIAL NIL)))
+          (FLET ((INDEX-SYMBOL (TYPE)
+                   (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
+                                    (LIST SYMBOL (MAKE-TYPE-HEADING TYPE))
+                                    SECTION :DEF DEF)))
+            (CASE CONTEXT
+              (:BINDING
+               (INDEX-DEFVAR (WALKER-INDEX WALKER) SYMBOL SECTION ENV :OPERATOR
+                             'DEFVAR :SPECIAL NIL))
+              (:CLASS (INDEX-SYMBOL 'CLASS))
+              (:CONDITION-CLASS (INDEX-SYMBOL 'CONDITION-CLASS))
+              (:METHOD-COMBINATION (INDEX-SYMBOL 'METHOD-COMBINATION)))))
         SYMBOL)
       FORM))
 (DEFMETHOD WALK-COMPOUND-FORM :BEFORE
@@ -2436,15 +2445,8 @@
               COLLECT (CASE (CAR FORM)
                         (:METHOD-COMBINATION
                          `(,(CAR FORM)
-                           ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                                (SYMBOL-PROVENANCE (CADR FORM))
-                              (WHEN SECTION
-                                (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
-                                                 (LIST SYMBOL
-                                                       (MAKE-TYPE-HEADING
-                                                        'METHOD-COMBINATION))
-                                                 SECTION))
-                              SYMBOL)
+                           ,(WALK-ATOMIC-FORM WALKER :METHOD-COMBINATION
+                                              (CADR FORM) ENV)
                            ,@(WALK-LIST WALKER (CDDR FORM) ENV)))
                         (:METHOD
                          (LET* ((OPERATOR (POP FORM))
@@ -2488,38 +2490,23 @@
                                               :OPERATOR 'DEFMETHOD :GENERIC T
                                               :QUALIFIERS QUALIFIERS :DEF T)
                           QUALIFIERS LAMBDA-LIST BODY ENV))
-(MACROLET ((DEFINE-DEFCLASS-WALKER (OPERATOR &KEY TYPE)
+(MACROLET ((DEFINE-DEFCLASS-WALKER (OPERATOR TYPE)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER INDEXING-WALKER) FORM ENV)
                 (DESTRUCTURING-BIND
                     (OPERATOR NAME SUPERS SLOT-SPECS &REST OPTIONS)
                     FORM
-                  (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                      (SYMBOL-PROVENANCE NAME)
-                    (WHEN SECTION
-                      (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
-                                       (LIST SYMBOL (MAKE-TYPE-HEADING ,TYPE))
-                                       SECTION :DEF T))
-                    `(,OPERATOR
-                      ,(WALK-ATOMIC-FORM WALKER :CLASS-NAME SYMBOL ENV)
-                      ,(MAPCAR
-                        (LAMBDA (SUPER)
-                          (MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-                              (SYMBOL-PROVENANCE SUPER)
-                            (WHEN SECTION
-                              (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
-                                               (LIST SYMBOL
-                                                     (MAKE-TYPE-HEADING ,TYPE))
-                                               SECTION))
-                            (WALK-ATOMIC-FORM WALKER :SUPERCLASS-NAME SYMBOL
-                                              ENV)))
-                        SUPERS)
-                      ,(MAPCAR
-                        (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
-                        SLOT-SPECS)
-                      ,@(WALK-LIST WALKER OPTIONS ENV)))))))
-  (DEFINE-DEFCLASS-WALKER DEFCLASS :TYPE 'CLASS)
-  (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION :TYPE 'CONDITION-CLASS))
+                  `(,OPERATOR ,(WALK-ATOMIC-FORM WALKER ,TYPE NAME ENV :DEF T)
+                    ,(MAPCAR
+                      (LAMBDA (SUPER)
+                        (WALK-ATOMIC-FORM WALKER ,TYPE SUPER ENV))
+                      SUPERS)
+                    ,(MAPCAR
+                      (LAMBDA (SPEC) (WALK-SLOT-SPECIFIER WALKER SPEC ENV))
+                      SLOT-SPECS)
+                    ,@(WALK-LIST WALKER OPTIONS ENV))))))
+  (DEFINE-DEFCLASS-WALKER DEFCLASS :CLASS)
+  (DEFINE-DEFCLASS-WALKER DEFINE-CONDITION :CONDITION-CLASS))
 (DEFUN WALK-SLOT-SPECIFIER (WALKER SPEC ENV)
   (ETYPECASE SPEC
     (SYMBOL (WALK-ATOMIC-FORM WALKER :SLOT-NAME SPEC ENV))
@@ -2542,13 +2529,7 @@
 (DEFINE-SPECIAL-FORM-WALKER DEFINE-METHOD-COMBINATION
     ((WALKER INDEXING-WALKER) FORM ENV)
   `(,(CAR FORM)
-    ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
-         (SYMBOL-PROVENANCE (CADR FORM))
-       (WHEN SECTION
-         (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
-                          (LIST SYMBOL (MAKE-TYPE-HEADING 'METHOD-COMBINATION))
-                          SECTION :DEF T))
-       SYMBOL)
+    ,(WALK-ATOMIC-FORM WALKER :METHOD-COMBINATION (CADR FORM) ENV :DEF T)
     ,@(WALK-LIST WALKER (CDDR FORM) ENV)))
 (DEFUN INDEX-SECTIONS
        (SECTIONS

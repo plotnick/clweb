@@ -3748,7 +3748,7 @@ use |eql|~specializers. The |operator| of a form passed to
 |walk-compound-form| will always be a symbol.
 
 @<Walker generic functions@>=
-(defgeneric walk-atomic-form (walker context form env))
+(defgeneric walk-atomic-form (walker context form env &key))
 (defgeneric walk-compound-form (walker operator form env))
 
 @ The default method for |walk-atomic-form| simply returns the form.
@@ -3756,7 +3756,7 @@ Note that this function won't be called for symbol macros; those are
 expanded in |walk-form|.
 
 @l
-(defmethod walk-atomic-form ((walker walker) context form env)
+(defmethod walk-atomic-form ((walker walker) context form env &key)
   (declare (ignore context env))
   form)
 
@@ -4515,7 +4515,7 @@ the walker classes defined in this program.
 (defclass tracing-walker (walker) ())
 
 (defmethod walk-atomic-form :before ;
-    ((walker tracing-walker) context form env)
+    ((walker tracing-walker) context form env &key)
   (format t "; walking atomic form ~S (~S)~@[ (~(~A~) variable)~]~%"
           form context (and (symbolp form) (variable-information form env))))
 
@@ -5292,15 +5292,23 @@ the referents; this is where the reverse-substitution of referring symbols
 takes place.
 
 @l
-(defmethod walk-atomic-form ((walker indexing-walker) context form env)
+(defmethod walk-atomic-form ((walker indexing-walker) context form env &key def)
   (if (symbolp form)
       (multiple-value-bind (symbol section) (symbol-provenance form)
         (when section
           (index-variable (walker-index walker) symbol section env)
-          (when (eql context :binding)
-            (index-defvar (walker-index walker) symbol section env
-                          :operator 'defvar
-                          :special nil)))
+          (flet ((index-symbol (type)
+                   (add-index-entry (walker-index walker)
+                                    (list symbol (make-type-heading type))
+                                    section
+                                    :def def)))
+           (case context
+             (:binding (index-defvar (walker-index walker) symbol section env
+                                     :operator 'defvar
+                                     :special nil))
+             (:class (index-symbol 'class))
+             (:condition-class (index-symbol 'condition-class))
+             (:method-combination (index-symbol 'method-combination)))))
         symbol)
       form))
 
@@ -5561,36 +5569,22 @@ a method description.
 class names, super-classes, and~accessor methods.
 
 @l
-(macrolet ((define-defclass-walker (operator &key type)
+(macrolet ((define-defclass-walker (operator type)
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env)
                 (destructuring-bind ;
                       (operator name supers slot-specs &rest options) form
-                  (multiple-value-bind (symbol section) (symbol-provenance name)
-                    (when section
-                      (add-index-entry (walker-index walker)
-                                       (list symbol (make-type-heading ,type))
-                                       section
-                                       :def t))
-                    `(,operator
-                      ,(walk-atomic-form walker :class-name symbol env)
-                      ,(mapcar (lambda (super) ;
-                                 @<Index the use of the superclass |super|@>) ;
-                               supers)
-                      ,(mapcar (lambda (spec) ;
-                                 (walk-slot-specifier walker spec env)) ;
-                               slot-specs)
-                      ,@(walk-list walker options env)))))))
-  (define-defclass-walker defclass :type 'class)
-  (define-defclass-walker define-condition :type 'condition-class))
-
-@ @<Index the use of the superclass |super|@>=
-(multiple-value-bind (symbol section) (symbol-provenance super)
-  (when section
-    (add-index-entry (walker-index walker)
-                     (list symbol (make-type-heading ,type))
-                     section))
-  (walk-atomic-form walker :superclass-name symbol env))
+                  `(,operator
+                    ,(walk-atomic-form walker ,type name env :def t)
+                    ,(mapcar (lambda (super) ;
+                               (walk-atomic-form walker ,type super env)) ;
+                             supers)
+                    ,(mapcar (lambda (spec) ;
+                               (walk-slot-specifier walker spec env)) ;
+                             slot-specs)
+                    ,@(walk-list walker options env))))))
+  (define-defclass-walker defclass :class)
+  (define-defclass-walker define-condition :condition-class))
 
 @t@l
 (define-indexing-test defclass
@@ -5638,13 +5632,7 @@ method combination types. We'll skip the expansion.
 (define-special-form-walker define-method-combination ;
     ((walker indexing-walker) form env)
   `(,(car form)
-    ,(multiple-value-bind (symbol section) (symbol-provenance (cadr form))
-       (when section
-         (add-index-entry (walker-index walker)
-                          (list symbol (make-type-heading 'method-combination))
-                          section
-                          :def t))
-       symbol)
+    ,(walk-atomic-form walker :method-combination (cadr form) env :def t)
     ,@(walk-list walker (cddr form) env)))
 
 @t@l
@@ -5659,12 +5647,7 @@ method combination types. We'll skip the expansion.
 
 @<Walk the method combination...@>=
 `(,(car form)
-  ,(multiple-value-bind (symbol section) (symbol-provenance (cadr form))
-     (when section
-       (add-index-entry (walker-index walker)
-                        (list symbol (make-type-heading 'method-combination))
-                        section))
-     symbol)
+  ,(walk-atomic-form walker :method-combination (cadr form) env)
   ,@(walk-list walker (cddr form) env))
 
 @ And here, finally, is the top-level indexing routine: it walks the
