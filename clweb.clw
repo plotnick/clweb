@@ -226,9 +226,7 @@ code they're designed to exercise.
 
 (defun test-section-p (x) (typep x 'test-section))
 
-(defmethod initialize-instance :after ;
-    ((section test-section) &rest initargs &key)
-  (declare (ignore initargs))
+(defmethod initialize-instance :after ((section test-section) &key)
   (when (> (fill-pointer *sections*) 0)
     (setf (test-for-section section) ;
           (elt *sections* (1- (fill-pointer *sections*))))))
@@ -273,8 +271,7 @@ for |push-section| so that we can override it for test sections.
   (setf (section-number section) (vector-push-extend section *sections*))
   section)
 
-(defmethod initialize-instance :after ((section section) &rest initargs &key)
-  (declare (ignore initargs))
+(defmethod initialize-instance :after ((section section) &key)
   (setq *current-section* (push-section section)))
 
 @t@l
@@ -956,9 +953,7 @@ maintain a mapping between them and their associated instances of
 (defvar *charpos-streams* (make-hash-table :test #'eq))
 
 @ @l
-(defmethod initialize-instance :after ;
-    ((instance charpos-stream) &rest initargs &key)
-  (declare (ignore initargs))
+(defmethod initialize-instance :after ((instance charpos-stream) &key)
   (setf (gethash (charpos-proxy-stream instance) *charpos-streams*) instance))
 
 @ The top-level interface to the charpos streams are the following two
