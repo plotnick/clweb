@@ -4757,7 +4757,7 @@ descriptive names in the interface.
   (defun type-heading-class-name (name)
     (intern (with-standard-io-syntax (format nil "~A-HEADING" name)))))
 
-(defmacro define-type-heading (name &optional slots &rest options)
+(defmacro define-type-heading (name slots &rest options)
   (flet ((option (indicator) ;
            (cdr (find-if (lambda (option) (eq (car option) indicator)) ;
                          options))))
@@ -4787,7 +4787,7 @@ descriptive names in the interface.
   (:name "symbol macro")
   (:modifiers :local))
 
-(define-type-heading class)
+(define-type-heading class ())
 
 (define-type-heading condition-class ()
   (:name "condition class"))
