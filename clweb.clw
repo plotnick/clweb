@@ -4792,6 +4792,9 @@ descriptive names in the interface.
 (define-type-heading variable ()
   (:modifiers :special :constant))
 
+(define-type-heading method-combination ()
+  (:name "method combination"))
+
 @t@l
 (deftest function-heading-name
   (values (heading-name (make-type-heading 'function))
@@ -5461,8 +5464,8 @@ preceding the specialized \L-list.
   `(loop until (listp (car ,place)) collect (pop ,place)))
 
 @ For |defgeneric| forms, we're interested in the name of the generic
-function being defined and any methods that may be specified as method
-descriptions.
+function being defined, the method combination type, and any methods that
+may be specified as method descriptions.
 
 @l
 (define-special-form-walker defgeneric ((walker indexing-walker) form env)
@@ -5475,6 +5478,8 @@ descriptions.
       ,(walk-lambda-list walker lambda-list nil env)
       ,@(loop for form in options
               collect (case (car form)
+                        (:method-combination ;
+                         @<Walk the method combination option in |form|@>)
                         (:method @<Walk the method description in |form|@>)
                         (t (walk-list walker form env)))))))
 
@@ -5625,6 +5630,42 @@ options.
       (index-defun (walker-index walker) `(setf ,symbol) section ;
                    :operator 'defmethod ;
                    :generic t))))
+
+@ We'll also walk |define-method-combination| forms to get the names of the
+method combination types. We'll skip the expansion.
+
+@l
+(define-special-form-walker define-method-combination ;
+    ((walker indexing-walker) form env)
+  `(,(car form)
+    ,(multiple-value-bind (symbol section) (symbol-provenance (cadr form))
+       (when section
+         (add-index-entry (walker-index walker)
+                          (list symbol (make-type-heading 'method-combination))
+                          section
+                          :def t))
+       symbol)
+    ,@(walk-list walker (cddr form) env)))
+
+@t@l
+(define-indexing-test define-method-combination
+  ((:section :code ((define-method-combination foo :operator bar)))
+   (:section :code ((defgeneric foo () (:method-combination foo)))))
+  (("foo" "generic function") ((:def 1)))
+  (("foo" "method combination") (1 (:def 0))))
+
+@ We'll also index custom method combination type uses, which occur in the
+|:method-combination| option given to a |defgeneric| form.
+
+@<Walk the method combination...@>=
+`(,(car form)
+  ,(multiple-value-bind (symbol section) (symbol-provenance (cadr form))
+     (when section
+       (add-index-entry (walker-index walker)
+                        (list symbol (make-type-heading 'method-combination))
+                        section))
+     symbol)
+  ,@(walk-list walker (cddr form) env))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index

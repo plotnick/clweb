@@ -2159,6 +2159,7 @@
 (DEFINE-TYPE-HEADING CLASS NIL)
 (DEFINE-TYPE-HEADING CONDITION-CLASS NIL (:NAME "condition class"))
 (DEFINE-TYPE-HEADING VARIABLE NIL (:MODIFIERS :SPECIAL :CONSTANT))
+(DEFINE-TYPE-HEADING METHOD-COMBINATION NIL (:NAME "method combination"))
 (DEFMETHOD HEADING-NAME :PREFIX ((HEADING METHOD-HEADING))
   (MAPCAR #'STRING-DOWNCASE
           (OR (METHOD-HEADING-QUALIFIERS HEADING) '(:PRIMARY))))
@@ -2433,6 +2434,18 @@
       ,(WALK-LAMBDA-LIST WALKER LAMBDA-LIST NIL ENV)
       ,@(LOOP FOR FORM IN OPTIONS
               COLLECT (CASE (CAR FORM)
+                        (:METHOD-COMBINATION
+                         `(,(CAR FORM)
+                           ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+                                (SYMBOL-PROVENANCE (CADR FORM))
+                              (WHEN SECTION
+                                (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
+                                                 (LIST SYMBOL
+                                                       (MAKE-TYPE-HEADING
+                                                        'METHOD-COMBINATION))
+                                                 SECTION))
+                              SYMBOL)
+                           ,@(WALK-LIST WALKER (CDDR FORM) ENV)))
                         (:METHOD
                          (LET* ((OPERATOR (POP FORM))
                                 (QUALIFIERS
@@ -2526,6 +2539,17 @@
                                    SECTION :OPERATOR 'DEFMETHOD :GENERIC T)))))
        `(,(WALK-ATOMIC-FORM WALKER :SLOT-NAME NAME ENV)
          ,@(WALK-LIST WALKER OPTIONS ENV))))))
+(DEFINE-SPECIAL-FORM-WALKER DEFINE-METHOD-COMBINATION
+    ((WALKER INDEXING-WALKER) FORM ENV)
+  `(,(CAR FORM)
+    ,(MULTIPLE-VALUE-BIND (SYMBOL SECTION)
+         (SYMBOL-PROVENANCE (CADR FORM))
+       (WHEN SECTION
+         (ADD-INDEX-ENTRY (WALKER-INDEX WALKER)
+                          (LIST SYMBOL (MAKE-TYPE-HEADING 'METHOD-COMBINATION))
+                          SECTION :DEF T))
+       SYMBOL)
+    ,@(WALK-LIST WALKER (CDDR FORM) ENV)))
 (DEFUN INDEX-SECTIONS
        (SECTIONS
         &KEY (INDEX *INDEX*)

@@ -832,6 +832,14 @@
  (("foo-a2" "generic function") ((:DEF 0)))
  (("foo-b" "generic function") ((:DEF 1)))
  (("foo-b" "primary setf method") ((:DEF 1))))
+(DEFINE-INDEXING-TEST DEFINE-METHOD-COMBINATION
+ ((:SECTION :CODE ((DEFINE-METHOD-COMBINATION FOO :OPERATOR BAR)))
+  (:SECTION :CODE
+   ((DEFGENERIC FOO
+        NIL
+      (:METHOD-COMBINATION FOO)))))
+ (("foo" "generic function") ((:DEF 1)))
+ (("foo" "method combination") (1 (:DEF 0))))
 (DEFMETHOD LOCATION ((RANGE SECTION-RANGE))
   (LIST (START-SECTION RANGE) (END-SECTION RANGE)))
 (DEFTEST (COALESCE-LOCATORS 1)
