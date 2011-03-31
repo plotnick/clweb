@@ -3651,7 +3651,7 @@ implementation-specific; a portable version would be much more complex.
 @^Allegro Common Lisp@>
 
 @l
-(eval-when  (:compile-toplevel :load-toplevel :execute)
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (unless (fboundp 'parse-macro)
     (defun parse-macro (name lambda-list body &optional env)
       (declare (ignorable name lambda-list body env))
