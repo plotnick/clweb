@@ -666,18 +666,18 @@
 (DEFMETHOD PRINT-OBJECT ((HEADING HEADING) STREAM)
   (PRINT-UNREADABLE-OBJECT (HEADING STREAM :TYPE T :IDENTITY NIL)
     (FORMAT STREAM "\"~A\"" (HEADING-NAME HEADING))))
-(DEFTEST HEADING-NAME
-         (VALUES (HEADING-NAME "foo")
-                 (HEADING-NAME (MAKE-INSTANCE 'HEADING :NAME "bar"))
-                 (HEADING-NAME :BAZ))
-         "foo" "bar" :BAZ)
+(DEFTEST HEADING-NAME (VALUES (HEADING-NAME "foo") (HEADING-NAME :BAR)) "foo"
+         "bar")
 (DEFTEST FUNCTION-HEADING-NAME
          (VALUES (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING))
                  (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING :LOCAL T))
-                 (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING :GENERIC T))
                  (HEADING-NAME
-                  (MAKE-INSTANCE 'SETF-FUNCTION-HEADING :LOCAL T)))
-         "function" "local function" "generic function" "local setf function")
+                  (MAKE-INSTANCE 'FUNCTION-HEADING :GENERIC T :LOCAL NIL))
+                 (HEADING-NAME (MAKE-INSTANCE 'FUNCTION-HEADING :SETF T))
+                 (HEADING-NAME
+                  (MAKE-INSTANCE 'FUNCTION-HEADING :SETF T :LOCAL T)))
+         "function" "local function" "generic function" "setf function"
+         "local setf function")
 (DEFTEST VARIABLE-HEADING-NAME
          (VALUES (HEADING-NAME (MAKE-INSTANCE 'VARIABLE-HEADING))
                  (HEADING-NAME (MAKE-INSTANCE 'VARIABLE-HEADING :SPECIAL T))
@@ -688,23 +688,7 @@
                  (HEADING-NAME
                   (MAKE-INSTANCE 'METHOD-HEADING :QUALIFIERS
                                  '(:BEFORE :DURING :AFTER))))
-         "primary method" "BEFORE DURING AFTER method")
-(DEFTEST MAKE-SUB-HEADING
-         (NOTANY #'NULL
-                 (LIST (TYPEP (MAKE-SUB-HEADING NIL) 'FUNCTION-HEADING)
-                       (TYPEP (MAKE-SUB-HEADING 'DEFMETHOD) 'FUNCTION-HEADING)
-                       (TYPEP
-                        (MAKE-SUB-HEADING 'DEFMETHOD :FUNCTION-NAME
-                                          '(SETF FOO))
-                        'SETF-METHOD-HEADING)
-                       (TYPEP
-                        (MAKE-SUB-HEADING 'DEFMETHOD :QUALIFIERS '(:AFTER))
-                        'METHOD-HEADING)
-                       (TYPEP
-                        (MAKE-SUB-HEADING 'DEFUN :FUNCTION-NAME '(SETF FOO))
-                        'SETF-FUNCTION-HEADING)
-                       (TYPEP (MAKE-SUB-HEADING 'DEFCLASS) 'CLASS-HEADING)))
-         T)
+         "primary method" "before during after method")
 (DEFMETHOD PRINT-OBJECT ((ENTRY INDEX-ENTRY) STREAM)
   (PRINT-UNREADABLE-OBJECT (ENTRY STREAM :TYPE T :IDENTITY NIL)
     (FORMAT STREAM "~W:" (ENTRY-HEADING ENTRY))
@@ -768,24 +752,25 @@
                            ',EXPECTED-ENTRIES :TEST #'EQUAL)))
             T))
 (DEFINE-INDEXING-TEST ATOM ((:SECTION :CODE (*SECTIONS*)))
- ((*SECTIONS* "special variable") (0)))
+ (("*sections*" "special variable") (0)))
 (DEFINE-INDEXING-TEST FUNCALL
  ((:SECTION :CODE ((MAPAPPEND 'IDENTITY '(1 2 3)))))
- ((MAPAPPEND "function") (0)))
+ (("mapappend" "function") (0)))
 (DEFINE-INDEXING-TEST FUNCTION-NAME
  ((:SECTION :CODE ((FLET ((FOO (X) X)))))
   (:SECTION :CODE ((FLET (((SETF FOO) (Y X) Y))))))
- ((FOO "local function") ((:DEF 0))) ((FOO "local setf function") ((:DEF 1))))
+ (("foo" "local function") ((:DEF 0)))
+ (("foo" "local setf function") ((:DEF 1))))
 (DEFINE-INDEXING-TEST DEFUN ((:SECTION :CODE ((DEFUN FOO (X) X))))
- ((FOO "function") ((:DEF 0))))
+ (("foo" "function") ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFMACRO
  ((:SECTION :CODE ((DEFMACRO FOO (&BODY BODY) (MAPAPPEND 'IDENTITY BODY)))))
- ((FOO "macro") ((:DEF 0))) ((MAPAPPEND "function") (0)))
+ (("foo" "macro") ((:DEF 0))) (("mapappend" "function") (0)))
 (DEFINE-INDEXING-TEST DEFVAR
  ((:SECTION :CODE ((DEFVAR A T))) (:SECTION :CODE ((DEFPARAMETER B T)))
   (:SECTION :CODE ((DEFCONSTANT C T))))
- ((A "special variable") ((:DEF 0))) ((B "special variable") ((:DEF 1)))
- ((C "constant variable") ((:DEF 2))))
+ (("a" "special variable") ((:DEF 0))) (("b" "special variable") ((:DEF 1)))
+ (("c" "constant variable") ((:DEF 2))))
 (DEFTEST INDEXING-WALK-DECLARATION-SPECIFIERS
          (EQUAL
           (WALK-DECLARATION-SPECIFIERS (MAKE-INSTANCE 'INDEXING-WALKER)
@@ -802,23 +787,23 @@
       (:METHOD-COMBINATION PROGN)
       (:METHOD PROGN ((X T) Y) X)
       (:METHOD :AROUND (X (Y (EQL 'T))) Y)))))
- ((FOO "AROUND method") ((:DEF 0))) ((FOO "generic function") ((:DEF 0)))
- ((FOO "PROGN method") ((:DEF 0))))
+ (("foo" "around method") ((:DEF 0))) (("foo" "generic function") ((:DEF 0)))
+ (("foo" "progn method") ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFMETHOD
  ((:SECTION :CODE ((DEFMETHOD ADD (X Y) (+ X Y))))
   (:SECTION :CODE ((DEFMETHOD ADD :BEFORE (X Y)))))
- ((ADD "BEFORE method") ((:DEF 1))) ((ADD "generic function") ((:DEF 0))))
+ (("add" "before method") ((:DEF 1))) (("add" "generic function") ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFCLASS
  ((:SECTION :CODE ((DEFCLASS FOO NIL ((A :READER FOO-A1 :READER FOO-A2)))))
   (:SECTION :CODE
    ((DEFINE-CONDITION BAR
         NIL
         ((B :ACCESSOR FOO-B))))))
- ((BAR "condition class") ((:DEF 1))) ((FOO "class") ((:DEF 0)))
- ((FOO-A1 "generic function") ((:DEF 0)))
- ((FOO-A2 "generic function") ((:DEF 0)))
- ((FOO-B "generic function") ((:DEF 1)))
- ((FOO-B "primary setf method") ((:DEF 1))))
+ (("bar" "condition class") ((:DEF 1))) (("foo" "class") ((:DEF 0)))
+ (("foo-a1" "generic function") ((:DEF 0)))
+ (("foo-a2" "generic function") ((:DEF 0)))
+ (("foo-b" "generic function") ((:DEF 1)))
+ (("foo-b" "primary setf method") ((:DEF 1))))
 (DEFMETHOD LOCATION ((RANGE SECTION-RANGE))
   (LIST (START-SECTION RANGE) (END-SECTION RANGE)))
 (DEFTEST (COALESCE-LOCATORS 1)

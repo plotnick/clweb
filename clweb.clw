@@ -3780,6 +3780,8 @@ walker function just for function names.
 
 @l
 (deftype setf-function-name () '(cons (eql setf) (cons symbol null)))
+(defun setf-function-name-p (function-name)
+  (typep function-name 'setf-function-name))
 
 (defmethod walk-function-name ((walker walker) function-name env &key)
   (typecase function-name
@@ -4622,8 +4624,7 @@ as desired.
 
 @l
 (defclass heading ()
-  ((name :initarg :name)))
-
+  ((name :reader heading-name :initarg :name)))
 (defclass tt-heading (heading) ())
 (defclass custom-heading (heading) ())
 
@@ -4635,100 +4636,115 @@ program.
   (print-unreadable-object (heading stream :type t :identity nil)
     (format stream "\"~A\"" (heading-name heading))))
 
-@ To simplify some of the logic concerning heading names, we'll use a
-custom method combination for |heading-name|.
+@ Strings and symbols are valid headings, too.
 
 @l
-(defun concatenate-string (&rest args) (apply #'concatenate 'string args))
-(define-method-combination concatenate-string :identity-with-one-argument t)
-
-@ The default |heading-name| method for |heading| instances is the obvious
-one. Symbols and strings are valid headings, too.
-
-@l
-(defgeneric heading-name (heading)
-  (:method-combination concatenate-string)
-  (:method concatenate-string ((heading heading)) (slot-value heading 'name))
-  (:method concatenate-string ((heading symbol)) heading)
-  (:method concatenate-string ((heading string)) heading))
+(defmethod heading-name ((heading string)) heading)
+(defmethod heading-name ((heading symbol)) (string-downcase heading))
 
 @t@l
 (deftest heading-name
   (values (heading-name "foo")
-          (heading-name (make-instance 'heading :name "bar"))
-          (heading-name :baz))
+          (heading-name :bar))
   "foo"
-  "bar"
-  :baz)
+  "bar")
 
-@ The following heading classes are all used as sub-headings, and represent
-the namespace in which the object referred to by the primary heading is
-located.
-
-@l
-(defclass global/local-heading (heading)
-  ((local :initarg :local))
-  (:default-initargs :local nil))
-
-(defclass function-heading (global/local-heading)
-  ((generic :initarg :generic))
-  (:default-initargs :name "function" :generic nil))
-
-(defclass setf-function-heading (function-heading) ()
-  (:default-initargs :name "setf function"))
-
-(defclass macro-heading (global/local-heading) ()
-  (:default-initargs :name "macro"))
-
-(defclass symbol-macro-heading (global/local-heading) ()
-  (:default-initargs :name "symbol macro"))
-
-(defclass method-heading (heading)
-  ((qualifiers :reader method-heading-qualifiers :initarg :qualifiers))
-  (:default-initargs :name "method" :qualifiers nil))
-
-(defclass setf-method-heading (method-heading) ()
-  (:default-initargs :name "setf method"))
-
-(defclass variable-heading (heading)
-  ((special :initarg :special)
-   (constant :initarg :constant))
-  (:default-initargs :name "variable" :special nil :constant nil))
-
-(defclass class-heading (heading) ()
-  (:default-initargs :name "class"))
-
-(defclass condition-class-heading (heading) ()
-  (:default-initargs :name "condition class"))
-
-@ Several of the heading classes have slots whose names should be prepended
-to the corresponding heading names if the value stored there is true; e.g.,
-if a function sub-heading is marked as local, then its name should be
-``local function''.
+@ We'll define a bunch of heading classes to be used as sub-headings that
+represent the type of the object referred to by the primary heading. The
+complication here is that we want to make it simple to add {\it modifiers\/}
+like `local' or `generic' to a base type like `function', and to have those
+modifiers become part of the name in a predictable way. In particular, the
+order is important; we don't want to end up with a heading like `setf local
+function'.
 
 @l
-(defmacro define-heading-name-prefix (class &rest slot-names)
-  (let ((*print-case* :downcase)
-        (*print-escape* nil)
-        (*print-pretty* nil))
-    `(defmethod heading-name concatenate-string ((heading ,class))
-       (with-slots ,slot-names heading
-         (cond ,@(loop for slot-name in slot-names
-                       collect `(,slot-name ,(format nil "~A " slot-name))))))))
+(defclass type-heading (heading)
+  ((allowable-modifiers :reader allowable-modifiers
+                        :initarg :allowable-modifiers
+                        :allocation :class)
+   (modifiers :accessor heading-modifiers
+              :initarg :modifiers)))
 
-(define-heading-name-prefix global/local-heading local)
-(define-heading-name-prefix function-heading generic)
-(define-heading-name-prefix variable-heading constant special)
+(defmethod initialize-instance :after ;
+    ((heading type-heading) &rest initargs &key name &allow-other-keys)
+  (etypecase name
+    (string)
+    (symbol (setf (slot-value heading 'name) (string-downcase name))))
+  (setf (heading-modifiers heading)
+        (loop with allowable-modifiers = (allowable-modifiers heading)
+              for (name value) on initargs by #'cddr
+              when (and (member name allowable-modifiers) value)
+                collect name into modifiers
+              finally (return (sort modifiers
+                                    (lambda (x y)
+                                      (< (position x allowable-modifiers)
+                                         (position y allowable-modifiers))))))))
+
+(defmethod heading-name ((heading type-heading))
+  (with-standard-io-syntax
+    (format nil "~{~A ~}~A"
+            (mapcar #'string-downcase (heading-modifiers heading))
+            (call-next-method))))
+
+@ The following definitions provide a nice, declarative syntax for defining
+and creating instances of the type heading classes.
+
+@l
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun type-heading-class-name (name)
+    (intern (with-standard-io-syntax (format nil "~A-HEADING" name)))))
+
+(defmacro define-type-heading (name &optional slots &rest options)
+  (flet ((option (indicator)
+           (cdr (find-if (lambda (option) (eq (car option) indicator))
+                         options))))
+    `(defclass ,(type-heading-class-name name) (type-heading)
+       ,slots
+       (:default-initargs
+        :name ,(or (car (option :name)) `',name)
+        :allowable-modifiers ',(option :modifiers)))))
+
+(defun make-type-heading (type &rest args)
+  (apply #'make-instance (type-heading-class-name type) args))
+
+@ {\it Et voil\`a!}
+
+@l
+(define-type-heading function ()
+  (:modifiers :local :generic :setf))
+
+(define-type-heading method
+  ((qualifiers :reader method-heading-qualifiers
+               :initarg :qualifiers
+               :initform nil))
+  (:modifiers :setf))
+
+(define-type-heading macro ()
+  (:modifiers :local))
+
+(define-type-heading symbol-macro ()
+  (:name "symbol macro")
+  (:modifiers :local))
+
+(define-type-heading class)
+
+(define-type-heading condition-class ()
+  (:name "condition class"))
+
+(define-type-heading variable ()
+  (:modifiers :special :constant))
 
 @t@l
 (deftest function-heading-name
   (values (heading-name (make-instance 'function-heading))
           (heading-name (make-instance 'function-heading :local t))
-          (heading-name (make-instance 'function-heading :generic t))
-          (heading-name (make-instance 'setf-function-heading :local t)))
+          (heading-name (make-instance 'function-heading :generic t :local nil))
+          (heading-name (make-instance 'function-heading :setf t))
+          (heading-name (make-instance 'function-heading :setf t :local t)))
   "function"
   "local function"
   "generic function"
+  "setf function"
   "local setf function")
 
 (deftest variable-heading-name
@@ -4740,12 +4756,15 @@ if a function sub-heading is marked as local, then its name should be
   "constant variable")
 
 @ For method headings, we'll prepend the list of qualifiers if present;
-otherwise we'll call them `primary'.
+otherwise, we'll call them `primary'.
 
 @l
-(defmethod heading-name concatenate-string ((heading method-heading))
-  (format nil "~:[primary~;~:*~{~A~^ ~}~] " ;
-          (method-heading-qualifiers heading)))
+(defmethod heading-name ((heading method-heading))
+  (with-standard-io-syntax
+    (format nil "~{~A ~}~A"
+            (mapcar #'string-downcase ;
+                    (or (method-heading-qualifiers heading) '(:primary)))
+            (call-next-method))))
 
 @t@l
 (deftest method-heading-name
@@ -4753,61 +4772,7 @@ otherwise we'll call them `primary'.
           (heading-name (make-instance 'method-heading
                                        :qualifiers '(:before :during :after))))
   "primary method"
-  "BEFORE DURING AFTER method")
-
-@ The sub-heading classes above are usually constructed by the following
-function during indexing. The keyword arguments are passed down from
-the various walker functions, and this function passes them down to the
-initializers for the various (sub-)heading classes, but peeks at a few
-of them to figure out what kind of heading class to instantiate.
-
-@l
-(defun make-sub-heading (operator &rest args &key function-name qualifiers ;
-                         &allow-other-keys)
-  (apply #'make-instance
-         (ecase operator
-           ((nil defgeneric) 'function-heading)
-           ((defmethod) @<Choose an appropriate heading class for a method@>)
-           ((defun flet labels) (typecase function-name
-                                  (symbol 'function-heading)
-                                  (setf-function-name 'setf-function-heading)))
-           ((defmacro macrolet) 'macro-heading)
-           ((defvar defparameter defconstant) 'variable-heading)
-           ((defclass) 'class-heading)
-           ((define-condition) 'condition-class-heading))
-         :allow-other-keys t
-         args))
-
-@ Non-|setf| primary methods (i.e., methods with empty qualifier lists) are
-indexed as functions so that they'll appear as definitions of the generic
-function they're methods of; only methods with qualifiers and |setf|
-methods get independent entries. This helps keep the index compact without
-significantly affecting usability.
-
-@<Choose an appropriate heading class...@>=
-(typecase function-name
-  (symbol (if qualifiers 'method-heading 'function-heading))
-  (setf-function-name 'setf-method-heading))
-
-@t@l
-(deftest make-sub-heading
-  (notany #'null
-          (list (typep (make-sub-heading nil)
-                       'function-heading)
-                (typep (make-sub-heading 'defmethod)
-                       'function-heading)
-                (typep (make-sub-heading 'defmethod ;
-                                         :function-name '(setf foo))
-                       'setf-method-heading)
-                (typep (make-sub-heading 'defmethod ;
-                                         :qualifiers '(:after))
-                       'method-heading)
-                (typep (make-sub-heading 'defun ;
-                                         :function-name '(setf foo))
-                       'setf-function-heading)
-                (typep (make-sub-heading 'defclass)
-                       'class-heading)))
-  t)
+  "before during after method")
 
 @ Now let's turn our attention to the other half of index entries.
 In this program, a locator is either a pointer to a section (the usual
@@ -4981,9 +4946,7 @@ the indexer will create entries for lexical variables. Its value is
 for indexing function and variable {\it uses}. They look up the given
 variable or function in a lexical environment object and add an appropriate
 index entry. (We can't use this routine for definitions because the name
-being indexed might not be in the environment yet.) We don't currently
-index lexical variables, as that would probably just bulk up the index to
-no particular advantage.
+being indexed might not be in the environment yet.)
 
 @l
 (defun index-variable (index variable section env)
@@ -4994,11 +4957,10 @@ no particular advantage.
        index
        (list variable
              (ecase type
-               (:lexical (make-instance 'variable-heading))
-               (:special (make-instance 'variable-heading :special t))
-               (:constant (make-instance 'variable-heading :constant t))
-               (:symbol-macro (make-instance 'symbol-macro-heading ;
-                                             :local local))))
+               (:lexical (make-type-heading 'variable))
+               (:special (make-type-heading 'variable :special t))
+               (:constant (make-type-heading 'variable :constant t))
+               (:symbol-macro (make-type-heading 'symbol-macro :local local))))
        section))))
 
 (defun index-funcall (index function-name section env)
@@ -5009,27 +4971,28 @@ no particular advantage.
        (list function-name
              (ecase type
                (:function ;
-                (make-instance 'function-heading
-                               :local local
-                               :generic (generic-function-p function-name)))
+                (make-type-heading 'function
+                                   :local local
+                                   :generic (generic-function-p function-name)))
                (:macro ;
-                (make-instance 'macro-heading :local local))))
+                (make-type-heading 'macro :local local))))
        section))))
 
-@ To index definitions, we'll need more information from the walker about
+@ To index definitions, we'll need some information from the walker about
 the context in which the variable or function name occurred. In particular,
-we'll get the |car| of the defining form as the |operator| argument, which
-is then passed down to |make-sub-heading|.
+we'll get the |car| of the defining form as the |operator| argument.
 
 @l
-(defun index-defvar (index variable section &key operator special)
+(defun index-defvar (index variable section env &key operator special &aux
+                     (constant (or (constantp variable env)
+                                   (eql operator 'defconstant))))
   (when (or special *index-lexical-variables*)
    (add-index-entry
     index
     (list variable ;
-          (make-sub-heading operator
-                            :special special
-                            :constant (eql operator 'defconstant)))
+          (make-type-heading 'variable
+                             :special (and special (not constant))
+                             :constant constant))
     section
     :def t)))
 
@@ -5037,17 +5000,37 @@ is then passed down to |make-sub-heading|.
                     operator local generic qualifiers)
   (add-index-entry
    index
-   (list (typecase function-name
+   (list (etypecase function-name
            (symbol function-name)
            (setf-function-name (cadr function-name)))
-         (make-sub-heading operator
-                           :function-name function-name
-                           :local local
-                           :generic (or generic ;
-                                        (generic-function-p function-name))
-                           :qualifiers qualifiers))
+         (make-type-heading @<Choose an appropriate heading class@>
+                            :setf (setf-function-name-p function-name)
+                            :local local
+                            :generic (or generic ;
+                                         (generic-function-p function-name))
+                            :qualifiers qualifiers))
    section
    :def t))
+
+@ We can derive the type of definition from the operator used to define it.
+
+@<Choose an appropriate heading class@>=
+(case operator
+  ((defmacro macrolet) 'macro)
+  ((define-symbol-macro symbol-macrolet) 'symbol-macro)
+  ((defmethod) @<Choose a heading class for method definition@>)
+  (otherwise 'function))
+
+@ Non-|setf| primary methods (i.e., methods with empty qualifier lists)
+are indexed as functions so that they'll appear as definitions of the
+generic function they're methods of; only methods with qualifiers and
+|setf| methods get independent entries. This helps keep the index compact
+without significantly affecting usability.
+
+@<Choose a heading class for method definition@>=
+(etypecase function-name
+  (symbol (if qualifiers 'method 'function))
+  (setf-function-name 'method))
 
 @ We'll perform the indexing by walking over the code of each section and
 noting each of the interesting symbols that we find there according to its
@@ -5237,7 +5220,7 @@ takes place.
         (when section
           (index-variable (walker-index walker) symbol section env)
           (when (eql context :binding)
-            (index-defvar (walker-index walker) symbol section
+            (index-defvar (walker-index walker) symbol section env
                           :operator 'defvar
                           :special nil)))
         symbol)
@@ -5246,7 +5229,7 @@ takes place.
 @t@l
 (define-indexing-test atom
   ((:section :code (*sections*)))
-  ((*sections* "special variable") (0)))
+  (("*sections*" "special variable") (0)))
 
 @ We'll index all function-call-like forms whose |operator| is a referring
 symbol.
@@ -5262,7 +5245,7 @@ symbol.
 @t@l
 (define-indexing-test funcall
   ((:section :code ((mapappend 'identity '(1 2 3)))))
-  ((mapappend "function") (0)))
+  (("mapappend" "function") (0)))
 
 @ The walker methods for all of the function-defining and binding forms
 call down to this function, passing keyword arguments that describe the
@@ -5293,8 +5276,8 @@ context.
 (define-indexing-test function-name
   ((:section :code ((flet ((foo (x) x)))))
    (:section :code ((flet (((setf foo) (y x) y))))))
-  ((foo "local function") ((:def 0)))
-  ((foo "local setf function") ((:def 1))))
+  (("foo" "local function") ((:def 0)))
+  (("foo" "local setf function") ((:def 1))))
 
 @ We'll treat |defun| and |defmacro| as special forms, since otherwise they
 will get macro-expanded before we get a chance to walk the function name.
@@ -5323,12 +5306,12 @@ defined, by way of |walk-lambda-expression|.
 @t@l
 (define-indexing-test defun
   ((:section :code ((defun foo (x) x))))
-  ((foo "function") ((:def 0))))
+  (("foo" "function") ((:def 0))))
 
 (define-indexing-test defmacro
   ((:section :code ((defmacro foo (&body body) (mapappend 'identity body)))))
-  ((foo "macro") ((:def 0)))
-  ((mapappend "function") (0)))
+  (("foo" "macro") ((:def 0)))
+  (("mapappend" "function") (0)))
 
 @ The special-variable-defining forms must also be walked as if they were
 special forms. Once again, we'll just skip the macro expansions.
@@ -5341,7 +5324,7 @@ special forms. Once again, we'll just skip the macro expansions.
                   ,(multiple-value-bind (symbol section) ;
                        (symbol-provenance (cadr form))
                      (when section
-                       (index-defvar (walker-index walker) symbol section
+                       (index-defvar (walker-index walker) symbol section env
                                      :operator (car form)
                                      :special t))
                      symbol)
@@ -5355,9 +5338,9 @@ special forms. Once again, we'll just skip the macro expansions.
   ((:section :code ((defvar a t)))
    (:section :code ((defparameter b t)))
    (:section :code ((defconstant c t))))
-  ((a "special variable") ((:def 0)))
-  ((b "special variable") ((:def 1)))
-  ((c "constant variable") ((:def 2))))
+  (("a" "special variable") ((:def 0)))
+  (("b" "special variable") ((:def 1)))
+  (("c" "constant variable") ((:def 2))))
 
 @ The default method for |walk-declaration-specifiers| just returns the
 given specifiers. That's not sufficient for our purposes here, though,
@@ -5427,9 +5410,9 @@ descriptions.
                       (:method-combination progn)
                       (:method progn ((x t) y) x)
                       (:method :around (x (y (eql 't))) y)))))
-  ((foo "AROUND method") ((:def 0)))
-  ((foo "generic function") ((:def 0)))
-  ((foo "PROGN method") ((:def 0))))
+  (("foo" "around method") ((:def 0)))
+  (("foo" "generic function") ((:def 0)))
+  (("foo" "progn method") ((:def 0))))
 
 @ Method descriptions are very much like |defmethod| forms with an implicit
 function name; this routine walks both. The function name (if non-null) and
@@ -5491,14 +5474,14 @@ a method description.
 (define-indexing-test defmethod
   ((:section :code ((defmethod add (x y) (+ x y))))
    (:section :code ((defmethod add :before (x y)))))
-  ((add "BEFORE method") ((:def 1)))
-  ((add "generic function") ((:def 0))))
+  (("add" "before method") ((:def 1)))
+  (("add" "generic function") ((:def 0))))
 
 @ We'll walk |defclass| and |define-condition| forms in order to index the
 class names, super-classes, and~accessor methods.
 
 @l
-(macrolet ((define-defclass-walker (operator)
+(macrolet ((define-defclass-walker (operator &key type)
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env)
                 (destructuring-bind ;
@@ -5506,7 +5489,7 @@ class names, super-classes, and~accessor methods.
                   (multiple-value-bind (symbol section) (symbol-provenance name)
                     (when section
                       (add-index-entry (walker-index walker)
-                                       (list symbol (make-sub-heading operator))
+                                       (list symbol (make-type-heading ,type))
                                        section
                                        :def t))
                     `(,operator
@@ -5518,14 +5501,14 @@ class names, super-classes, and~accessor methods.
                                  (walk-slot-specifier walker spec env)) ;
                                slot-specs)
                       ,@(walk-list walker options env)))))))
-  (define-defclass-walker defclass)
-  (define-defclass-walker define-condition))
+  (define-defclass-walker defclass :type 'class)
+  (define-defclass-walker define-condition :type 'condition-class))
 
 @ @<Index the use of the superclass |super|@>=
 (multiple-value-bind (symbol section) (symbol-provenance super)
   (when section
     (add-index-entry (walker-index walker)
-                     (list symbol (make-sub-heading operator))
+                     (list symbol (make-type-heading ,type))
                      section))
   (walk-atomic-form walker :superclass-name symbol env))
 
@@ -5535,12 +5518,12 @@ class names, super-classes, and~accessor methods.
                       ((a :reader foo-a1 :reader foo-a2)))))
    (:section :code ((define-condition bar ()
                       ((b :accessor foo-b))))))
-  ((bar "condition class") ((:def 1)))
-  ((foo "class") ((:def 0)))
-  ((foo-a1 "generic function") ((:def 0)))
-  ((foo-a2 "generic function") ((:def 0)))
-  ((foo-b "generic function") ((:def 1)))
-  ((foo-b "primary setf method") ((:def 1))))
+  (("bar" "condition class") ((:def 1)))
+  (("foo" "class") ((:def 0)))
+  (("foo-a1" "generic function") ((:def 0)))
+  (("foo-a2" "generic function") ((:def 0)))
+  (("foo-b" "generic function") ((:def 1)))
+  (("foo-b" "primary setf method") ((:def 1))))
 
 @ The only slot options we care about are |:reader|, |:writer|,
 and~|:accessor|. We index the methods implicitly created by those
@@ -5688,13 +5671,15 @@ Note that definitional locators will never be part of a range.
     (pprint-exit-if-list-exhausted)
     (loop
       (let ((heading (pprint-pop)))
-        (cond ((symbolp heading) (format stream "\\(~W\\)" heading))
-              (t (format stream "~[\\.~;\\9~]{~/clweb::print-TeX/}"
-                         (typecase heading
-                           (tt-heading 0)
-                           (custom-heading 1)
-                           (otherwise -1))
-                         (read-TeX-from-string (heading-name heading))))))
+        (etypecase heading
+          (symbol (format stream "\\(~W\\)" heading))
+          ((or string heading)
+           (format stream "~[\\.~;\\9~]{~/clweb::print-TeX/}"
+                   (typecase heading
+                     (tt-heading 0)
+                     (custom-heading 1)
+                     (otherwise -1))
+                   (read-TeX-from-string (heading-name heading))))))
       (pprint-exit-if-list-exhausted)
       (write-char #\Space stream))))
 
