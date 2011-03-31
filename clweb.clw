@@ -3113,7 +3113,7 @@ re-reads such strings and picks up any inner-Lisp material.
               (= (section-number section) (section-number named-section))))
     (when code
       (dolist (form code)
-        (if (list-marker-p form)
+        (if (or (list-marker-p form) (listp form))
             (format stream "~@<\\+~@;~W~;\\cr~:>" form)
             (format stream "~W~:[\\par~;~]" form (newlinep form))))
       (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}

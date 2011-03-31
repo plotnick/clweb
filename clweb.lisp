@@ -1334,7 +1334,7 @@
               (= (SECTION-NUMBER SECTION) (SECTION-NUMBER NAMED-SECTION))))
     (WHEN CODE
       (DOLIST (FORM CODE)
-        (IF (LIST-MARKER-P FORM)
+        (IF (OR (LIST-MARKER-P FORM) (LISTP FORM))
             (FORMAT STREAM "~@<\\+~@;~W~;\\cr~:>" FORM)
             (FORMAT STREAM "~W~:[\\par~;~]" FORM (NEWLINEP FORM))))
       (FORMAT STREAM "~&\\egroup~%"))
