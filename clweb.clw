@@ -4615,12 +4615,11 @@ return a string designator.
                   (entry-heading-lessp (list a x) (list b y)))))
   t)
 
-@ Generally, those objects will be instances of the class |heading| or one
-of its sub-classes, but we'll allow a few other types of objects, too.
-The two sub-classes defined here are, respectively, for headings that
-should be printed in \.{typewriter type}, and ones that should be printed
-under the control of the \TeX\ macro `\.{\\9}', which the user can define
-as desired.
+@ Generally, headings will be instances of the class |heading| or one
+of its sub-classes. The two sub-classes defined here are, respectively,
+for headings that should be printed in \.{typewriter type}, and ones that
+should be printed under the control of the \TeX\ macro `\.{\\9}', which
+the user can define as desired.
 
 @l
 (defclass heading ()
@@ -4628,15 +4627,7 @@ as desired.
 (defclass tt-heading (heading) ())
 (defclass custom-heading (heading) ())
 
-@t This is just for debugging purposes; we don't use it anywhere in this
-program.
-
-@l
-(defmethod print-object ((heading heading) stream)
-  (print-unreadable-object (heading stream :type t :identity nil)
-    (format stream "\"~A\"" (heading-name heading))))
-
-@ Strings and symbols are valid headings, too.
+@ We'll allow strings and symbols as headings, too.
 
 @l
 (defmethod heading-name ((heading string)) heading)
@@ -4649,13 +4640,80 @@ program.
   "foo"
   "bar")
 
-@ We'll define a bunch of heading classes to be used as sub-headings that
+@t This is just for debugging purposes; we don't use it anywhere in this
+program.
+
+@l
+(defmethod print-object ((heading heading) stream)
+  (print-unreadable-object (heading stream :type t :identity nil)
+    (format stream "\"~A\"" (heading-name heading))))
+
+@ We'll define a set of heading classes to be used as sub-headings that
 represent the type of the object referred to by the primary heading. The
 complication here is that we want to make it simple to add {\it modifiers\/}
 like `local' or `generic' to a base type like `function', and to have those
 modifiers become part of the name in a predictable way. In particular, the
 order is important; we don't want to end up with a heading like `setf local
 function'.
+
+We'll build up a few pieces of machinery that let us define those classes
+and their fancy names in a nice, declarative way. The first is a custom
+method combination that joins together the results of each applicable
+method into one delimited string. We'll use this for |heading-name|.
+
+@l
+(defun join-strings (strings &optional (delimiter #\Space) &aux
+                     (strings (ensure-list strings))
+                     (delimiter (string delimiter)))
+  (with-output-to-string (out)
+    (loop for (string . more) on strings
+          do (write-string (string string) out)
+          when more do (write-string delimiter out))))
+
+(define-method-combination join-strings (&optional (delimiter #\Space))
+    ((prefix (:prefix))
+     (primary () :required t)
+     (suffix (:suffix)))
+  (flet ((call-methods (methods)
+           (mapcar (lambda (method) `(ensure-list (call-method ,method))) ;
+                   methods)))
+    `(join-strings (append ,@(call-methods prefix)
+                           ,@(call-methods primary)
+                           ,@(call-methods suffix))
+                   ,delimiter)))
+
+(defgeneric heading-name (heading)
+  (:method-combination join-strings))
+
+@t@l
+(deftest join-strings
+  (values (join-strings "foo")
+          (join-strings '("foo" "bar"))
+          (join-strings '(:foo :bar :baz) #\,))
+  "foo"
+  "foo bar"
+  "FOO,BAR,BAZ")
+
+(defclass dead-beef () ())
+(defclass kobe-beef (dead-beef) ())
+(defgeneric describe-beef (beef)
+  (:method-combination join-strings ", ")
+  (:method ((beef dead-beef)) "steak")
+  (:method :prefix ((beef dead-beef)) (list "big" "fat" "juicy"))
+  (:method :prefix ((beef kobe-beef)) "delicious")
+  (:method ((beef kobe-beef)) "Kobe")
+  (:method :suffix ((beef kobe-beef)) "from Japan"))
+
+(deftest join-strings-method-combination
+  (values (describe-beef (make-instance 'dead-beef))
+          (describe-beef (make-instance 'kobe-beef)))
+  "big, fat, juicy, steak"
+  "delicious, big, fat, juicy, Kobe, steak, from Japan")
+
+@ The type headings will have a set of modifiers provided as initargs,
+since that's the easiest way to pass them down from the walker. So we'll
+arrange for those initargs to be translated into a sorted list of modifier
+symbols, which we'll use as prefixes to the heading name.
 
 @l
 (defclass type-heading (heading)
@@ -4667,9 +4725,7 @@ function'.
 
 (defmethod initialize-instance :after ;
     ((heading type-heading) &rest initargs &key name &allow-other-keys)
-  (etypecase name
-    (string)
-    (symbol (setf (slot-value heading 'name) (string-downcase name))))
+  @<Ensure that |heading|'s name is a string@>
   (setf (heading-modifiers heading)
         (loop with allowable-modifiers = (allowable-modifiers heading)
               for (name value) on initargs by #'cddr
@@ -4680,14 +4736,21 @@ function'.
                                       (< (position x allowable-modifiers)
                                          (position y allowable-modifiers))))))))
 
-(defmethod heading-name ((heading type-heading))
-  (with-standard-io-syntax
-    (format nil "~{~A ~}~A"
-            (mapcar #'string-downcase (heading-modifiers heading))
-            (call-next-method))))
+(defmethod heading-name :prefix ((heading type-heading))
+  (mapcar #'string-downcase (heading-modifiers heading)))
 
-@ The following definitions provide a nice, declarative syntax for defining
-and creating instances of the type heading classes.
+@ We'll allow the supplied name to be a symbol, but we'll immediately
+convert it to a lowercase string.
+
+@<Ensure that |heading|'s name...@>=
+(etypecase name
+  (string)
+  (symbol (setf (slot-value heading 'name) (string-downcase name))))
+
+@ The following definitions provide a declarative syntax for defining and
+creating instances of the type heading classes. The games we play with the
+class names are to avoid name clashes while still allowing short,
+descriptive names in the interface.
 
 @l
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -4759,12 +4822,9 @@ and creating instances of the type heading classes.
 otherwise, we'll call them `primary'.
 
 @l
-(defmethod heading-name ((heading method-heading))
-  (with-standard-io-syntax
-    (format nil "~{~A ~}~A"
-            (mapcar #'string-downcase ;
-                    (or (method-heading-qualifiers heading) '(:primary)))
-            (call-next-method))))
+(defmethod heading-name :prefix ((heading method-heading))
+  (mapcar #'string-downcase ;
+          (or (method-heading-qualifiers heading) '(:primary))))
 
 @t@l
 (deftest method-heading-name
