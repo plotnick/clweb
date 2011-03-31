@@ -2115,7 +2115,7 @@
                              `(JOIN-STRINGS
                                (APPEND ,@(CALL-METHODS PREFIX)
                                        ,@(CALL-METHODS PRIMARY)
-                                       ,@(CALL-METHODS SUFFIX))
+                                       ,@(CALL-METHODS (REVERSE SUFFIX)))
                                ,DELIMITER)))
 (DEFGENERIC HEADING-NAME
     (HEADING)

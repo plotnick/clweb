@@ -679,14 +679,15 @@
   (:METHOD-COMBINATION JOIN-STRINGS ", ")
   (:METHOD ((BEEF DEAD-BEEF)) "steak")
   (:METHOD :PREFIX ((BEEF DEAD-BEEF)) (LIST "big" "fat" "juicy"))
+  (:METHOD :SUFFIX ((BEEF DEAD-BEEF)) "yum!")
   (:METHOD :PREFIX ((BEEF KOBE-BEEF)) "delicious")
   (:METHOD ((BEEF KOBE-BEEF)) "Kobe")
   (:METHOD :SUFFIX ((BEEF KOBE-BEEF)) "from Japan"))
 (DEFTEST JOIN-STRINGS-METHOD-COMBINATION
          (VALUES (DESCRIBE-BEEF (MAKE-INSTANCE 'DEAD-BEEF))
                  (DESCRIBE-BEEF (MAKE-INSTANCE 'KOBE-BEEF)))
-         "big, fat, juicy, steak"
-         "delicious, big, fat, juicy, Kobe, steak, from Japan")
+         "big, fat, juicy, steak, yum!"
+         "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan")
 (DEFTEST FUNCTION-HEADING-NAME
          (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION))
                  (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION :LOCAL T))

@@ -4679,7 +4679,7 @@ method into one delimited string. We'll use this for |heading-name|.
                    methods)))
     `(join-strings (append ,@(call-methods prefix)
                            ,@(call-methods primary)
-                           ,@(call-methods suffix))
+                           ,@(call-methods (reverse suffix)))
                    ,delimiter)))
 
 (defgeneric heading-name (heading)
@@ -4700,6 +4700,7 @@ method into one delimited string. We'll use this for |heading-name|.
   (:method-combination join-strings ", ")
   (:method ((beef dead-beef)) "steak")
   (:method :prefix ((beef dead-beef)) (list "big" "fat" "juicy"))
+  (:method :suffix ((beef dead-beef)) "yum!")
   (:method :prefix ((beef kobe-beef)) "delicious")
   (:method ((beef kobe-beef)) "Kobe")
   (:method :suffix ((beef kobe-beef)) "from Japan"))
@@ -4707,8 +4708,8 @@ method into one delimited string. We'll use this for |heading-name|.
 (deftest join-strings-method-combination
   (values (describe-beef (make-instance 'dead-beef))
           (describe-beef (make-instance 'kobe-beef)))
-  "big, fat, juicy, steak"
-  "delicious, big, fat, juicy, Kobe, steak, from Japan")
+  "big, fat, juicy, steak, yum!"
+  "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan")
 
 @ The type headings will have a set of modifiers provided as initargs,
 since that's the easiest way to pass them down from the walker. So we'll
