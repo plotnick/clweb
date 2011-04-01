@@ -4839,8 +4839,8 @@ otherwise, we'll call them `primary'.
           (or (method-heading-qualifiers heading) '(:primary))))
 
 @ @<Method heading slots@>=
-(qualifiers :reader method-heading-qualifiers
-            :initarg :qualifiers
+(qualifiers :reader method-heading-qualifiers ;
+            :initarg :qualifiers ;
             :initform nil)
 
 @t@l
