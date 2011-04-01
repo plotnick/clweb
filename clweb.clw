@@ -4648,8 +4648,8 @@ represent the type of the object referred to by the primary heading. The
 complication here is that we want to make it simple to add {\it modifiers\/}
 like `local' or `generic' to a base type like `function', and to have those
 modifiers become part of the name in a predictable way. In particular, the
-order is important; we don't want to end up with a heading like `setf local
-function'.
+order is important: we don't want to end up with a heading like `setf local
+function' when we mean `local setf function'.
 
 We'll build up a few pieces of machinery that let us define those classes
 and their fancy names in a nice, declarative way. The first is a custom
