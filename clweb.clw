@@ -4653,18 +4653,18 @@ macro sort correctly.
   (declare (ignore heading)))
 
 (defmethod heading-name ((heading character))
-  (char-downcase heading))
+  heading)
 
 (defmethod heading-name ((heading string))
   (string-left-trim '(#\Space #\Tab #\Newline #\\) heading))
 
 (defmethod heading-name ((heading symbol))
-  (string-downcase heading))
+  heading)
 
 @t@l
 (deftest heading-name-character
   (heading-name #\A)
-  "a")
+  "A")
 
 (deftest heading-name-string
   (heading-name "\\foo")
@@ -4673,7 +4673,7 @@ macro sort correctly.
 (deftest heading-name-symbol
   (values (heading-name :foo)
           (heading-name '|\\foo|))
-  "foo" "\\foo")
+  "FOO" "\\foo")
 
 @ We'll be storing index entries in a {\sc bst} ordered by heading, so we'll
 need some comparison predicates for them. These are generic functions so that
@@ -4854,7 +4854,7 @@ descriptive names in the interface.
     `(defclass ,(type-heading-class-name name) (type-heading)
        ,slots
        (:default-initargs
-        :name ,(or (car (option :name)) `',name)
+        :name ,(or (car (option :name)) (string-downcase name))
         :allowable-modifiers ',(option :modifiers)))))
 
 (defun make-type-heading (type &rest initargs)
@@ -5437,7 +5437,7 @@ of the call to |index-symbol|.
 @t@l
 (define-indexing-test atom
   ((:section :code (*sections*)))
-  ("*sections* special variable" (0)))
+  ("*SECTIONS* special variable" (0)))
 
 @ We'll index all function-call-like forms whose |operator| is a referring
 symbol.
@@ -5452,7 +5452,7 @@ symbol.
 @t@l
 (define-indexing-test funcall
   ((:section :code ((mapappend 'identity '(1 2 3)))))
-  ("mapappend function" (0)))
+  ("MAPAPPEND function" (0)))
 
 @ The walker methods for all of the function-defining and binding forms
 call down to this function, passing keyword arguments that describe the
@@ -5483,8 +5483,8 @@ context.
 (define-indexing-test function-name
   ((:section :code ((flet ((foo (x) x)))))
    (:section :code ((flet (((setf foo) (y x) y))))))
-  ("foo local function" ((:def 0)))
-  ("foo local setf function" ((:def 1))))
+  ("FOO local function" ((:def 0)))
+  ("FOO local setf function" ((:def 1))))
 
 @ We'll treat |defun| and |defmacro| as special forms, since otherwise they
 will get macro-expanded before we get a chance to walk the function name.
@@ -5513,12 +5513,12 @@ defined, by way of |walk-lambda-expression|.
 @t@l
 (define-indexing-test defun
   ((:section :code ((defun foo (x) x))))
-  ("foo function" ((:def 0))))
+  ("FOO function" ((:def 0))))
 
 (define-indexing-test defmacro
   ((:section :code ((defmacro foo (&body body) (mapappend 'identity body)))))
-  ("foo macro" ((:def 0)))
-  ("mapappend function" (0)))
+  ("FOO macro" ((:def 0)))
+  ("MAPAPPEND function" (0)))
 
 @ The special-variable-defining forms must also be walked as if they were
 special forms. Once again, we'll just skip the macro expansions.
@@ -5539,12 +5539,12 @@ special forms. Once again, we'll just skip the macro expansions.
 
 @t@l
 (define-indexing-test defvar
-  ((:section :code ((defvar a t)))
-   (:section :code ((defparameter b t)))
-   (:section :code ((defconstant c t))))
-  ("a special variable" ((:def 0)))
-  ("b special variable" ((:def 1)))
-  ("c constant variable" ((:def 2))))
+  ((:section :code ((defvar *a* t)))
+   (:section :code ((defparameter *b* t)))
+   (:section :code ((defconstant *c* t))))
+  ("*A* special variable" ((:def 0)))
+  ("*B* special variable" ((:def 1)))
+  ("*C* constant variable" ((:def 2))))
 
 @ The default method for |walk-declaration-specifiers| just returns the
 given specifiers. That's not sufficient for our purposes here, though,
@@ -5617,9 +5617,9 @@ may be specified as method descriptions.
                       (:method-combination progn)
                       (:method progn ((x t) y) x)
                       (:method :around (x (y (eql 't))) y)))))
-  ("foo around method" ((:def 0)))
-  ("foo generic function" ((:def 0)))
-  ("foo progn method" ((:def 0))))
+  ("FOO around method" ((:def 0)))
+  ("FOO generic function" ((:def 0)))
+  ("FOO progn method" ((:def 0))))
 
 @ Method descriptions are very much like |defmethod| forms with an implicit
 function name; this routine walks both. The function name (if non-null) and
@@ -5681,8 +5681,8 @@ a method description.
 (define-indexing-test defmethod
   ((:section :code ((defmethod add (x y) (+ x y))))
    (:section :code ((defmethod add :before (x y)))))
-  ("add before method" ((:def 1)))
-  ("add generic function" ((:def 0))))
+  ("ADD before method" ((:def 1)))
+  ("ADD generic function" ((:def 0))))
 
 @ We'll walk |defclass| and |define-condition| forms in order to index the
 class names, super-classes, and~accessor methods.
@@ -5714,12 +5714,12 @@ class names, super-classes, and~accessor methods.
                       ((a :reader foo-a1 :reader foo-a2)))))
    (:section :code ((define-condition bar ()
                       ((b :accessor foo-b))))))
-  ("bar condition class" ((:def 1)))
-  ("foo class" ((:def 0)))
-  ("foo-a1 generic function" ((:def 0)))
-  ("foo-a2 generic function" ((:def 0)))
-  ("foo-b generic function" ((:def 1)))
-  ("foo-b primary setf method" ((:def 1))))
+  ("BAR condition class" ((:def 1)))
+  ("FOO class" ((:def 0)))
+  ("FOO-A1 generic function" ((:def 0)))
+  ("FOO-A2 generic function" ((:def 0)))
+  ("FOO-B generic function" ((:def 1)))
+  ("FOO-B primary setf method" ((:def 1))))
 
 @ The only slot options we care about are |:reader|, |:writer|,
 and~|:accessor|. We index the methods implicitly created by those
@@ -5763,8 +5763,8 @@ method combination types. We'll skip the expansion.
 (define-indexing-test define-method-combination
   ((:section :code ((define-method-combination foo :operator bar)))
    (:section :code ((defgeneric foo () (:method-combination foo)))))
-  ("foo generic function" ((:def 1)))
-  ("foo method combination" (1 (:def 0))))
+  ("FOO generic function" ((:def 1)))
+  ("FOO method combination" (1 (:def 0))))
 
 @ We'll also index custom method combination type uses, which occur in the
 |:method-combination| option given to a |defgeneric| form.

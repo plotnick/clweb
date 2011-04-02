@@ -652,10 +652,10 @@
 (INDEX-PACKAGE "CLWEB")
 (DEFTEST HEADING-NAME (HEADING-NAME (MAKE-HEADING "foo" (MAKE-HEADING "bar")))
          "foo bar")
-(DEFTEST HEADING-NAME-CHARACTER (HEADING-NAME #\A) "a")
+(DEFTEST HEADING-NAME-CHARACTER (HEADING-NAME #\A) "A")
 (DEFTEST HEADING-NAME-STRING (HEADING-NAME "\\foo") "foo")
 (DEFTEST HEADING-NAME-SYMBOL
-         (VALUES (HEADING-NAME :FOO) (HEADING-NAME '|\\foo|)) "foo" "\\foo")
+         (VALUES (HEADING-NAME :FOO) (HEADING-NAME '|\\foo|)) "FOO" "\\foo")
 (DEFUN ENTRY-HEADING-STRICTLY-LESSP (X Y)
   (AND (ENTRY-HEADING-LESSP X Y) (NOT (ENTRY-HEADING-LESSP Y X))))
 (DEFTEST ENTRY-HEADING-LESSP
@@ -811,23 +811,23 @@
                            ',EXPECTED-ENTRIES :TEST #'EQUAL)))
             T))
 (DEFINE-INDEXING-TEST ATOM ((:SECTION :CODE (*SECTIONS*)))
- ("*sections* special variable" (0)))
+ ("*SECTIONS* special variable" (0)))
 (DEFINE-INDEXING-TEST FUNCALL
- ((:SECTION :CODE ((MAPAPPEND 'IDENTITY '(1 2 3))))) ("mapappend function" (0)))
+ ((:SECTION :CODE ((MAPAPPEND 'IDENTITY '(1 2 3))))) ("MAPAPPEND function" (0)))
 (DEFINE-INDEXING-TEST FUNCTION-NAME
  ((:SECTION :CODE ((FLET ((FOO (X) X)))))
   (:SECTION :CODE ((FLET (((SETF FOO) (Y X) Y))))))
- ("foo local function" ((:DEF 0))) ("foo local setf function" ((:DEF 1))))
+ ("FOO local function" ((:DEF 0))) ("FOO local setf function" ((:DEF 1))))
 (DEFINE-INDEXING-TEST DEFUN ((:SECTION :CODE ((DEFUN FOO (X) X))))
- ("foo function" ((:DEF 0))))
+ ("FOO function" ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFMACRO
  ((:SECTION :CODE ((DEFMACRO FOO (&BODY BODY) (MAPAPPEND 'IDENTITY BODY)))))
- ("foo macro" ((:DEF 0))) ("mapappend function" (0)))
+ ("FOO macro" ((:DEF 0))) ("MAPAPPEND function" (0)))
 (DEFINE-INDEXING-TEST DEFVAR
- ((:SECTION :CODE ((DEFVAR A T))) (:SECTION :CODE ((DEFPARAMETER B T)))
-  (:SECTION :CODE ((DEFCONSTANT C T))))
- ("a special variable" ((:DEF 0))) ("b special variable" ((:DEF 1)))
- ("c constant variable" ((:DEF 2))))
+ ((:SECTION :CODE ((DEFVAR *A* T))) (:SECTION :CODE ((DEFPARAMETER *B* T)))
+  (:SECTION :CODE ((DEFCONSTANT *C* T))))
+ ("*A* special variable" ((:DEF 0))) ("*B* special variable" ((:DEF 1)))
+ ("*C* constant variable" ((:DEF 2))))
 (DEFTEST INDEXING-WALK-DECLARATION-SPECIFIERS
          (EQUAL
           (WALK-DECLARATION-SPECIFIERS (MAKE-INSTANCE 'INDEXING-WALKER)
@@ -844,28 +844,28 @@
       (:METHOD-COMBINATION PROGN)
       (:METHOD PROGN ((X T) Y) X)
       (:METHOD :AROUND (X (Y (EQL 'T))) Y)))))
- ("foo around method" ((:DEF 0))) ("foo generic function" ((:DEF 0)))
- ("foo progn method" ((:DEF 0))))
+ ("FOO around method" ((:DEF 0))) ("FOO generic function" ((:DEF 0)))
+ ("FOO progn method" ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFMETHOD
  ((:SECTION :CODE ((DEFMETHOD ADD (X Y) (+ X Y))))
   (:SECTION :CODE ((DEFMETHOD ADD :BEFORE (X Y)))))
- ("add before method" ((:DEF 1))) ("add generic function" ((:DEF 0))))
+ ("ADD before method" ((:DEF 1))) ("ADD generic function" ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFCLASS
  ((:SECTION :CODE ((DEFCLASS FOO NIL ((A :READER FOO-A1 :READER FOO-A2)))))
   (:SECTION :CODE
    ((DEFINE-CONDITION BAR
         NIL
         ((B :ACCESSOR FOO-B))))))
- ("bar condition class" ((:DEF 1))) ("foo class" ((:DEF 0)))
- ("foo-a1 generic function" ((:DEF 0))) ("foo-a2 generic function" ((:DEF 0)))
- ("foo-b generic function" ((:DEF 1))) ("foo-b primary setf method" ((:DEF 1))))
+ ("BAR condition class" ((:DEF 1))) ("FOO class" ((:DEF 0)))
+ ("FOO-A1 generic function" ((:DEF 0))) ("FOO-A2 generic function" ((:DEF 0)))
+ ("FOO-B generic function" ((:DEF 1))) ("FOO-B primary setf method" ((:DEF 1))))
 (DEFINE-INDEXING-TEST DEFINE-METHOD-COMBINATION
  ((:SECTION :CODE ((DEFINE-METHOD-COMBINATION FOO :OPERATOR BAR)))
   (:SECTION :CODE
    ((DEFGENERIC FOO
         NIL
       (:METHOD-COMBINATION FOO)))))
- ("foo generic function" ((:DEF 1))) ("foo method combination" (1 (:DEF 0))))
+ ("FOO generic function" ((:DEF 1))) ("FOO method combination" (1 (:DEF 0))))
 (DEFMETHOD LOCATION ((RANGE SECTION-RANGE))
   (LIST (START-SECTION RANGE) (END-SECTION RANGE)))
 (DEFTEST (COALESCE-LOCATORS 1)
