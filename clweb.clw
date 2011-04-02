@@ -5967,8 +5967,7 @@ in with the others in the normal lexicographic ordering.
   (declare (ignore h2))
   t)
 (defmethod entry-heading-lessp (h1 (h2 macro-char-heading))
-  (declare (ignore h1))
-  nil)
+  (declare (ignore h1)))
 (defmethod entry-heading-lessp ((h1 macro-char-heading) ;
                                 (h2 dispatch-macro-char-heading))
   t)
