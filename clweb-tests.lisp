@@ -888,25 +888,23 @@
                     ,(MAKE-INSTANCE 'SECTION-LOCATOR :SECTION 6 :DEF T))))
          (1 (2 3) 5 6))
 (DEFTEST MACRO-CHAR-HEADING-LESSP
-         (LET* ((A (MAKE-INSTANCE 'MACRO-CHAR-HEADING :CHAR #\a))
-                (B (MAKE-INSTANCE 'MACRO-CHAR-HEADING :CHAR #\b))
-                (C (MAKE-INSTANCE 'MACRO-CHAR-HEADING :CHAR #\c))
-                (AB
-                 (MAKE-INSTANCE 'MACRO-CHAR-HEADING :CHAR #\a :SUB-HEADING B))
-                (AC
-                 (MAKE-INSTANCE 'MACRO-CHAR-HEADING :CHAR #\a :SUB-HEADING C)))
+         (LET* ((A (MAKE-MACRO-CHAR-HEADING #\a))
+                (B (MAKE-MACRO-CHAR-HEADING #\b))
+                (C (MAKE-MACRO-CHAR-HEADING #\c))
+                (AB (MAKE-MACRO-CHAR-HEADING #\a #\b))
+                (AC (MAKE-MACRO-CHAR-HEADING #\a #\c)))
            (EVERY #'IDENTITY
                   (LIST (ENTRY-HEADING-STRICTLY-LESSP A B)
                         (NOT (ENTRY-HEADING-STRICTLY-LESSP B A))
-                        (ENTRY-HEADING-LESSP A AB)
+                        (ENTRY-HEADING-STRICTLY-LESSP A AB)
+                        (ENTRY-HEADING-STRICTLY-LESSP B AB)
                         (NOT (ENTRY-HEADING-STRICTLY-LESSP AB AB))
                         (ENTRY-HEADING-STRICTLY-LESSP AB AC))))
          T)
 (DEFTEST MACRO-CHAR-HEADING-EQUALP
-         (LET* ((A (MAKE-INSTANCE 'MACRO-CHAR-HEADING :CHAR #\a))
-                (B (MAKE-INSTANCE 'MACRO-CHAR-HEADING :CHAR #\b))
-                (AB
-                 (MAKE-INSTANCE 'MACRO-CHAR-HEADING :CHAR #\a :SUB-HEADING B)))
+         (LET* ((A (MAKE-MACRO-CHAR-HEADING #\a))
+                (B (MAKE-MACRO-CHAR-HEADING #\b))
+                (AB (MAKE-MACRO-CHAR-HEADING #\a #\b)))
            (EVERY #'IDENTITY
                   (LIST (ENTRY-HEADING-SYMMETRIC-EQUALP A A)
                         (ENTRY-HEADING-SYMMETRIC-UNEQUALP A B)

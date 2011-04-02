@@ -5935,17 +5935,36 @@ the indexer to recognize and record specific kinds of forms. In this program,
 we define reader macro functions for most of the standard macro characters,
 so it might be nice to have dedicated index entries for those definitions.
 
-To begin, we'll define a heading class for macro characters and a constructor
-function for same.
+To begin, we'll define a heading class for macro characters, a subclass for
+dispatch macro characters, and a constructor function for both.
 
 @l
 (defclass macro-char-heading (heading)
-  ((name :reader macro-char :initarg :char))
-  (:default-initargs :sub-heading "macro character"))
+  ((name :reader macro-char :initarg :char)))
 
-(defun make-macro-char-heading (char &optional sub-char)
-  (apply #'make-instance 'macro-char-heading :char char
-         (and sub-char `(:sub-heading ,(make-macro-char-heading sub-char)))))
+(defclass dispatch-macro-char-heading (macro-char-heading)
+  ((sub-char :reader macro-sub-char :initarg :sub-char)))
+
+(defmethod sub-heading ((heading dispatch-macro-char-heading))
+  (macro-sub-char heading))
+
+(defun make-macro-char-heading (char &optional ;
+                                (sub-char nil sub-char-supplied-p))
+  (if sub-char-supplied-p
+      (make-instance 'dispatch-macro-char-heading ;
+                     :char char ;
+                     :sub-char (and (characterp sub-char) sub-char))
+      (make-instance 'macro-char-heading :char char)))
+
+@ When the macro character headings are printed to the index, we'll attach
+a little label describing what kind of character they are.
+
+@l
+(defmethod print-entry-heading :after ;
+    (stream (heading macro-char-heading) &rest args)
+  (declare (ignore args))
+  (format stream " ~:[~;dispatch ~] macro character"
+          (typep heading 'dispatch-macro-char-heading)))
 
 @ We'd like the macro character index entries to precede all of the other
 entries, and we'd like non-dispatching macro chars before dispatching chars.
@@ -5953,64 +5972,56 @@ Most types of index entries wouldn't bother with this; they'd just be mixed
 in with the others in the normal lexicographic ordering.
 
 @l
-(defun dispatching-macro-char-heading (heading)
-  (typep (sub-heading heading) 'macro-char-heading))
-
 (defmethod entry-heading-lessp ((h1 macro-char-heading) h2)
   (declare (ignore h2))
   t)
-
 (defmethod entry-heading-lessp (h1 (h2 macro-char-heading))
   (declare (ignore h1)))
-
+(defmethod entry-heading-lessp ((h1 macro-char-heading) ;
+                                (h2 dispatch-macro-char-heading))
+  t)
+(defmethod entry-heading-lessp ((h1 dispatch-macro-char-heading) ;
+                                (h2 macro-char-heading))
+  nil)
 (defmethod entry-heading-lessp ((h1 macro-char-heading) (h2 macro-char-heading))
-  (cond ((and (not (dispatching-macro-char-heading h1))
-              (dispatching-macro-char-heading h2))
-         t)
-        ((and (dispatching-macro-char-heading h1)
-              (not (dispatching-macro-char-heading h2)))
-         nil)
-        (t (or (char-lessp (macro-char h1) (macro-char h2))
-               (and (dispatching-macro-char-heading h1)
-                    (dispatching-macro-char-heading h2)
-                    (entry-heading-lessp (sub-heading h1) (sub-heading h2)))))))
+  (char-lessp (macro-char h1) (macro-char h2)))
+(defmethod entry-heading-lessp ((h1 dispatch-macro-char-heading) ;
+                                (h2 dispatch-macro-char-heading))
+  (and (not (char-lessp (macro-char h2) (macro-char h1)))
+       (or (and (not (macro-sub-char h1)) (macro-sub-char h2))
+           (and (macro-sub-char h1)
+                (macro-sub-char h2)
+                (char-lessp (macro-sub-char h1) (macro-sub-char h2))))))
 
 (defmethod entry-heading-equalp ((h1 macro-char-heading) h2)
   (declare (ignore h2)))
-
 (defmethod entry-heading-equalp (h1 (h2 macro-char-heading))
   (declare (ignore h1)))
-
 (defmethod entry-heading-equalp ((h1 macro-char-heading) ;
                                  (h2 macro-char-heading))
-  (and (char= (macro-char h1) (macro-char h2))
-       (cond ((and (dispatching-macro-char-heading h1)
-                   (dispatching-macro-char-heading h2))
-              (entry-heading-equalp (sub-heading h1) (sub-heading h2)))
-             ((or (dispatching-macro-char-heading h1)
-                  (dispatching-macro-char-heading h2))
-              nil)
-             (t t))))
+  (and (char-equal (macro-char h1) (macro-char h2))
+       (equalp (sub-heading h1) (sub-heading h2))))
 
 @t@l
 (deftest macro-char-heading-lessp
-  (let* ((a (make-instance 'macro-char-heading :char #\a))
-         (b (make-instance 'macro-char-heading :char #\b))
-         (c (make-instance 'macro-char-heading :char #\c))
-         (ab (make-instance 'macro-char-heading :char #\a :sub-heading b))
-         (ac (make-instance 'macro-char-heading :char #\a :sub-heading c)))
+  (let* ((a (make-macro-char-heading #\a))
+         (b (make-macro-char-heading #\b))
+         (c (make-macro-char-heading #\c))
+         (ab (make-macro-char-heading #\a #\b))
+         (ac (make-macro-char-heading #\a #\c)))
     (every #'identity
            (list (entry-heading-strictly-lessp a b)
                  (not (entry-heading-strictly-lessp b a))
-                 (entry-heading-lessp a ab)
+                 (entry-heading-strictly-lessp a ab)
+                 (entry-heading-strictly-lessp b ab)
                  (not (entry-heading-strictly-lessp ab ab))
                  (entry-heading-strictly-lessp ab ac))))
   t)
 
 (deftest macro-char-heading-equalp
-  (let* ((a (make-instance 'macro-char-heading :char #\a))
-         (b (make-instance 'macro-char-heading :char #\b))
-         (ab (make-instance 'macro-char-heading :char #\a :sub-heading b)))
+  (let* ((a (make-macro-char-heading #\a))
+         (b (make-macro-char-heading #\b))
+         (ab (make-macro-char-heading #\a #\b)))
     (every #'identity
            (list (entry-heading-symmetric-equalp a a)
                  (entry-heading-symmetric-unequalp a b)
@@ -6049,8 +6060,6 @@ want in this case.
   (declare (ignore env))
   (when (characterp (second form))
     (add-index-entry index
-                     (make-macro-char-heading (second form) ;
-                                              (and (characterp (third form)) ;
-                                                   (third form)))
+                     (make-macro-char-heading (second form) (third form))
                      section :def t)))
 @*Index.
