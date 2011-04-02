@@ -4601,14 +4601,12 @@ with the same heading is called an {\it entry list}, or sometimes just an
 {\it entry\/}; the latter is an abuse of terminology, but useful and
 usually clear in context.
 
-In this program, headings are represented by instances of the class |heading|.
-Headings may in general be multi-leveled, and are sorted lexicographically.
-The two sub-classes defined here are, respectively, for headings that should
-be printed in \.{typewriter type}, and ones that should be printed under the
-control of the \TeX\ macro `\.{\\9}', which the user can define as desired.
-Notice that we strip leading whitespace and backslashes from heading names;
-this helps with the sorting of the common case of a manual entry that begins
-with a \TeX\ macro.
+In this program, headings are usually represented by instances of the
+class |heading|. Headings may in general be multi-leveled, and are sorted
+lexicographically. Any object with applicable methods for |heading-name|
+and |sub-heading| are treated as valid headings; the former should always
+return a string designator, and the latter should return the next sub-heading
+or |nil| if there is none.
 
 @l
 @<Define |heading-name| generic function@>
@@ -4616,15 +4614,12 @@ with a \TeX\ macro.
 (defclass heading ()
   ((name :initarg :name :initform "")
    (sub-heading :reader sub-heading :initarg :sub-heading :initform nil)))
-(defclass tt-heading (heading) ())
-(defclass custom-heading (heading) ())
 
 (defun make-heading (name &optional sub-heading)
   (make-instance 'heading :name name :sub-heading sub-heading))
 
 (defmethod heading-name ((heading heading))
-  (string-left-trim '(#\Space #\Tab #\Newline #\\)
-                    (string-downcase (slot-value heading 'name))))
+  (heading-name (slot-value heading 'name)))
 
 (defmethod heading-name :suffix ((heading heading))
   (when (sub-heading heading)
@@ -4632,30 +4627,67 @@ with a \TeX\ macro.
 
 @t@l
 (deftest heading-name
-  (heading-name (make-heading "\\foo" (make-heading "bar")))
+  (heading-name (make-heading "foo" (make-heading "bar")))
   "foo bar")
+
+@ These heading classes are for headings that should be prefaced with a
+\TeX\ macro when printed. Instances of |tt-heading| get printed with `\.{\\.}'
+so as to appear in \.{typewriter type}, and |custom-heading| instances are
+printed under the control of the \TeX\ macro `\.{\\9}', which the user can
+define as desired. Additional subclasses can simply provide new defaults
+for the |macro| initarg.
+
+@l
+(defclass pretty-heading (heading)
+  ((macro :reader macro-heading :initarg :macro)))
+(defclass tt-heading (pretty-heading) () (:default-initargs :macro "\\."))
+(defclass custom-heading (pretty-heading) () (:default-initargs :macro "\\9"))
+
+@ We'll allow strings and symbols as headings, too. Notice that we strip
+leading whitespace and backslashes from strings acting as heading names;
+this helps the common case of a manual entry that begins with a \TeX\
+macro sort correctly.
+
+@l
+(defmethod sub-heading (heading)
+  (declare (ignore heading)))
+
+(defmethod heading-name ((heading character))
+  (char-downcase heading))
+
+(defmethod heading-name ((heading string))
+  (string-left-trim '(#\Space #\Tab #\Newline #\\) heading))
+
+(defmethod heading-name ((heading symbol))
+  (string-downcase heading))
+
+@t@l
+(deftest heading-name-character
+  (heading-name #\A)
+  "a")
+
+(deftest heading-name-string
+  (heading-name "\\foo")
+  "foo")
+
+(deftest heading-name-symbol
+  (values (heading-name :foo)
+          (heading-name '|\\foo|))
+  "foo" "\\foo")
 
 @ We'll be storing index entries in a {\sc bst} ordered by heading, so we'll
 need some comparison predicates for them. These are generic functions so that
 the user may provide specialized methods on their own heading classes if they
-want them sorted in a particular way.
+want them sorted in a particular way. Letter case is ignored by default.
 
 @l
 (defgeneric entry-heading-lessp (h1 h2))
-(defmethod entry-heading-lessp ((h1 null) (h2 null)) nil)
-(defmethod entry-heading-lessp ((h1 heading) (h2 null)) nil)
-(defmethod entry-heading-lessp ((h1 null) (h2 heading)) t)
-(defmethod entry-heading-lessp ((h1 heading) (h2 heading))
-  (or (string-lessp (heading-name h1) (heading-name h2))
-      (and (string-equal (heading-name h1) (heading-name h2))
-           (entry-heading-lessp (sub-heading h1) (sub-heading h2)))))
+(defmethod entry-heading-lessp (h1 h2)
+  (string-lessp (heading-name h1) (heading-name h2)))
 
 (defgeneric entry-heading-equalp (h1 h2))
-(defmethod entry-heading-equalp (h1 h2) (declare (ignore h1 h2)))
-(defmethod entry-heading-equalp ((h1 null) (h2 null)) t)
-(defmethod entry-heading-equalp ((h1 heading) (h2 heading))
-  (and (string-equal (heading-name h1) (heading-name h2))
-       (entry-heading-equalp (sub-heading h1) (sub-heading h2))))
+(defmethod entry-heading-equalp (h1 h2)
+  (string-equal (heading-name h1) (heading-name h2)))
 
 @t We have to be careful to check that everything works properly when the
 arguments are swapped around, too.
@@ -4791,8 +4823,7 @@ symbols, which we'll use as prefixes to the heading name.
               :initarg :modifiers)))
 
 (defmethod initialize-instance :after ;
-    ((heading type-heading) &rest initargs &key name &allow-other-keys)
-  @<Ensure that |heading|'s name is a string@>
+    ((heading type-heading) &rest initargs &key &allow-other-keys)
   (setf (heading-modifiers heading)
         (loop with allowable-modifiers = (allowable-modifiers heading)
               for (name value) on initargs by #'cddr
@@ -4805,14 +4836,6 @@ symbols, which we'll use as prefixes to the heading name.
 
 (defmethod heading-name :prefix ((heading type-heading))
   (mapcar #'string-downcase (heading-modifiers heading)))
-
-@ We'll allow the supplied name to be a symbol, but we'll immediately
-convert it to a lowercase string.
-
-@<Ensure that |heading|'s name...@>=
-(etypecase name
-  (string)
-  (symbol (setf (slot-value heading 'name) (string-downcase name))))
 
 @ The following definitions provide a declarative syntax for defining and
 creating instances of the type heading classes. The games we play with the
@@ -4834,8 +4857,8 @@ descriptive names in the interface.
         :name ,(or (car (option :name)) `',name)
         :allowable-modifiers ',(option :modifiers)))))
 
-(defun make-type-heading (type &rest args)
-  (apply #'make-instance (type-heading-class-name type) args))
+(defun make-type-heading (type &rest initargs)
+  (apply #'make-instance (type-heading-class-name type) initargs))
 
 @ {\it Et voil\`a!\/} Note that a name is derived from the class name if no
 |:name| option is provided.
@@ -5055,7 +5078,7 @@ whole thing and print them all out.
 @t@l
 (deftest (add-index-entry 1)
   (let ((index (make-index))
-        (heading (make-heading 'foo))
+        (heading 'foo)
         (*sections* (make-array 3 :fill-pointer 0)))
     (add-index-entry index heading (make-instance 'section))
     (add-index-entry index heading (make-instance 'section))
@@ -5067,7 +5090,7 @@ whole thing and print them all out.
 
 (deftest (add-index-entry 2)
   (let* ((index (make-index))
-         (heading (make-heading 'foo))
+         (heading 'foo)
          (*sections* (make-array 1 :fill-pointer 0))
          (section (make-instance 'section)))
     (add-index-entry index heading section)
@@ -5837,7 +5860,7 @@ Note that definitional locators will never be part of a range.
              ,(make-instance 'section-locator :section 6 :def t))))
   (1 (2 3) 5 6))
 
-@ Finally, here are the pretty-printing routines for the index itself.
+@ Here are the pretty-printing routines for the index itself.
 
 @l
 (set-weave-dispatch 'index
@@ -5865,25 +5888,47 @@ Note that definitional locators will never be part of a range.
             (locator-definition-p loc)
             (section-number (location loc)))))
 
+@ Entry headings come in many flavors, and need special treatment in order
+to be printed nicely and correctly. We're intentionally conflating headers
+with their names here, since the types we accept as names are also valid
+headings on their own.
+
+The generic function |print-entry-heading| accepts a |&rest| argument only
+because it's called from a \.{\~/.../} |format| directive; we always ignore
+the extra arguments.
+
+@l
 (defgeneric print-entry-heading (stream heading &rest args))
-(defmethod print-entry-heading (stream (heading type-heading) &rest args)
-  (declare (ignore args))
-  (write-string (heading-name heading) stream))
+
 (defmethod print-entry-heading (stream (heading heading) &rest args)
   (declare (ignore args))
-  (with-slots (name) heading
-    (etypecase name
-      (symbol (format stream "\\(~W\\)" name))
-      (character (print-char stream name))
-      (string (format stream "~[\\.~;\\9~]{~/clweb::print-TeX/}"
-                      (typecase heading
-                        (tt-heading 0)
-                        (custom-heading 1)
-                        (otherwise -1))
-                      (read-TeX-from-string name)))))
+  (print-entry-heading stream (slot-value heading 'name))
   (when (sub-heading heading)
     (write-char #\Space stream)
     (print-entry-heading stream (sub-heading heading))))
+
+(defmethod print-entry-heading (stream (heading type-heading) &rest args)
+  (declare (ignore args))
+  (write-string (heading-name heading) stream))
+
+(defmethod print-entry-heading (stream (heading character) &rest args)
+  (declare (ignore args))
+  (print-char stream heading))
+
+(defmethod print-entry-heading (stream (heading string) &rest args)
+  (declare (ignore args))
+  (write-char #\{ stream)
+  (print-TeX stream (read-TeX-from-string heading))
+  (write-char #\} stream))
+
+(defmethod print-entry-heading (stream (heading symbol) &rest args)
+  (declare (ignore args))
+  (format stream "\\(~W\\)" heading))
+
+(defmethod print-entry-heading :before ;
+    (stream (heading pretty-heading) &rest args)
+  (declare (ignore args))
+  (write-string (macro-heading heading) stream))
 
 @ As a little coda, here's a self-contained example of how one might extend
 the indexer to recognize and record specific kinds of forms. In this program,
@@ -5896,7 +5941,7 @@ function for same.
 @l
 (defclass macro-char-heading (heading)
   ((name :reader macro-char :initarg :char))
-  (:default-initargs :sub-heading (make-heading "macro character")))
+  (:default-initargs :sub-heading "macro character"))
 
 (defun make-macro-char-heading (char &optional sub-char)
   (apply #'make-instance 'macro-char-heading :char char
@@ -5911,8 +5956,13 @@ in with the others in the normal lexicographic ordering.
 (defun dispatching-macro-char-heading (heading)
   (typep (sub-heading heading) 'macro-char-heading))
 
-(defmethod entry-heading-lessp ((h1 macro-char-heading) (h2 heading)) t)
-(defmethod entry-heading-lessp ((h1 heading) (h2 macro-char-heading)) nil)
+(defmethod entry-heading-lessp ((h1 macro-char-heading) h2)
+  (declare (ignore h2))
+  t)
+
+(defmethod entry-heading-lessp (h1 (h2 macro-char-heading))
+  (declare (ignore h1)))
+
 (defmethod entry-heading-lessp ((h1 macro-char-heading) (h2 macro-char-heading))
   (cond ((and (not (dispatching-macro-char-heading h1))
               (dispatching-macro-char-heading h2))
@@ -5925,8 +5975,12 @@ in with the others in the normal lexicographic ordering.
                     (dispatching-macro-char-heading h2)
                     (entry-heading-lessp (sub-heading h1) (sub-heading h2)))))))
 
-(defmethod entry-heading-equalp ((h1 macro-char-heading) (h2 heading)) nil)
-(defmethod entry-heading-equalp ((h1 heading) (h2 macro-char-heading)) nil)
+(defmethod entry-heading-equalp ((h1 macro-char-heading) h2)
+  (declare (ignore h2)))
+
+(defmethod entry-heading-equalp (h1 (h2 macro-char-heading))
+  (declare (ignore h1)))
+
 (defmethod entry-heading-equalp ((h1 macro-char-heading) ;
                                  (h2 macro-char-heading))
   (and (char= (macro-char h1) (macro-char h2))
