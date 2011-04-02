@@ -4628,7 +4628,7 @@ with a \TeX\ macro.
 @ We'll be storing index entries in a {\sc bst} ordered by heading, so we'll
 need some comparison predicates for them. These are generic functions so that
 the user may provide specialized methods on their own heading classes if they
-want them sorted in a particular way. 
+want them sorted in a particular way.
 
 @l
 (defgeneric entry-heading-lessp (h1 h2))
