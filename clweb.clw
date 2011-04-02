@@ -6053,4 +6053,12 @@ want in this case.
     (add-index-entry index
                      (make-macro-char-heading (second form) (third form))
                      section :def t)))
+
+@t@l
+(define-indexing-test macro-character
+  ((:section :code ((set-macro-character #\! #'read-bang)))
+   (:section :code ((set-dispatch-macro-character #\@ #\! #'read-at-bang))))
+  ("!" ((:def 0)))
+  ("@ !" ((:def 1))))
+
 @*Index.
