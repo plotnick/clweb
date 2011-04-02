@@ -2595,7 +2595,7 @@ where we evaluate \.{@@e} forms.
 
 @ We trim trailing whitespace from the last string in |commentary|, leading
 whitespace from the first, and any trailing newline marker from |code|.
-(Leading newlines are handled in |@<Accumulate Lisp-mode...@>|.)
+Leading newlines are handled in |@<Accumulate Lisp-mode...@>|.
 
 @<Trim whitespace and reverse |commentary| and |code|@>=
 (when (stringp (car commentary))
