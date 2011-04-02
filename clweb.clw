@@ -4596,6 +4596,9 @@ Headings may in general be multi-leveled, and are sorted lexicographically.
 The two sub-classes defined here are, respectively, for headings that should
 be printed in \.{typewriter type}, and ones that should be printed under the
 control of the \TeX\ macro `\.{\\9}', which the user can define as desired.
+Notice that we strip leading whitespace and backslashes from heading names;
+this helps with the sorting of the common case of a manual entry that begins
+with a \TeX\ macro.
 
 @l
 @<Define |heading-name| generic function@>
@@ -4610,11 +4613,17 @@ control of the \TeX\ macro `\.{\\9}', which the user can define as desired.
   (make-instance 'heading :name name :sub-heading sub-heading))
 
 (defmethod heading-name ((heading heading))
-  (string-downcase (slot-value heading 'name)))
+  (string-left-trim '(#\Space #\Tab #\Newline #\\)
+                    (string-downcase (slot-value heading 'name))))
 
 (defmethod heading-name :suffix ((heading heading))
   (when (sub-heading heading)
     (heading-name (sub-heading heading))))
+
+@t@l
+(deftest heading-name
+  (heading-name (make-heading "\\foo" (make-heading "bar")))
+  "foo bar")
 
 @ We'll be storing index entries in a {\sc bst} ordered by heading, so we'll
 need some comparison predicates for them. These are generic functions so that
