@@ -5898,36 +5898,29 @@ because it's called from a \.{\~/.../} |format| directive; we always ignore
 the extra arguments.
 
 @l
-(defgeneric print-entry-heading (stream heading &rest args))
+(defgeneric print-entry-heading (stream heading &rest args &key &allow-other-keys))
 
-(defmethod print-entry-heading (stream (heading heading) &rest args)
-  (declare (ignore args))
+(defmethod print-entry-heading (stream (heading heading) &key)
   (print-entry-heading stream (slot-value heading 'name))
   (when (sub-heading heading)
     (write-char #\Space stream)
     (print-entry-heading stream (sub-heading heading))))
 
-(defmethod print-entry-heading (stream (heading type-heading) &rest args)
-  (declare (ignore args))
+(defmethod print-entry-heading (stream (heading type-heading) &key)
   (write-string (heading-name heading) stream))
 
-(defmethod print-entry-heading (stream (heading character) &rest args)
-  (declare (ignore args))
+(defmethod print-entry-heading (stream (heading character) &key)
   (print-char stream heading))
 
-(defmethod print-entry-heading (stream (heading string) &rest args)
-  (declare (ignore args))
+(defmethod print-entry-heading (stream (heading string) &key)
   (write-char #\{ stream)
   (print-TeX stream (read-TeX-from-string heading))
   (write-char #\} stream))
 
-(defmethod print-entry-heading (stream (heading symbol) &rest args)
-  (declare (ignore args))
+(defmethod print-entry-heading (stream (heading symbol) &key)
   (format stream "\\(~W\\)" heading))
 
-(defmethod print-entry-heading :before ;
-    (stream (heading pretty-heading) &rest args)
-  (declare (ignore args))
+(defmethod print-entry-heading :before (stream (heading pretty-heading) &key)
   (write-string (macro-heading heading) stream))
 
 @ As a little coda, here's a self-contained example of how one might extend
@@ -5960,10 +5953,8 @@ dispatch macro characters, and a constructor function for both.
 a little label describing what kind of character they are.
 
 @l
-(defmethod print-entry-heading :after ;
-    (stream (heading macro-char-heading) &rest args)
-  (declare (ignore args))
-  (format stream " ~:[~;dispatch ~] macro character"
+(defmethod print-entry-heading :after (stream (heading macro-char-heading) &key)
+  (format stream " ~:[~;dispatch ~]macro character"
           (typep heading 'dispatch-macro-char-heading)))
 
 @ We'd like the macro character index entries to precede all of the other
@@ -5976,7 +5967,8 @@ in with the others in the normal lexicographic ordering.
   (declare (ignore h2))
   t)
 (defmethod entry-heading-lessp (h1 (h2 macro-char-heading))
-  (declare (ignore h1)))
+  (declare (ignore h1))
+  nil)
 (defmethod entry-heading-lessp ((h1 macro-char-heading) ;
                                 (h2 dispatch-macro-char-heading))
   t)
