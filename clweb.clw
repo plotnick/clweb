@@ -4525,8 +4525,8 @@ the walker classes defined in this program.
   (format t "~<; ~@;walking compound form ~W~:>~%" (list form)))
 
 @*Indexing. Having constructed our code walker, we can now use it to
-produce an index of the symbols in a web. We'll say a symbol is
-{\it interesting\/} if it is interned in one of the packages listed
+produce an index of the symbols in a web. By default, we'll say a symbol
+is {\it interesting\/} if it is interned in one of the packages listed
 in |*index-packages*|. The user can add packages to this list using
 the \.{@@x} control code, which calls the following function. It takes
 a designator for a list of package designators, and adds each package
@@ -4538,9 +4538,11 @@ to |*index-packages*|.
   (dolist (package packages)
     (pushnew (find-package package) *index-packages*)))
 
-(defun interesting-symbol-p (object)
-  (and (symbolp object)
-       (member (symbol-package object) *index-packages*)))
+(defgeneric interesting-symbol-p (object))
+(defmethod interesting-symbol-p (object)
+  (declare (ignore object)))
+(defmethod interesting-symbol-p ((object symbol))
+  (member (symbol-package object) *index-packages*))
 
 @ @<Global variables@>=
 (defvar *index-packages* nil
@@ -4571,69 +4573,101 @@ with the same heading is called an {\it entry list}, or sometimes just an
 {\it entry\/}; the latter is an abuse of terminology, but useful and
 usually clear in context.
 
+In this program, headings are represented by instances of the class |heading|.
 Headings may in general be multi-leveled, and are sorted lexicographically.
-In this program, headings are represented by (designators for) lists of
-objects that have a specialized |heading-name| method, which method should
-return a string designator.
+The two sub-classes defined here are, respectively, for headings that should
+be printed in \.{typewriter type}, and ones that should be printed under the
+control of the \TeX\ macro `\.{\\9}', which the user can define as desired.
 
 @l
-(defun entry-heading-lessp (h1 h2 &aux ;
-                            (h1 (ensure-list h1)) ;
-                            (h2 (ensure-list h2)))
-  (or (and (null h1) h2)
-      (string-lessp (heading-name (car h1)) (heading-name (car h2)))
-      (and (string-equal (heading-name (car h1)) (heading-name (car h2)))
-           (cdr h2)
-           (entry-heading-lessp (cdr h1) (cdr h2)))))
+@<Define |heading-name| generic function@>
 
-(defun entry-heading-equalp (h1 h2 &aux ;
-                             (h1 (ensure-list h1)) ;
-                             (h2 (ensure-list h2)))
-  (and (= (length h1) (length h2))
-       (every #'string-equal
-              (mapcar #'heading-name h1)
-              (mapcar #'heading-name h2))))
-
-@t@l
-(deftest entry-heading-lessp
-  (let ((a (make-instance 'heading :name "a"))
-        (b (make-instance 'heading :name "b"))
-        (x (make-instance 'heading :name "x"))
-        (y (make-instance 'heading :name "y")))
-    (notany #'not
-            (list (not (entry-heading-lessp a a))
-                  (entry-heading-lessp a b)
-                  (entry-heading-lessp a (list a x))
-                  (entry-heading-lessp (list a x) (list a y))
-                  (entry-heading-lessp (list a x) (list b x))
-                  (entry-heading-lessp (list a y) (list b x))
-                  (entry-heading-lessp (list a x) (list b y)))))
-  t)
-
-@ Generally, headings will be instances of the class |heading| or one
-of its sub-classes. The two sub-classes defined here are, respectively,
-for headings that should be printed in \.{typewriter type}, and ones that
-should be printed under the control of the \TeX\ macro `\.{\\9}', which
-the user can define as desired.
-
-@l
 (defclass heading ()
-  ((name :reader heading-name :initarg :name)))
+  ((name :initarg :name :initform "")
+   (sub-heading :reader sub-heading :initarg :sub-heading :initform nil)))
 (defclass tt-heading (heading) ())
 (defclass custom-heading (heading) ())
 
-@ We'll allow strings and symbols as headings, too.
+(defun make-heading (name &optional sub-heading)
+  (make-instance 'heading :name name :sub-heading sub-heading))
+
+(defmethod heading-name ((heading heading))
+  (string-downcase (slot-value heading 'name)))
+
+(defmethod heading-name :suffix ((heading heading))
+  (when (sub-heading heading)
+    (heading-name (sub-heading heading))))
+
+@ We'll be storing index entries in a {\sc bst} ordered by heading, so we'll
+need some comparison predicates for them. These are generic functions so that
+the user may provide specialized methods on their own heading classes if they
+want them sorted in a particular way. 
 
 @l
-(defmethod heading-name ((heading string)) heading)
-(defmethod heading-name ((heading symbol)) (string-downcase heading))
+(defgeneric entry-heading-lessp (h1 h2))
+(defmethod entry-heading-lessp ((h1 null) (h2 null)) nil)
+(defmethod entry-heading-lessp ((h1 heading) (h2 null)) nil)
+(defmethod entry-heading-lessp ((h1 null) (h2 heading)) t)
+(defmethod entry-heading-lessp ((h1 heading) (h2 heading))
+  (or (string-lessp (heading-name h1) (heading-name h2))
+      (and (string-equal (heading-name h1) (heading-name h2))
+           (entry-heading-lessp (sub-heading h1) (sub-heading h2)))))
 
-@t@l
-(deftest heading-name
-  (values (heading-name "foo")
-          (heading-name :bar))
-  "foo"
-  "bar")
+(defgeneric entry-heading-equalp (h1 h2))
+(defmethod entry-heading-equalp (h1 h2) (declare (ignore h1 h2)))
+(defmethod entry-heading-equalp ((h1 null) (h2 null)) t)
+(defmethod entry-heading-equalp ((h1 heading) (h2 heading))
+  (and (string-equal (heading-name h1) (heading-name h2))
+       (entry-heading-equalp (sub-heading h1) (sub-heading h2))))
+
+@t We have to be careful to check that everything works properly when the
+arguments are swapped around, too.
+
+@l
+(defun entry-heading-strictly-lessp (x y)
+  (and (entry-heading-lessp x y)
+       (not (entry-heading-lessp y x))))
+
+(deftest entry-heading-lessp
+  (let* ((a (make-heading "a"))
+         (b (make-heading "b"))
+         (x (make-heading "x"))
+         (y (make-heading "y"))
+         (ax (make-heading "a" x))
+         (ay (make-heading "a" y))
+         (bx (make-heading "b" x))
+         (by (make-heading "a" y)))
+    (every #'identity
+           (list (not (entry-heading-strictly-lessp a a))
+                 (entry-heading-strictly-lessp a b)
+                 (entry-heading-strictly-lessp a ax)
+                 (entry-heading-strictly-lessp ax ay)
+                 (entry-heading-strictly-lessp ax bx)
+                 (entry-heading-strictly-lessp ay bx)
+                 (entry-heading-strictly-lessp ax by))))
+  t)
+
+(defun entry-heading-symmetric-equalp (x y)
+  (and (entry-heading-equalp x y)
+       (entry-heading-equalp y x)))
+
+(defun entry-heading-symmetric-unequalp (x y)
+  (and (not (entry-heading-equalp x y))
+       (not (entry-heading-equalp y x))))
+
+(deftest entry-heading-equalp
+  (let* ((a (make-heading "a"))
+         (b (make-heading "b"))
+         (x (make-heading "x"))
+         (y (make-heading "y"))
+         (ax (make-heading "a" x))
+         (ay (make-heading "a" y)))
+    (every #'identity
+           (list (entry-heading-symmetric-equalp a a)
+                 (entry-heading-symmetric-unequalp a b)
+                 (entry-heading-symmetric-equalp ax ax)
+                 (entry-heading-symmetric-unequalp ax ay))))
+  t)
 
 @t This is just for debugging purposes; we don't use it anywhere in this
 program.
@@ -4656,7 +4690,7 @@ and their fancy names in a nice, declarative way. The first is a custom
 method combination that joins together the results of each applicable
 method into one delimited string. We'll use this for |heading-name|.
 
-@l
+@<Define |heading-name|...@>=
 (defun join-strings (strings &optional (delimiter #\Space) &aux
                      (strings (ensure-list strings))
                      (delimiter (string delimiter)))
@@ -4944,16 +4978,15 @@ entries not automatically generated via the code walk) during reading.
 @ @<Initialize global variables@>=
 (setq *index* (make-index))
 
-@ This method adds an index entry for |heading| with location |section|. A
-new locator is constructed only when necessary, and duplicate locators are
+@ This method adds an index entry for |heading| with location |section|.
+A new locator is constructed only when necessary, and duplicate locators are
 automatically suppressed. Definitional locators are also made to supersede
 ordinary ones.
 
 @l
 (define-modify-macro orf (&rest args) or)
 
-(defmethod add-index-entry ((index index) heading (section section) &key def &aux
-                            (heading (ensure-list heading)))
+(defmethod add-index-entry ((index index) heading (section section) &key def)
   (flet ((make-locator ()
            (make-locator :section section :def def)))
     (if (null (index-entries index))
@@ -4985,22 +5018,24 @@ whole thing and print them all out.
 @t@l
 (deftest (add-index-entry 1)
   (let ((index (make-index))
+        (heading (make-heading 'foo))
         (*sections* (make-array 3 :fill-pointer 0)))
-    (add-index-entry index 'foo (make-instance 'section))
-    (add-index-entry index 'foo (make-instance 'section))
-    (add-index-entry index 'foo (make-instance 'section))
+    (add-index-entry index heading (make-instance 'section))
+    (add-index-entry index heading (make-instance 'section))
+    (add-index-entry index heading (make-instance 'section))
     (sort (mapcar #'section-number
-                  (mapcar #'location (find-index-entries index 'foo)))
+                  (mapcar #'location (find-index-entries index heading)))
           #'<))
   (0 1 2))
 
 (deftest (add-index-entry 2)
   (let* ((index (make-index))
+         (heading (make-heading 'foo))
          (*sections* (make-array 1 :fill-pointer 0))
          (section (make-instance 'section)))
-    (add-index-entry index 'foo section)
-    (add-index-entry index 'foo section :def t) ; def should replace use
-    (locator-definition-p (first (find-index-entries index 'foo))))
+    (add-index-entry index heading section)
+    (add-index-entry index heading section :def t) ; def should replace use
+    (locator-definition-p (first (find-index-entries index heading))))
   t)
 
 @ In order to index them properly, the walker needs to know whether a given
@@ -5027,33 +5062,38 @@ index entry. (We can't use this routine for definitions because the name
 being indexed might not be in the environment yet.)
 
 @l
-(defun index-variable (index variable section env)
+(defgeneric index-variable (index variable env section))
+(defmethod index-variable ((index index) variable env section)
   (multiple-value-bind (type local) (variable-information variable env)
     (when (or (member type '(:special :symbol-macro :constant))
               (and *index-lexical-variables* (eql type :lexical)))
       (add-index-entry
        index
-       (list variable
-             (ecase type
-               (:lexical (make-type-heading 'variable))
-               (:special (make-type-heading 'variable :special t))
-               (:constant (make-type-heading 'variable :constant t))
-               (:symbol-macro (make-type-heading 'symbol-macro :local local))))
+       (make-heading variable
+                     (ecase type
+                       (:lexical (make-type-heading 'variable))
+                       (:special (make-type-heading 'variable :special t))
+                       (:constant (make-type-heading 'variable :constant t))
+                       (:symbol-macro (make-type-heading 'symbol-macro ;
+                                                         :local local))))
        section))))
 
-(defun index-funcall (index function-name section env)
+(defgeneric index-funcall (index function-name form env section))
+(defmethod index-funcall ((index index) function-name form env section)
+  (declare (ignore form))
   (multiple-value-bind (type local) (function-information function-name env)
     (when (member type '(:function :macro))
       (add-index-entry
        index
-       (list function-name
-             (ecase type
-               (:function ;
-                (make-type-heading 'function
-                                   :local local
-                                   :generic (generic-function-p function-name)))
-               (:macro ;
-                (make-type-heading 'macro :local local))))
+       (make-heading function-name
+                     (ecase type
+                       (:function ;
+                        (make-type-heading 'function
+                                           :local local
+                                           :generic (generic-function-p ;
+                                                     function-name)))
+                       (:macro ;
+                        (make-type-heading 'macro :local local))))
        section))))
 
 @ To index definitions, we'll need some information from the walker about
@@ -5061,21 +5101,22 @@ the context in which the function name occurred. In particular, we'll get
 the |car| of the defining form as the |operator| argument.
 
 @l
-(defun index-defun (index function-name section &key ;
-                    operator local generic qualifiers)
+(defgeneric index-defun (index function-name section &key))
+(defmethod index-defun ((index index) function-name section &key ;
+                        operator local generic qualifiers)
   (add-index-entry
    index
-   (list (etypecase function-name
-           (symbol function-name)
-           (setf-function-name (cadr function-name)))
-         (make-type-heading @<Choose an appropriate heading class@>
-                            :setf (setf-function-name-p function-name)
-                            :local local
-                            :generic (or generic ;
-                                         (generic-function-p function-name))
-                            :qualifiers qualifiers))
-   section
-   :def t))
+   (make-heading (etypecase function-name
+                   (symbol function-name)
+                   (setf-function-name (cadr function-name)))
+                 (make-type-heading @<Choose an appropriate heading class@>
+                                    :setf (setf-function-name-p function-name)
+                                    :local local
+                                    :generic (or generic ;
+                                                 (generic-function-p ;
+                                                  function-name))
+                                    :qualifiers qualifiers))
+   section :def t))
 
 @ We can derive the type of definition from the operator used to define it.
 
@@ -5103,10 +5144,9 @@ attempts to index variable use.
 
 @l
 (defgeneric index-symbol (index context symbol env &key section def))
-
 (defmethod index-symbol (index context symbol env &key section def)
   (declare (ignore context def))
-  (index-variable index symbol section env))
+  (index-variable index symbol env section))
 
 @ Since basically all of the methods on |index-symbol| will be after
 methods that specialize on the |context| parameter and generate the
@@ -5119,7 +5159,7 @@ to define them in a concise way.
        (index (context (eql ,context)) symbol env &key section def)
      (declare (ignore env))
      (add-index-entry index ;
-                      (list symbol (make-type-heading ,type ,@args)) ;
+                      (make-heading symbol (make-type-heading ,type ,@args)) ;
                       section :def def)))
 
 @ We'll define this one method for lexical bindings by hand, since we need
@@ -5131,7 +5171,7 @@ the conditional.
   (declare (ignore env))
   (when *index-lexical-variables*
     (add-index-entry index ;
-                     (list symbol (make-type-heading 'variable)) ;
+                     (make-heading symbol (make-type-heading 'variable)) ;
                      section :def def)))
 
 @ We'll perform the indexing by walking over the code of each section and
@@ -5244,7 +5284,7 @@ locations)|, where each location is either a section number or a list
   (let ((entries))
     (map-bst
      (lambda (entry)
-       (push (list (mapcar #'heading-name (entry-heading entry))
+       (push (list (heading-name (entry-heading entry))
                    (loop for locator in (entry-locators entry)
                          if (locator-definition-p locator)
                            collect `(:def ,(section-number (location locator)))
@@ -5296,7 +5336,7 @@ off to the next method for the actual expansion.
        (cond (section
               (case (variable-information symbol env)
                 (:symbol-macro
-                 (index-variable (walker-index walker) symbol section env)
+                 (index-variable (walker-index walker) symbol env section)
                  (call-next-method walker (cons symbol (cdr form)) env))
                 (t form)))
              (t (call-next-method)))))
@@ -5305,7 +5345,7 @@ off to the next method for the actual expansion.
        (cond (section
               (case (function-information symbol env)
                 (:macro
-                 (index-funcall (walker-index walker) symbol section env)
+                 (index-funcall (walker-index walker) symbol form env section)
                  (call-next-method walker (cons symbol (cdr form)) env))
                 (t form)))
              (t (call-next-method)))))
@@ -5331,7 +5371,7 @@ of the call to |index-symbol|.
 @t@l
 (define-indexing-test atom
   ((:section :code (*sections*)))
-  (("*sections*" "special variable") (0)))
+  ("*sections* special variable" (0)))
 
 @ We'll index all function-call-like forms whose |operator| is a referring
 symbol.
@@ -5339,15 +5379,14 @@ symbol.
 @l
 (defmethod walk-compound-form :before ;
     ((walker indexing-walker) operator form env)
-  (declare (ignore form))
   (multiple-value-bind (symbol section) (symbol-provenance operator)
     (when section
-      (index-funcall (walker-index walker) symbol section env))))
+      (index-funcall (walker-index walker) symbol form env section))))
 
 @t@l
 (define-indexing-test funcall
   ((:section :code ((mapappend 'identity '(1 2 3)))))
-  (("mapappend" "function") (0)))
+  ("mapappend function" (0)))
 
 @ The walker methods for all of the function-defining and binding forms
 call down to this function, passing keyword arguments that describe the
@@ -5364,7 +5403,7 @@ context.
            (if def
                (apply #'index-defun ;
                       index symbol section :allow-other-keys t args)
-               (index-funcall index symbol section env)))))
+               (index-funcall index symbol nil env section)))))
       (setf-function-name
        (multiple-value-bind (symbol section) ;
            (symbol-provenance (cadr function-name))
@@ -5372,14 +5411,14 @@ context.
            (if def
                (apply #'index-defun ;
                       index `(setf ,symbol) section :allow-other-keys t args)
-               (index-funcall index symbol section env))))))))
+               (index-funcall index symbol nil env section))))))))
 
 @t@l
 (define-indexing-test function-name
   ((:section :code ((flet ((foo (x) x)))))
    (:section :code ((flet (((setf foo) (y x) y))))))
-  (("foo" "local function") ((:def 0)))
-  (("foo" "local setf function") ((:def 1))))
+  ("foo local function" ((:def 0)))
+  ("foo local setf function" ((:def 1))))
 
 @ We'll treat |defun| and |defmacro| as special forms, since otherwise they
 will get macro-expanded before we get a chance to walk the function name.
@@ -5408,12 +5447,12 @@ defined, by way of |walk-lambda-expression|.
 @t@l
 (define-indexing-test defun
   ((:section :code ((defun foo (x) x))))
-  (("foo" "function") ((:def 0))))
+  ("foo function" ((:def 0))))
 
 (define-indexing-test defmacro
   ((:section :code ((defmacro foo (&body body) (mapappend 'identity body)))))
-  (("foo" "macro") ((:def 0)))
-  (("mapappend" "function") (0)))
+  ("foo macro" ((:def 0)))
+  ("mapappend function" (0)))
 
 @ The special-variable-defining forms must also be walked as if they were
 special forms. Once again, we'll just skip the macro expansions.
@@ -5437,9 +5476,9 @@ special forms. Once again, we'll just skip the macro expansions.
   ((:section :code ((defvar a t)))
    (:section :code ((defparameter b t)))
    (:section :code ((defconstant c t))))
-  (("a" "special variable") ((:def 0)))
-  (("b" "special variable") ((:def 1)))
-  (("c" "constant variable") ((:def 2))))
+  ("a special variable" ((:def 0)))
+  ("b special variable" ((:def 1)))
+  ("c constant variable" ((:def 2))))
 
 @ The default method for |walk-declaration-specifiers| just returns the
 given specifiers. That's not sufficient for our purposes here, though,
@@ -5511,9 +5550,9 @@ may be specified as method descriptions.
                       (:method-combination progn)
                       (:method progn ((x t) y) x)
                       (:method :around (x (y (eql 't))) y)))))
-  (("foo" "around method") ((:def 0)))
-  (("foo" "generic function") ((:def 0)))
-  (("foo" "progn method") ((:def 0))))
+  ("foo around method" ((:def 0)))
+  ("foo generic function" ((:def 0)))
+  ("foo progn method" ((:def 0))))
 
 @ Method descriptions are very much like |defmethod| forms with an implicit
 function name; this routine walks both. The function name (if non-null) and
@@ -5575,8 +5614,8 @@ a method description.
 (define-indexing-test defmethod
   ((:section :code ((defmethod add (x y) (+ x y))))
    (:section :code ((defmethod add :before (x y)))))
-  (("add" "before method") ((:def 1)))
-  (("add" "generic function") ((:def 0))))
+  ("add before method" ((:def 1)))
+  ("add generic function" ((:def 0))))
 
 @ We'll walk |defclass| and |define-condition| forms in order to index the
 class names, super-classes, and~accessor methods.
@@ -5608,12 +5647,12 @@ class names, super-classes, and~accessor methods.
                       ((a :reader foo-a1 :reader foo-a2)))))
    (:section :code ((define-condition bar ()
                       ((b :accessor foo-b))))))
-  (("bar" "condition class") ((:def 1)))
-  (("foo" "class") ((:def 0)))
-  (("foo-a1" "generic function") ((:def 0)))
-  (("foo-a2" "generic function") ((:def 0)))
-  (("foo-b" "generic function") ((:def 1)))
-  (("foo-b" "primary setf method") ((:def 1))))
+  ("bar condition class" ((:def 1)))
+  ("foo class" ((:def 0)))
+  ("foo-a1 generic function" ((:def 0)))
+  ("foo-a2 generic function" ((:def 0)))
+  ("foo-b generic function" ((:def 1)))
+  ("foo-b primary setf method" ((:def 1))))
 
 @ The only slot options we care about are |:reader|, |:writer|,
 and~|:accessor|. We index the methods implicitly created by those
@@ -5657,8 +5696,8 @@ method combination types. We'll skip the expansion.
 (define-indexing-test define-method-combination
   ((:section :code ((define-method-combination foo :operator bar)))
    (:section :code ((defgeneric foo () (:method-combination foo)))))
-  (("foo" "generic function") ((:def 1)))
-  (("foo" "method combination") (1 (:def 0))))
+  ("foo generic function" ((:def 1)))
+  ("foo method combination" (1 (:def 0))))
 
 @ We'll also index custom method combination type uses, which occur in the
 |:method-combination| option given to a |defgeneric| form.
@@ -5782,22 +5821,138 @@ Note that definitional locators will never be part of a range.
             (locator-definition-p loc)
             (section-number (location loc)))))
 
-(defun print-entry-heading (stream heading &rest args)
+(defgeneric print-entry-heading (stream heading &rest args))
+(defmethod print-entry-heading (stream (heading type-heading) &rest args)
   (declare (ignore args))
-  (pprint-logical-block (stream heading)
-    (pprint-exit-if-list-exhausted)
-    (loop
-      (let ((heading (pprint-pop)))
-        (etypecase heading
-          (symbol (format stream "\\(~W\\)" heading))
-          ((or string heading)
-           (format stream "~[\\.~;\\9~]{~/clweb::print-TeX/}"
-                   (typecase heading
-                     (tt-heading 0)
-                     (custom-heading 1)
-                     (otherwise -1))
-                   (read-TeX-from-string (heading-name heading))))))
-      (pprint-exit-if-list-exhausted)
-      (write-char #\Space stream))))
+  (write-string (heading-name heading) stream))
+(defmethod print-entry-heading (stream (heading heading) &rest args)
+  (declare (ignore args))
+  (with-slots (name) heading
+    (etypecase name
+      (symbol (format stream "\\(~W\\)" name))
+      (character (print-char stream name))
+      (string (format stream "~[\\.~;\\9~]{~/clweb::print-TeX/}"
+                      (typecase heading
+                        (tt-heading 0)
+                        (custom-heading 1)
+                        (otherwise -1))
+                      (read-TeX-from-string name)))))
+  (when (sub-heading heading)
+    (write-char #\Space stream)
+    (print-entry-heading stream (sub-heading heading))))
 
+@ As a little coda, here's a self-contained example of how one might extend
+the indexer to recognize and record specific kinds of forms. In this program,
+we define reader macro functions for most of the standard macro characters,
+so it might be nice to have dedicated index entries for those definitions.
+
+To begin, we'll define a heading class for macro characters and a constructor
+function for same.
+
+@l
+(defclass macro-char-heading (heading)
+  ((name :reader macro-char :initarg :char))
+  (:default-initargs :sub-heading (make-heading "macro character")))
+
+(defun make-macro-char-heading (char &optional sub-char)
+  (apply #'make-instance 'macro-char-heading :char char
+         (and sub-char `(:sub-heading ,(make-macro-char-heading sub-char)))))
+
+@ We'd like the macro character index entries to precede all of the other
+entries, and we'd like non-dispatching macro chars before dispatching chars.
+Most types of index entries wouldn't bother with this; they'd just be mixed
+in with the others in the normal lexicographic ordering.
+
+@l
+(defun dispatching-macro-char-heading (heading)
+  (typep (sub-heading heading) 'macro-char-heading))
+
+(defmethod entry-heading-lessp ((h1 macro-char-heading) (h2 heading)) t)
+(defmethod entry-heading-lessp ((h1 heading) (h2 macro-char-heading)) nil)
+(defmethod entry-heading-lessp ((h1 macro-char-heading) (h2 macro-char-heading))
+  (cond ((and (not (dispatching-macro-char-heading h1))
+              (dispatching-macro-char-heading h2))
+         t)
+        ((and (dispatching-macro-char-heading h1)
+              (not (dispatching-macro-char-heading h2)))
+         nil)
+        (t (or (char-lessp (macro-char h1) (macro-char h2))
+               (and (dispatching-macro-char-heading h1)
+                    (dispatching-macro-char-heading h2)
+                    (entry-heading-lessp (sub-heading h1) (sub-heading h2)))))))
+
+(defmethod entry-heading-equalp ((h1 macro-char-heading) (h2 heading)) nil)
+(defmethod entry-heading-equalp ((h1 heading) (h2 macro-char-heading)) nil)
+(defmethod entry-heading-equalp ((h1 macro-char-heading) ;
+                                 (h2 macro-char-heading))
+  (and (char= (macro-char h1) (macro-char h2))
+       (cond ((and (dispatching-macro-char-heading h1)
+                   (dispatching-macro-char-heading h2))
+              (entry-heading-equalp (sub-heading h1) (sub-heading h2)))
+             ((or (dispatching-macro-char-heading h1)
+                  (dispatching-macro-char-heading h2))
+              nil)
+             (t t))))
+
+@t@l
+(deftest macro-char-heading-lessp
+  (let* ((a (make-instance 'macro-char-heading :char #\a))
+         (b (make-instance 'macro-char-heading :char #\b))
+         (c (make-instance 'macro-char-heading :char #\c))
+         (ab (make-instance 'macro-char-heading :char #\a :sub-heading b))
+         (ac (make-instance 'macro-char-heading :char #\a :sub-heading c)))
+    (every #'identity
+           (list (entry-heading-strictly-lessp a b)
+                 (not (entry-heading-strictly-lessp b a))
+                 (entry-heading-lessp a ab)
+                 (not (entry-heading-strictly-lessp ab ab))
+                 (entry-heading-strictly-lessp ab ac))))
+  t)
+
+(deftest macro-char-heading-equalp
+  (let* ((a (make-instance 'macro-char-heading :char #\a))
+         (b (make-instance 'macro-char-heading :char #\b))
+         (ab (make-instance 'macro-char-heading :char #\a :sub-heading b)))
+    (every #'identity
+           (list (entry-heading-symmetric-equalp a a)
+                 (entry-heading-symmetric-unequalp a b)
+                 (entry-heading-symmetric-unequalp b a)
+                 (entry-heading-symmetric-unequalp a ab)
+                 (entry-heading-symmetric-equalp ab ab))))
+  t)
+
+@ Next, we'll tell the indexer that the symbols |set-macro-character| and
+|set-dispatch-macro-character| are `interesting'. (In general, this is
+dangerous for symbols in the Common Lisp package, so be careful.)
+
+@l
+(defmethod interesting-symbol-p ((object (eql 'set-macro-character))) ;
+  t)
+(defmethod interesting-symbol-p ((object (eql 'set-dispatch-macro-character))) ;
+  t)
+
+@ And finally, we'll add some methods to |index-funcall| specialized on
+those function names. Note that by overriding the default method, we
+prevent the functions themselves from being indexed, which is what we
+want in this case.
+
+@l
+(defmethod index-funcall ;
+    ((index index) (function-name (eql 'set-macro-character)) form env section)
+  (declare (ignore env))
+  (when (characterp (second form))
+    (add-index-entry index
+                     (make-macro-char-heading (second form))
+                     section :def t)))
+
+(defmethod index-funcall ;
+    ((index index) (function-name (eql 'set-dispatch-macro-character)) ;
+     form env section)
+  (declare (ignore env))
+  (when (characterp (second form))
+    (add-index-entry index
+                     (make-macro-char-heading (second form) ;
+                                              (and (characterp (third form)) ;
+                                                   (third form)))
+                     section :def t)))
 @*Index.
