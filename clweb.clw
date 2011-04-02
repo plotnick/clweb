@@ -27,6 +27,7 @@ Programming\/\rdq} ({\sc csli}:~1992).
 @^Knuth, Donald Ervin@>
 @^Levy, Silvio@>
 @^Plotnick, Alexander F.@>
+@^\WEB@>
 @^\CWEB@>
 
 This is a preliminary, $\beta$-quality release of the system.
@@ -45,6 +46,8 @@ language containing blocks that happen to have the syntax (more or less) of
 \TeX\ and Lisp. For the purposes of understanding the implementation, this
 last view is perhaps the most useful, since the control codes determine
 which syntax to use in reading the material that follows.
+@^\WEB@>
+@^\CWEB@>
 
 The syntax of the \CLWEB\ control codes themselves is similar to that of
 dispatching reader macro characters in Lisp: they all begin with
@@ -182,6 +185,8 @@ copies it (nearly) verbatim into the \TeX\ output file, and the tangler
 ignores it. The code part contains Lisp forms and named section references;
 the tangler will eventually evaluate or compile those forms, while the
 weaver pretty-prints them to the \TeX\ output file.
+@^\WEB@>
+@^\CWEB@>
 
 Three control codes begin a section: \.{@@\ }, \.{@@*}, and \.{@@t}.
 Most sections will begin with \.{@@\ }: these are `regular' sections,
@@ -1569,7 +1574,7 @@ not for uninterned symbols.
     (t @<Process the list |x| for backquotes and commas@>)))
 
 @ We do one simplification here which, although not strictly in accordance
-with the formal rules on pages~528--529 of~\cltl\ (section~2.4.6 of \ansi
+with the formal rules on pages~528--529 of~\cltl\ (section~2.4.6 of \ansi\
 Common Lisp), is necessary in the presence of nested backquotes; viz.,~we
 will never append |(quote nil)| to the end of a list. This seems to be an
 error in the formal rules: in particular, reducing the case of a
@@ -2404,6 +2409,9 @@ symbols should be indexed.
 
 Note that this is {\it completely different\/} than the \.{@@x} control
 code of \WEB\ and \CWEB, which is part of their change-file system.
+@^\WEB@>
+@^\CWEB@>
+
 
 @l
 (defun index-package-reader (stream sub-char arg)
@@ -2461,10 +2469,10 @@ the new object is an empty string or |nil|.
     list)
   (b a))
 
-@ We come now to the heart of the \WEB\ parser. This function is a
-tiny state machine that models the global syntax of a \WEB\ file.
-(We can't just use reader macros since sections and their parts lack
-explicit closing delimiters.) It returns a list of |section| objects.
+@ We come now to the heart of the \WEB\ parser. This function is a tiny
+state machine that models the global syntax of a \WEB\ file. (We can't just
+use reader macros since sections and their parts lack explicit closing
+delimiters.) It returns a list of |section| objects.
 
 @l
 (defun read-sections (input-stream &key (append t))
@@ -2729,6 +2737,7 @@ will not affect the calling environment.
 load a piece of a \WEB, such as the author's `\.{clweb.el}'. Note that it
 does {\it not\/} initialize the global variables like |*named-sections*|;
 this allows for incremental redefinition.
+@.clweb.el@>
 
 @l
 (defun load-sections-from-temp-file (file append &aux
@@ -3157,6 +3166,7 @@ and~\.{\\ETs} (for between the last of three or more).
 (defun print-xrefs (stream kind xrefs)
   (when xrefs
     ;; This was 16 lines of code over two sections in \CWEB\null. I love |format|.
+@^\CWEB@>
     (format stream "\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}.~%"
             kind (sort (mapcar #'section-number xrefs) #'<))))
 
@@ -5217,6 +5227,7 @@ place. These copies will have each interesting symbol replaced with an
 uninterned symbol whose value cell contains the symbol it replaced and
 whose |section| property contains the section in which the original symbol
 occurred. We'll these uninterned symbols {\it referring symbols}.
+@^referring symbols@>
 
 First, we'll need a routine that does the substitution just described.
 The substitution is done blindly and without regard to the syntax or
@@ -5245,6 +5256,7 @@ whether it is a referring symbol, and if so, it returns the symbol referred
 to and the section it came from. Otherwise, it just returns the given
 symbol. This interface makes it convenient to use in a |multiple-value-bind|
 form without having to apply a predicate first.
+@^referring symbols@>
 
 @l
 (defun symbol-provenance (symbol)
@@ -5269,6 +5281,7 @@ form without having to apply a predicate first.
 method on |section-code| that conditions on a special variable,
 |*indexing*|, that we'll bind to true while we're tangling for the
 purposes of indexing.
+@^referring symbols@>
 
 We can't feed the raw section code to |substitute-symbols|, since it's
 not really Lisp code: it's full of markers and such. So we'll abuse the
@@ -5282,17 +5295,18 @@ named-section expansion.
         (substitute-symbols (tangle code :expand-named-sections nil) section)
         code)))
 
-@ @<Global variables@>=
-(defvar *indexing* nil)
-
 @ The top-level indexing routine will use this function to obtain the
 completely tangled code with referring symbols, and {\it that\/}'s what
 we'll walk.
+@^referring symbols@>
 
 @l
 (defun tangle-code-for-indexing (sections)
   (let ((*indexing* t))
     (tangle (unnamed-section-code-parts sections))))
+
+@ @<Global variables@>=
+(defvar *indexing* nil)
 
 @ Now we're ready to define a specialized walker that does the actual
 indexing.
@@ -5354,6 +5368,7 @@ won't have macro definitions. There are two important cases here:
   referent is a macro in the current environment.
 In both cases, we'll index the use of the (symbol) macro, then hand control
 off to the next method for the actual expansion.
+@^referring symbols@>
 
 @l
 (defmethod macroexpand-for-walk ((walker indexing-walker) form env)
@@ -5382,6 +5397,7 @@ off to the next method for the actual expansion.
 the referents; this is where the reverse-substitution of referring symbols
 takes place. It's also where much of the actual indexing gets done, by way
 of the call to |index-symbol|.
+@^referring symbols@>
 
 @l
 (defmethod walk-atomic-form :around ;
@@ -5511,6 +5527,7 @@ special forms. Once again, we'll just skip the macro expansions.
 given specifiers. That's not sufficient for our purposes here, though,
 because we need to replace referring symbols with their referents;
 otherwise, the declarations would apply to the wrong symbols.
+@^referring symbols@>
 
 Because of the shorthand notation for type declarations, walking general
 declaration expressions is difficult. However, we don't care about type
