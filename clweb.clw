@@ -625,7 +625,7 @@ characters with a single space.
 be the same character as `Newline' or `Return', and so might not appear as
 a distinct character. This is a known bug, caused by the fact that we're
 not currently overriding the character name reader.
-@^Bug, known@>
+@^bug, known@>
 
 @<Glob...@>=
 (defparameter *whitespace*
