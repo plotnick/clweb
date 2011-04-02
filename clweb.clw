@@ -13,6 +13,7 @@
 \def\progname{{\eighttt CLWEB}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\<#1>{\leavevmode\hbox{$\mkern-2mu\langle${\it #1\/}$\rangle$}}
+\def\ansi{{\sc ansi}}
 \def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
 
 @*Introduction. This is \CLWEB, a literate programming system for Common
@@ -23,6 +24,10 @@ systems not only their underlying philosophy, but also most of their syntax.
 Readers unfamiliar with either of them---or with literate programming in
 general---should consult the \CWEB\ manual or Knuth's {\it \ldq Literate
 Programming\/\rdq} ({\sc csli}:~1992).
+@^Knuth, Donald Ervin@>
+@^Levy, Silvio@>
+@^Plotnick, Alexander F.@>
+@^\CWEB@>
 
 This is a preliminary, $\beta$-quality release of the system.
 To obtain the latest version, please visit\break
@@ -865,6 +870,7 @@ impossible to automatically indent Common Lisp code without a complete
 static analysis. And so we don't try. What we do instead is assume that the
 input is indented correctly, and try to approximate that on output; we call
 this process {\it indentation tracking}.
+@^Indentation tracking@>
 
 The way we do this is to record the the column number, or {\it character
 position}, of every Lisp form in the input, and use those positions to
@@ -877,6 +883,7 @@ Common Lisp like Gray streams). But they contain a standard composite
 stream we'll call a {\it proxy stream\/} which is hooked up to the underlying
 stream whose position they're tracking, and it's these proxy streams that
 we'll pass around, so that the standard stream functions will all work.
+@^proxy stream@>
 
 @l
 (defclass charpos-stream ()
@@ -1229,11 +1236,11 @@ since indentation is completely ignored there.
   t)
 
 @ The rest of the reader macro functions for standard macro characters are
-defined in the order given in section~2.4 of the {\sc ansi} Common Lisp
-standard. We override all of the standard macro characters except |#\)|
-and~|#\"| (the former because the standard reader macro function just
-signals an error, which is fine, and the latter because we don't need
-markers for strings).
+defined in the order given in section~2.4 of the \ansi\ Common Lisp standard.
+We override all of the standard macro characters except |#\)| and~|#\"| (the
+former because the standard reader macro function just signals an error,
+which is fine, and the latter because we don't need markers for strings).
+@^\ansi\ Common Lisp@>
 
 @t When we're testing the reader macro functions, we'll often want to read
 from a string-stream that tracks character positions. In fact, most of the
@@ -1502,6 +1509,7 @@ modified to conform to the overall style of this program, to support commas
 inside vectors, and to remove the code simplifier. This last is in the
 interest of simplicity: because we preserve backquotes during tangling, we
 can leave optimization to the Lisp implementation.
+@^\cltl@>
 
 @ We use conses to represent backquoted forms, but we use instances of
 a dedicated class to represent commas, which simplifies both the processing
@@ -1561,12 +1569,14 @@ not for uninterned symbols.
     (t @<Process the list |x| for backquotes and commas@>)))
 
 @ We do one simplification here which, although not strictly in accordance
-with the formal rules on pages~528--529 of~\cltl\ (section~2.4.6 of {\sc ansi}
+with the formal rules on pages~528--529 of~\cltl\ (section~2.4.6 of \ansi
 Common Lisp), is necessary in the presence of nested backquotes; viz.,~we
 will never append |(quote nil)| to the end of a list. This seems to be an
 error in the formal rules: in particular, reducing the case of a
 |nil|-terminated list to the general case of a dotted list appears to be
 overly simplistic.
+@^\cltl@>
+@^\ansi\ Common Lisp@>
 
 @<Process the list |x|...@>=
 (do ((p x (cdr p))
@@ -1588,6 +1598,7 @@ overly simplistic.
 
 @t The first two tests come from page~528 of~\cltl; the third comes from
 Appendix~C.
+@^\cltl@>
 
 @l
 (deftest (bq 1)
@@ -1633,7 +1644,8 @@ Appendix~C.
 
 @ During tangling, we print backquotes and commas using the backquote
 syntax, as recommended (but not required) by section~2.4.6.1 of the
-{\sc ansi} standard.
+\ansi\ standard.
+@^\ansi\ Common Lisp@>
 
 @l
 (set-tangle-dispatch 'backquote
@@ -3475,6 +3487,7 @@ if we want a specialized pretty-printing routine.
 
 Many of these routines output \TeX\ macros defined in \.{clwebmac.tex},
 which see.
+@.clwebmac.tex@>
 
 @ @l
 (set-weave-dispatch 'newline-marker
@@ -3616,6 +3629,8 @@ we'll describe as we come to them.
 @ We'll use the environments {\sc api} defined in~\cltl, since even
 though it's not part of the Common Lisp standard, it's widely supported,
 and does everything we need it to do.
+@^environments {\sc api}@>
+@^\cltl@>
 
 Allegro Common Lisp has an additional function,
 |ensure-portable-walking-environment|, that needs to be called on
@@ -3826,7 +3841,8 @@ default method for |walk-compound-form| just defined, since their syntax is
 the same as an ordinary function call. But it's important to override
 |walk-as-special-form-p| for these operators, because ``[a]n
 implementation is free to implement a Common Lisp special operator as a
-macro.'' ({\sc ansi} Common Lisp, section~3.1.2.1.2.2)
+macro.'' (\ansi\ Common Lisp, section~3.1.2.1.2.2)
+@^\ansi\ Common Lisp@>
 
 @l
 (macrolet ((walk-as-special-form (operator)
@@ -3925,8 +3941,9 @@ followed by other forms (as occurs in the bodies of |defun|, |defmacro|,
 \etc.), |parse-body| returns |(values forms decls doc)|, where |decls|
 is the declaration specifiers found in each |declare| expression, |doc|
 holds a doc string (or |nil| if there is none), and |forms| holds the
-other forms. See {\sc ansi} Common Lisp section~3.4.11 for the rules on
+other forms. See \ansi\ Common Lisp section~3.4.11 for the rules on
 the syntactic interaction of doc strings and declarations.
+@^\ansi\ Common Lisp@>
 
 If |doc-string-allowed| is |nil| (the default), then no forms will be
 treated as documentation strings.
@@ -3997,9 +4014,10 @@ able to walk the specifiers.
   (declare (ignore env))
   decls)
 
-@ The syntax of \L-lists is given in section~3.4 of the {\sc ansi} standard.
+@ The syntax of \L-lists is given in section~3.4 of the \ansi\ standard.
 We accept the syntax of macro \L-lists, since they are the most general,
 and appear to be a superset of every other type of \L-list.
+@^\ansi\ Common Lisp@>
 
 This function returns two values: the walked \L-list and a new environment
 object containing bindings for all of the parameters found therein.
