@@ -3055,11 +3055,8 @@ file.
   (flet ((weave (object stream)
            (write object
                   :stream stream
-                  :case :downcase
-                  :escape nil
-                  :level nil
-                  :pretty t
-                  :pprint-dispatch *weave-pprint-dispatch*
+                  :case :downcase :escape nil :level nil
+                  :pretty t :pprint-dispatch *weave-pprint-dispatch*
                   :right-margin 1000)))
     (macrolet ((with-output-file ((stream filespec) &body body)
                  `(with-open-file (,stream ,filespec
@@ -3071,23 +3068,11 @@ file.
         (format out "\\input clwebmac~%")
         (when tests
           (format out "\\def\\progname{~/clweb::print-escaped/}~%"
-                  (if input-file
-                      (string-capitalize (pathname-name input-file))
+                  (if input-file ;
+                      (string-capitalize (pathname-name input-file)) ;
                       "program")))
         (if print
-            (flet ((weave (section)
-                     (format t "~:[~;*~]~D"
-                             (starred-section-p section)
-                             (section-number section))
-                     (weave section out)))
-              (pprint-logical-block (nil (coerce sections 'list) ;
-                                         :per-line-prefix ";  ")
-                (weave (pprint-pop))
-                (loop
-                  (pprint-exit-if-list-exhausted)
-                  (write-char #\Space)
-                  (pprint-newline :fill)
-                  (weave (pprint-pop)))))
+            @<Weave the sections to the output file, reporting as we go@>
             (map nil (lambda (section) (weave section out)) sections))
         (when index-file
           (when verbose (format t "~&; writing the index to ~A~%" index-file))
@@ -3097,13 +3082,25 @@ file.
             (map-bst (lambda (section)
                        (unless (every #'test-section-p ;
                                       (named-section-sections section))
-                         (weave (make-instance 'section-name-index-entry ;
-                                               :named-section section)
-                                scn)))
+                         (weave (make-section-name-index-entry section) scn)))
                      *named-sections*))
           (format out "~&\\inx~%\\fin~%\\con~%"))
         (format out "~&\\end~%")
         (truename out)))))
+
+@ @<Weave the sections...@>=
+(flet ((weave-section (section)
+         (format t "~:[~;*~]~D" ;
+                 (starred-section-p section) ;
+                 (section-number section))
+         (weave section out)))
+  (pprint-logical-block (nil (coerce sections 'list) :per-line-prefix ";  ")
+    (weave-section (pprint-pop))
+    (loop
+      (pprint-exit-if-list-exhausted)
+      (write-char #\Space)
+      (pprint-newline :fill)
+      (weave-section (pprint-pop)))))
 
 @1*Printing the woven output. The rest of the weaver consists entirely of
 pretty-printing routines that are installed in |*weave-pprint-dispatch*|.
@@ -3229,6 +3226,9 @@ in a |section-name-index| instance so that we can dispatch on that type.
 @l
 (defclass section-name-index-entry ()
   ((named-section :accessor named-section :initarg :named-section)))
+
+(defun make-section-name-index-entry (section)
+  (make-instance 'section-name-index-entry :named-section section))
 
 (set-weave-dispatch 'section-name-index-entry
   (lambda (stream section-name &aux (section (named-section section-name)))

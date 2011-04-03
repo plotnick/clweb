@@ -1277,17 +1277,17 @@
                      (STRING-CAPITALIZE (PATHNAME-NAME INPUT-FILE))
                      "program")))
        (IF PRINT
-           (FLET ((WEAVE (SECTION)
+           (FLET ((WEAVE-SECTION (SECTION)
                     (FORMAT T "~:[~;*~]~D" (STARRED-SECTION-P SECTION)
                             (SECTION-NUMBER SECTION))
                     (WEAVE SECTION OUT)))
              (PPRINT-LOGICAL-BLOCK
                  (NIL (COERCE SECTIONS 'LIST) :PER-LINE-PREFIX ";  ")
-               (WEAVE (PPRINT-POP))
+               (WEAVE-SECTION (PPRINT-POP))
                (LOOP (PPRINT-EXIT-IF-LIST-EXHAUSTED)
                      (WRITE-CHAR #\ )
                      (PPRINT-NEWLINE :FILL)
-                     (WEAVE (PPRINT-POP)))))
+                     (WEAVE-SECTION (PPRINT-POP)))))
            (MAP NIL (LAMBDA (SECTION) (WEAVE SECTION OUT)) SECTIONS))
        (WHEN INDEX-FILE
          (WHEN VERBOSE (FORMAT T "~&; writing the index to ~A~%" INDEX-FILE))
@@ -1297,10 +1297,7 @@
           (MAP-BST
            (LAMBDA (SECTION)
              (UNLESS (EVERY #'TEST-SECTION-P (NAMED-SECTION-SECTIONS SECTION))
-               (WEAVE
-                (MAKE-INSTANCE 'SECTION-NAME-INDEX-ENTRY :NAMED-SECTION
-                               SECTION)
-                SCN)))
+               (WEAVE (MAKE-SECTION-NAME-INDEX-ENTRY SECTION) SCN)))
            *NAMED-SECTIONS*))
          (FORMAT OUT "~&\\inx~%\\fin~%\\con~%"))
        (FORMAT OUT "~&\\end~%") (TRUENAME OUT)))))
@@ -1376,6 +1373,8 @@
 (SET-WEAVE-DISPATCH 'NAMED-SECTION #'PRINT-SECTION-NAME)
 (DEFCLASS SECTION-NAME-INDEX-ENTRY NIL
           ((NAMED-SECTION :ACCESSOR NAMED-SECTION :INITARG :NAMED-SECTION)))
+(DEFUN MAKE-SECTION-NAME-INDEX-ENTRY (SECTION)
+  (MAKE-INSTANCE 'SECTION-NAME-INDEX-ENTRY :NAMED-SECTION SECTION))
 (SET-WEAVE-DISPATCH 'SECTION-NAME-INDEX-ENTRY
                     (LAMBDA
                         (STREAM SECTION-NAME
