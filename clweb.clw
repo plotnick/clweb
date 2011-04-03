@@ -3779,7 +3779,7 @@ lexical environment, |walk-atomic-form| takes a keyword symbol denoting the
 context in which the atom occurs, and |walk-compound-form| takes an
 additional |operator| argument, |eql| to~|(car form)|, so that we can
 use |eql|~specializers. The |operator| of a form passed to
-|walk-compound-form| will always be a symbol.
+|walk-compound-form| should always be a symbol or a \L~expression.
 
 @<Walker generic functions@>=
 (defgeneric walk-atomic-form (walker context form env &key))
@@ -3794,13 +3794,35 @@ expanded in |walk-form|.
   (declare (ignore context env))
   form)
 
-@ The default method for |walk-compound-form| is used for all funcall-like
+(defmethod walk-atomic-form ((walker walker) context (form cons) env &key)
+  (declare (ignore env))
+  (error "Unexpected non-atomic form ~S (~S)" form context))
+
+@t@l
+(deftest walk-atomic-form
+  (walk-atomic-form (make-instance 'walker) nil ':foo nil)
+  :foo)
+
+(deftest walk-non-atomic-form
+  (handler-case (walk-atomic-form (make-instance 'walker) nil '(a b c) nil)
+    (error () nil))
+  nil)
+
+@ The default method for |walk-compound-form| is used for most funcall-like
 forms; it leaves its |car| unevaluated and walks its |cdr|.
 
 @l
 (defmethod walk-compound-form ((walker walker) operator form env)
   (declare (ignore operator))
   `(,(walk-atomic-form walker :operator (car form) env)
+    ,@(walk-list walker (cdr form) env)))
+
+@ A compound form might also have a \L~expression as its |car|.
+
+@l
+(defmethod walk-compound-form ((walker walker) (operator cons) form env)
+  (check-type operator (cons (eql lambda) *))
+  `(,(walk-lambda-expression walker operator env)
     ,@(walk-list walker (cdr form) env)))
 
 @ Common Lisp defines a {\it function name\/} as ``[a] symbol or a list
@@ -3860,7 +3882,7 @@ default method for |walk-compound-form| just defined, since their syntax is
 the same as an ordinary function call. But it's important to override
 |walk-as-special-form-p| for these operators, because ``[a]n
 implementation is free to implement a Common Lisp special operator as a
-macro.'' (\ansi\ Common Lisp, section~3.1.2.1.2.2)
+macro'' (\ansi\ Common Lisp, section~3.1.2.1.2.2).
 @^\ansi\ Common Lisp@>
 
 @l
@@ -3898,6 +3920,19 @@ The following macro makes sure that these are consistently defined.
          (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
          ,@body))))
 
+@t Many of the walker tests will be defined using the following macro,
+which takes a name for the test, a form to be walked, and an optional
+result. Neither the form nor the result will be evaluated. If the result
+is omitted, it is assumed that the result of the walk should be the same
+as the walked form.
+
+@l
+(defmacro define-simple-walker-test (name form &optional (result nil resultp))
+  `(deftest (walk ,name)
+     (let ((walker (make-instance 'walker)))
+       (tree-equal (walk-form walker ',form) ,(if resultp `',result `',form)))
+     t))
+
 @ Block-like special forms have a |cdr| that begins with a single
 unevaluated form, followed by zero or more evaluated forms.
 
@@ -3908,9 +3943,12 @@ unevaluated form, followed by zero or more evaluated forms.
                   ,(walk-atomic-form walker :unevaluated (cadr form) env)
                   ,@(walk-list walker (cddr form) env)))))
   (define-block-like-walker block)
-  (define-block-like-walker eval-when)
   (define-block-like-walker return-from)
   (define-block-like-walker the))
+
+@t@l
+(define-simple-walker-test block/return-from/the
+  (block foo (return-from foo (the number 4))))
 
 @ Quote-like special forms are entirely unevaluated.
 
@@ -3922,35 +3960,43 @@ unevaluated form, followed by zero or more evaluated forms.
   (define-quote-like-walker quote)
   (define-quote-like-walker go))
 
+@t@l
+(define-simple-walker-test quote 'foo)
+(define-simple-walker-test go (go home))
+
+@ |eval-when| takes a list of situations and some forms. We don't need to
+do anything special with either.
+
+@l
+(define-special-form-walker eval-when ((walker walker) form env)
+  `(,(car form)
+    ,(walk-list walker (cadr form) env)
+    ,@(walk-list walker (cddr form) env)))
+
+@t@l
+(define-simple-walker-test eval-when
+  (eval-when (:compile-toplevel :load-toplevel :execute)
+    (do-some-stuff)))
+
 @ The |function| special form takes either a valid function name or a
 \L~expression.
 
 @l
 (define-special-form-walker function ((walker walker) form env)
   `(,(car form)
-    ,(if (and (consp (cadr form))
-              (eql (caadr form) 'lambda))
-         (walk-lambda-expression walker (cadr form) env)
-         (walk-function-name walker (cadr form) env))))
+    ,(typecase (cadr form)
+       ((cons (eql lambda)) (walk-lambda-expression walker (cadr form) env))
+       (otherwise (walk-function-name walker (cadr form) env)))))
 
 @t@l
-(deftest (walk-function 1)
-  (tree-equal
-   (walk-form (make-instance 'walker) '(function foo) nil)
-   '(function foo))
-  t)
+(define-simple-walker-test function
+  (function foo))
 
-(deftest (walk-function 2)
-  (tree-equal
-   (walk-form (make-instance 'walker) '(function (setf foo)) nil)
-   '(function (setf foo)))
-  t)
+(define-simple-walker-test function-setf-function
+  (function (setf foo)))
 
-(deftest (walk-function 3)
-  (tree-equal
-   (walk-form (make-instance 'walker) '(function (lambda (x) x)) nil)
-   '(function (lambda (x) x)))
-  t)
+(define-simple-walker-test function-lambda
+  (function (lambda (x) x)))
 
 @ Next, we'll work our way up to parsing \L~expressions and other
 function-defining forms.
