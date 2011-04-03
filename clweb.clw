@@ -2788,7 +2788,7 @@ this allows for incremental redefinition.
 @ Both |tangle-file| and |weave|, below, take a |tests-file| argument that
 has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
 then we use a pathname derived from the one given by merging in a default
-type (\.{"LISP"} in the case of tangling, \.{"TEX"} for weaving). If it's
+type (`\.{LISP}' in the case of tangling, `\.{TEX}' for weaving). If it's
 not supplied, then we construct a pathname from the output file by
 appending the string \.{"-TESTS"} to its name component. Finally, if the
 argument is supplied and is |nil|, then no tests file will be written at
@@ -2952,22 +2952,22 @@ warnings about unused named sections.
 @ @<Condition classes@>=
 (define-condition unused-named-section-warning (simple-warning) ())
 
-@*Weaving. The top-level weaver interface is modeled after |compile-file|.
-The function |weave| reads the \WEB\ |input-file| and produces an output
-\TeX\ file named by |output-file|. If |output-file| is not supplied or is
-|nil|, a pathname will be generated from |input-file| by replacing its
-|type| component with \.{"tex"}.
+@*Weaving. The function |weave| reads a web from |input-file| and produces
+an output \TeX\ file named by |output-file|. By default, it also weaves
+test sections to the file named by |tests-file| and produces an index and
+list of section names which can be included from the output file. The
+defaulting behavior for the filename arguments is complex; see below.
 
 If |verbose| is true, |weave| prints a message in the form of a comment to
 standard output indicating what file is being woven. If |verbose| is not
 supplied, the value of |*weave-verbose*| is used.
 
 If |print| is true, the section number of each section encountered is printed
-to standard output, with starred sections prefixed with \.{*}. If |print|
+to standard output, with starred sections prefixed with a `\.{*}'. If |print|
 is not supplied, the value of |*weave-print*| is used.
 
-Finally, the |external-format| argument specifies the external file format
-to be used when opening both the input file and the output file.
+Finally, the |external-format| argument specifies the external file
+format to be used when opening both the input file and the output file.
 {\it N.B.\/}: standard \TeX\ only handles 8-bit characters, and the
 encodings for non-printable-{\sc ascii} characters vary widely.
 
@@ -2975,7 +2975,9 @@ If successful, |weave| returns the truename of the output file.
 
 @l
 (defun weave (input-file &rest args &key
-              output-file tests-file (index-file nil index-file-supplied-p)
+              output-file
+              tests-file
+              (index-file nil index-file-supplied-p)
               (verbose *weave-verbose*)
               (print *weave-print*)
               (if-does-not-exist t)
@@ -2992,27 +2994,43 @@ If successful, |weave| returns the truename of the output file.
                    :external-format external-format
                    :if-does-not-exist (if if-does-not-exist :error nil))
     (read-sections input))
-  (when (and tests-file
+  (when (and tests-file ;
              (> (length *test-sections*) 1)) ; there's always a limbo section
     (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
     (weave-sections *test-sections*
                     :input-file input-file
                     :output-file tests-file
-                    :print print
                     :verbose verbose
+                    :print print
                     :external-format external-format
-                    :tests t))
-    (when verbose (format t "~&; weaving sections to ~A~%" output-file))
-    (weave-sections *sections*
-                    :input-file input-file
-                    :output-file output-file
-                    :index-file index-file
-                    :sections-file sections-file
-                    :verbose verbose
-                    :print print
-                    :external-format external-format))
+                    :weaving-tests t))
+  (when verbose (format t "~&; weaving sections to ~A~%" output-file))
+  (weave-sections *sections*
+                  :input-file input-file
+                  :output-file output-file
+                  :index-file index-file
+                  :sections-file sections-file
+                  :verbose verbose
+                  :print print
+                  :external-format external-format))
 
-@ @<Merge defaults for weaver...@>=
+@ In keeping with the usual behavior of both Lisp and \TeX, the type of
+the input file may be omitted; it defaults to `\.{CLW}'.
+
+If |output-file| is not supplied or is |nil|, a pathname will be generated
+from |input-file| by replacing its |type| component with `\.{TEX}'.
+
+The |tests-file| argument is derived from the given file name and the output
+file name by |tests-file-pathname|, which see.
+
+If |index-file| is not supplied or is supplied and non-null, an index of
+variables, functions, classes, \etc. will be written to the indicated file.
+The default file name is generated from |output-file| by replacing its
+|type| component with `\.{IDX}'. In addition, a list of section names will
+be written to a file whose name is generated from the index file name by
+replacing its type component with `\.{SCN}'.
+
+@<Merge defaults for weaver...@>=
 (input-file (merge-pathnames input-file ;
                              (make-pathname :type "CLW" :case :common)))
 (output-file (if output-file
@@ -3037,26 +3055,22 @@ If successful, |weave| returns the truename of the output file.
 (defvar *weave-print* t
   "The default for the :PRINT argument to WEAVE.")
 
-@ The individual sections and their contents are printed using the pretty
-printer with a customized dispatch table.
-
-@<Global variables@>=
-(defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
-
-@ The following routine does the actual writing of the sections to the output
-file.
+@ The following routine does most of the actual output for the weaver.
+It takes a list of sections and the defaulted arguments from |weave|,
+and writes the output file and possibly the index and section list files
+as well. It's used to produce both the primary and test output, which
+differ only slightly; the |weaving-tests| argument will be true if it's
+currently weaving the tests.
 
 @l
 (defun weave-sections (sections &key
-                       input-file output-file index-file sections-file tests
-                       (verbose *weave-verbose*)
-                       (print *weave-print*)
-                       (external-format :default))
+                       input-file output-file index-file sections-file
+                       weaving-tests verbose print external-format)
   (flet ((weave (object stream)
            (write object
-                  :stream stream
+                  :stream stream ;
                   :case :downcase :escape nil :level nil
-                  :pretty t :pprint-dispatch *weave-pprint-dispatch*
+                  :pretty t :pprint-dispatch *weave-pprint-dispatch* ;
                   :right-margin 1000)))
     (macrolet ((with-output-file ((stream filespec) &body body)
                  `(with-open-file (,stream ,filespec
@@ -3066,11 +3080,8 @@ file.
                     ,@body)))
       (with-output-file (out output-file)
         (format out "\\input clwebmac~%")
-        (when tests
-          (format out "\\def\\progname{~/clweb::print-escaped/}~%"
-                  (if input-file ;
-                      (string-capitalize (pathname-name input-file)) ;
-                      "program")))
+        (when weaving-tests
+          @<Write the program name to the tests output file@>)
         (if print
             @<Weave the sections to the output file, reporting as we go@>
             (map nil (lambda (section) (weave section out)) sections))
@@ -3088,7 +3099,11 @@ file.
         (format out "~&\\end~%")
         (truename out)))))
 
-@ @<Weave the sections...@>=
+@ We'll use the pretty printer to print the section numbers to standard
+output as we weave them. Starred sections get a `\.{*}' prefix, and the
+whole of the output is in the form of a comment.
+
+@<Weave the sections...@>=
 (flet ((weave-section (section)
          (format t "~:[~;*~]~D" ;
                  (starred-section-p section) ;
@@ -3102,10 +3117,26 @@ file.
       (pprint-newline :fill)
       (weave-section (pprint-pop)))))
 
-@1*Printing the woven output. The rest of the weaver consists entirely of
-pretty-printing routines that are installed in |*weave-pprint-dispatch*|.
+@ In the tests output file, we have cross-references to the sections in the
+main program that are presumably being tested. To produce those references,
+the \TeX\ macros \.{\\T} and \.{\\Ts} use the \.{\\progname} macro, which
+we define here.
 
-@l
+@<Write the program name...@>=
+(format out "\\def\\progname{~/clweb::print-escaped/}~%"
+        (if input-file ;
+            (string-capitalize (pathname-name input-file)) ;
+            "program"))
+
+@1*Printing the woven output. The individual sections and their contents
+are printed using the pretty printer with a customized dispatch table.
+The rest of the weaver consists entirely of pretty-printing routines that
+we'll install in that table.
+
+@ @<Global variables@>=
+(defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
+
+@ @l
 (defun set-weave-dispatch (type-specifier function &optional (priority 0))
   (set-pprint-dispatch type-specifier function priority ;
                        *weave-pprint-dispatch*))
