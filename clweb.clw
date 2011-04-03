@@ -3820,8 +3820,10 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
 @ A compound form might also have a \L~expression as its |car|.
 
 @l
+(deftype lambda-expression () '(cons (eql lambda) (cons cons *)))
+
 (defmethod walk-compound-form ((walker walker) (operator cons) form env)
-  (check-type operator (cons (eql lambda) *))
+  (check-type operator lambda-expression)
   `(,(walk-lambda-expression walker operator env)
     ,@(walk-list walker (cdr form) env)))
 
@@ -3985,7 +3987,7 @@ do anything special with either.
 (define-special-form-walker function ((walker walker) form env)
   `(,(car form)
     ,(typecase (cadr form)
-       ((cons (eql lambda)) (walk-lambda-expression walker (cadr form) env))
+       (lambda-expression (walk-lambda-expression walker (cadr form) env))
        (otherwise (walk-function-name walker (cadr form) env)))))
 
 @t@l
