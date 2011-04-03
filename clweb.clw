@@ -75,15 +75,16 @@ The weaver has a single entry point: |weave| takes a web as input and
 generates a file that can be fed to \TeX\ to generate a pretty-printed
 version of that web.
 
-@ We'll start by setting up a package for the system. In addition to the
-top-level tangler and weaver functions mentioned above, there's also
-|load-sections-from-temp-file|, which is conceptually part of the tangler,
-but is a special-purpose routine designed to be used in conjunction with an
-editor such as Emacs to provide incremental redefinition of sections; the
-user will generally never need to call it directly. Then there are a few
-global variables that control various operations of the weaver. The
-remainder of the exported symbols are condition classes for the various
-errors and warnings that might be signaled while processing a web.
+@1*System construction. We'll start by setting up a package for the system.
+In addition to the top-level tangler and weaver functions mentioned above,
+there's also |load-sections-from-temp-file|, which is conceptually part of
+the tangler, but is a special-purpose routine designed to be used in
+conjunction with an editor such as Emacs to provide incremental
+redefinition of sections; the user will generally never need to call it
+directly. Then there are a few global variables that control various
+operations of the weaver. The remainder of the exported symbols are
+condition classes for the various errors and warnings that might be
+signaled while processing a web.
 
 @l
 (provide "CLWEB")
@@ -143,6 +144,8 @@ but we'd like them to appear near the top of the tangled output.
 @l
 @<Global variables@>
 @<Condition classes@>
+
+@1*Utilities.
 
 @ Here's a little utility function that we'll use often. It's particularly
 useful for functions that accept a list desginator.
@@ -206,19 +209,33 @@ they were sections, at least for numbering purposes.
 @l
 (defmethod section-number ((section integer)) section)
 
-@ Sections introduced with \.{@@*} (`starred' sections) begin a new major
-group of sections, and get some special formatting during weaving. The
-control code \.{@@*} should be immediately followed by a title for this
-group, terminated by a period. That title will appear as a run-in heading
-at the beginning of the section, as a running head on all subsequent pages
-until the next starred section, and in the table of contents.
+@ Sections introduced with \.{@@*} (`starred' sections) begin a new group
+of sections, and get some special formatting during weaving. The control
+code \.{@@*} should be immediately followed by a title for this group,
+terminated by a period. That title will appear as a run-in heading at the
+beginning of the section, as a running head on all subsequent pages until
+the next starred section, and in the table of contents.
+
+Starred sections have a numeric parameter associated with them called
+`depth'. The depth of a starred section affects how it is formatted in the
+woven output: the section name is indented according to its depth in the
+table of contents, and sections with small depths (i.e., close to 0) force
+a page break.
 
 The tangler makes no distinction at all between sections with stars and
 ones with none upon thars.
 
 @l
-(defclass starred-section (section) ())
+(defclass starred-section (section)
+  ((depth :reader section-depth :initarg :depth))
+  (:default-initargs :depth 0))
+
 (defun starred-section-p (object) (typep object 'starred-section))
+
+@ Non-starred sections have no depth, but it shouldn't be an error to ask.
+
+@l
+(defmethod section-depth ((section section)) nil)
 
 @ Sections that begin with \.{@@t} are {\it test sections}. They are used to
 include test cases alongside the normal code, but are treated specially by
@@ -875,11 +892,12 @@ the following nonsense.
   (with-read-buffer ()
     (funcall fn stream char)))
 
-@ We want the weaver to output properly indented code, but it's basically
-impossible to automatically indent Common Lisp code without a complete
-static analysis. And so we don't try. What we do instead is assume that the
-input is indented correctly, and try to approximate that on output; we call
-this process {\it indentation tracking}.
+@1*Tracking character position. We want the weaver to output properly
+indented code, but it's basically impossible to automatically indent
+Common Lisp code without a complete static analysis. And so we don't try.
+What we do instead is assume that the input is indented correctly, and
+try to approximate that on output; we call this process {\it indentation
+tracking}.
 @^Indentation tracking@>
 
 The way we do this is to record the the column number, or {\it character
@@ -1057,13 +1075,13 @@ is bound to a proxy stream the tracks the character position for |stream|.
               (get-output-stream-string string-stream))))
   0 3 0 3 #.(format nil "012~%abc"))
 
-@ Sometimes we'll want to look more than one character ahead in a stream.
-This macro lets us do so, after a fashion: it executes |body| in a lexical
-environment where |var| is bound to a stream whose input comes from
-|stream| and |rewind| is bound to a local function that `rewinds' that
-stream to its state prior to any reads that were executed in the body.
-If |rewind| is invoked more than once, each subsequent invocation will
-rewind to the state just after the previous one.
+@1*Stream utilities. Sometimes we'll want to look more than one character
+ahead in a stream. This macro lets us do so, after a fashion: it executes
+|body| in a lexical environment where |var| is bound to a stream whose
+input comes from |stream| and |rewind| is bound to a local function that
+`rewinds' that stream to its state prior to any reads that were executed in
+the body. If |rewind| is invoked more than once, each subsequent invocation
+will rewind to the state just after the previous one.
 
 @l
 (defmacro with-rewind-stream ((var stream &optional (rewind 'rewind)) ;
@@ -1130,22 +1148,15 @@ consumed.
       (values object chars)))
   :foo ":foo")
 
-@ We'll define specialized pretty-printing routines for some of the
-objects we read for use by the tangler. Since they depend heavily on
-the specific representations, they're best defined alongside the readers.
-
-@l
-@<Define the function |set-tangle-dispatch|@>
-
-@ Next, we define a class of objects called {\it markers\/} that denote
-abstract objects in source code. Some of these objects, such as newlines
-and comments, are ones that would ordinarily be ignored by the reader.
-Others, such as \.{()} and~\.{'}, are indistinguishable after reading from
-other, semantically equivalent objects (here, |nil| and |quote|), but we
-want to preserve the distinction in the output. In fact, nearly every
-standard macro character in Common Lisp is `lossy', in the sense that the
-text of the original source code can not be reliably recovered from the
-object returned by |read|.
+@1*Markers. Next, we define a class of objects called {\it markers\/} that
+denote abstract objects in source code. Some of these objects, such as
+newlines and comments, are ones that would ordinarily be ignored by the
+reader. Others, such as \.{()} and~\.{'}, are indistinguishable after
+reading from other, semantically equivalent objects (here, |nil| and
+|quote|), but we want to preserve the distinction in the output. In fact,
+nearly every standard macro character in Common Lisp is `lossy', in the
+sense that the text of the original source code can not be reliably
+recovered from the object returned by |read|.
 
 But during weaving, we want to more closely approximate the original source
 code than would be possible using the standard reader. Markers are our
@@ -1168,6 +1179,13 @@ stored in the |value| slot, but often is.
 (defgeneric marker-boundp (marker))
 (defmethod marker-boundp ((marker marker))
   (slot-boundp marker 'value))
+
+@ We'll define specialized pretty-printing routines for some of the
+objects we read for use by the tangler. Since they depend heavily on
+the specific representations, they're best defined alongside the readers.
+
+@l
+@<Define the function |set-tangle-dispatch|@>
 
 @ Here's a simple pretty-printing routine that suffices for many marker
 types: it simply prints the marker's value if it is bound. Markers that
@@ -2086,12 +2104,12 @@ characters that the reader scans, and use that to reconstruct the form.
   nil
   nil)
 
-@ So much for the standard macro characters. Now we're ready to move
-on to \WEB-specific reading. We accumulate \TeX\ mode material such as
-commentary, section names, \etc. using the following function, which reads
-from |stream| until encountering either \EOF\ or an element of the
-|control-chars| argument, which should be a designator for a list of
- characters.
+@1*Web control codes. So much for the standard macro characters. Now we're
+ready to move on to \WEB-specific reading. We accumulate \TeX\ mode
+material such as commentary, section names, \etc. using the following
+function, which reads from |stream| until encountering either \EOF\ or an
+element of the |control-chars| argument, which should be a designator for a
+list of characters.
 
 @l
 (defun snarf-until-control-char (stream control-chars &aux ;
@@ -2169,20 +2187,28 @@ it should really only be used in \TeX\ text.
     (values (read-from-string "@@")))
   "@")
 
-@ Non-test sections are introduced by \.{@@\ } or~\.{@@*}, which differ only
-in the way they are output during weaving. The reader macro functions that
-implement these control codes return an instance of the appropriate section
-class.
+@ Ordinary sections are introduced by \.{@@\ } or \.{@@|#\Newline|}.
 
 @l
 (defun start-section-reader (stream sub-char arg)
-  (declare (ignore stream arg))
-  (make-instance (ecase sub-char
-                   (#\Space 'section)
-                   (#\* 'starred-section))))
+  (declare (ignore stream sub-char arg))
+  (make-instance 'section))
 
-(dolist (sub-char '(#\Space #\*))
+(dolist (sub-char '(#\Space #\Newline))
   (set-control-code sub-char #'start-section-reader '(:limbo :TeX :lisp)))
+
+@ Starred sections, introduced by \.{@@*}, accept an optional numeric
+argument for the depth. Rather than the \CWEB\ syntax in which the argument
+follows the `\.{*}', we follow the usual Common Lisp syntax and assume the
+argument occurs between the `\.{@@}' and the `\.{*}'.
+@^\CWEB@>
+
+@l
+(defun start-starred-section-reader (stream sub-char arg)
+  (declare (ignore stream sub-char))
+  (apply #'make-instance 'starred-section (when arg `(:depth ,arg))))
+
+(set-control-code #\* #'start-starred-section-reader '(:limbo :TeX :lisp))
 
 @ Test sections are handled similarly, but are introduced with \.{@@t}.
 Test sections may also be `starred'. Immediately following whitespace
@@ -2190,10 +2216,11 @@ is ignored.
 
 @l
 (defun start-test-section-reader (stream sub-char arg)
-  (declare (ignore sub-char arg))
+  (declare (ignore sub-char))
   (prog1 (if (and (char= (peek-char t stream t nil t) #\*)
                   (read-char stream t nil t))
-             (make-instance 'starred-test-section)
+             (apply #'make-instance 'starred-test-section ;
+                    (when arg `(:depth ,arg)))
              (make-instance 'test-section))
          (loop until (char/= (peek-char t stream t nil t) #\Newline)
                do (read-char stream t nil t))))
@@ -2477,10 +2504,10 @@ the new object is an empty string or |nil|.
     list)
   (b a))
 
-@ We come now to the heart of the \WEB\ parser. This function is a tiny
-state machine that models the global syntax of a \WEB\ file. (We can't just
-use reader macros since sections and their parts lack explicit closing
-delimiters.) It returns a list of |section| objects.
+@1*Reading sections. We come now to the heart of the \WEB\ parser. This
+function is a tiny state machine that models the global syntax of a \WEB\
+file. (We can't just use reader macros since sections and their parts lack
+explicit closing delimiters.) It returns a list of |section| objects.
 
 @l
 (defun read-sections (input-stream &key (append t))
@@ -2613,7 +2640,7 @@ Leading newlines are handled in |@<Accumulate Lisp-mode...@>|.
   (rplaca commentary (string-left-trim *whitespace* (car commentary))))
 (setq code (nreverse (member-if-not #'newlinep code)))
 
-@*The tangler. Tangling involves recursively replacing each reference to a
+@*Tangling. Tangling involves recursively replacing each reference to a
 named section with the code accumulated for that section. The function
 |tangle-1| expands one level of such references, returning the
 possibly-expanded form and a boolean representing whether or not any
@@ -2925,7 +2952,7 @@ warnings about unused named sections.
 @ @<Condition classes@>=
 (define-condition unused-named-section-warning (simple-warning) ())
 
-@*The weaver. The top-level weaver interface is modeled after |compile-file|.
+@*Weaving. The top-level weaver interface is modeled after |compile-file|.
 The function |weave| reads the \WEB\ |input-file| and produces an output
 \TeX\ file named by |output-file|. If |output-file| is not supplied or is
 |nil|, a pathname will be generated from |input-file| by replacing its
@@ -3078,8 +3105,8 @@ file.
         (format out "~&\\end~%")
         (truename out)))))
 
-@ The rest of the weaver consists entirely of pretty-printing routines that
-are installed in |*weave-pprint-dispatch*|.
+@1*Printing the woven output. The rest of the weaver consists entirely of
+pretty-printing routines that are installed in |*weave-pprint-dispatch*|.
 
 @l
 (defun set-weave-dispatch (type-specifier function &optional (priority 0))
@@ -3126,8 +3153,9 @@ re-reads such strings and picks up any inner-Lisp material.
 @ % FIXME: This needs to be broken up and documented.
 @l
 (defun print-section (stream section)
-  (format stream "~&\\~:[M~;N{1}~]{~D}" ; \.{\{1\}} should be depth
+  (format stream "~&\\~:[M~*~;N{~D}~]{~D}"
           (starred-section-p section)
+          (section-depth section)
           (section-number section))
   (let* ((commentary (section-commentary section))
          (name (section-name section))
@@ -3354,15 +3382,15 @@ of the form `(\<suffix>~.~\<replacement>)'.
   (weave-symbol lambda "\\L")
   (weave-symbol pi "$\\pi$"))
 
-@ Next, we turn to list printing, and the tricky topic of indentation.
-On the assumption that the human writing a web is smarter than a program
-doing any sort of automatic indentation, we attempt to approximate (but
-not duplicate) on output the indentation given in the input by utilizing
-the character position values that the list reader stores in the list
-markers. We do this by breaking up lists into {\it logical blocks\/}---the
-same sort of (abstract) entities that the pretty printer uses, but made
-concrete here. A logical block defines a left edge for a list of forms,
-some of which may be nested logical blocks.
+@1*Indentation tracking. Next, we turn to list printing, and the tricky
+topic of indentation. On the assumption that the human writing a web is
+smarter than a program doing any sort of automatic indentation, we attempt
+to approximate (but not duplicate) on output the indentation given in the
+input by utilizing the character position values that the list reader
+stores in the list markers. We do this by breaking up lists into
+{\it logical blocks\/}---the same sort of (abstract) entities that the
+pretty printer uses, but made concrete here. A logical block defines a
+left edge for a list of forms, some of which may be nested logical blocks.
 
 @l
 (defstruct (logical-block (:constructor make-logical-block (list)))
@@ -3497,11 +3525,11 @@ we use a single quad (\.{\\1}); for any more, we use two (\.{\\2}).
 
 (set-weave-dispatch 'logical-block #'print-logical-block)
 
-@ Finally, we come to the printing of markers. These are all quite
-straightforward; the only thing to watch out for is the priorities.
-Because |pprint-dispatch| doesn't respect sub-type relationships,
-we need to set a higher priority for a sub-class than for its parent
-if we want a specialized pretty-printing routine.
+@1*Printing markers. Finally, we come to the printing of markers.
+These are all quite straightforward; the only thing to watch out for
+is the priorities. Because |pprint-dispatch| doesn't respect sub-type
+relationships, we need to set a higher priority for a sub-class than
+for its parent if we want a specialized pretty-printing routine.
 
 Many of these routines output \TeX\ macros defined in \.{clwebmac.tex},
 which see.
@@ -4660,12 +4688,12 @@ with the same heading is called an {\it entry list}, or sometimes just an
 {\it entry\/}; the latter is an abuse of terminology, but useful and
 usually clear in context.
 
-In this program, headings are usually represented by instances of the
-class |heading|. Headings may in general be multi-leveled, and are sorted
-lexicographically. Any object with applicable methods for |heading-name|
-and |sub-heading| are treated as valid headings; the former should always
-return a string designator, and the latter should return the next sub-heading
-or |nil| if there is none.
+@1*Headings. In this program, headings are usually represented by instances
+of the class |heading|. Headings may in general be multi-leveled, and are
+sorted lexicographically. Any object with applicable methods for
+|heading-name| and |sub-heading| are treated as valid headings; the former
+should always return a string designator, and the latter should return the
+next sub-heading or |nil| if there is none.
 
 @l
 @<Define |heading-name| generic function@>
@@ -5007,11 +5035,11 @@ otherwise, we'll call them `primary'.
   "primary method"
   "before during after method")
 
-@ Now let's turn our attention to the other half of index entries.
-In this program, a locator is either a pointer to a section (the usual
-case) or a cross-reference to another index entry. We'll represent
-locators as instances of a |locator| class, and use a single generic
-function, |location|, to dereference them.
+@1*Locators. Now let's turn our attention to the other half of index entries.
+In this program, a locator is either a pointer to a section (the usual case)
+or a cross-reference to another index entry. We'll represent locators as
+instances of a |locator| class, and use a single generic function, |location|,
+to dereference them.
 
 Section locators have an additional slot for a definition flag, which
 when true indicates that the object referred to by the associated heading
@@ -5045,11 +5073,11 @@ when it prints the containing entry.
         (see (make-instance 'see-locator :heading see))
         (see-also (make-instance 'see-locator :heading see-also))))
 
-@ Since we'll eventually want the index sorted by heading, we'll store
-the entries in a binary search tree. To simplify processing, what we'll
-actually store is {\it entry lists}, which are collections of entries
-with identical headings, but we'll overload the term in what seems to be
-a fairly traditional manner and call them entries, too.
+@1*Index entries. Since we'll eventually want the index sorted by heading,
+we'll store the entries in a binary search tree. To simplify processing,
+what we'll actually store is {\it entry lists}, which are collections of
+entries with identical headings, but we'll overload the term in what seems
+to be a fairly traditional manner and call them entries, too.
 
 @l
 (defclass index-entry (binary-search-tree)
@@ -5295,14 +5323,14 @@ the conditional.
                      (make-heading symbol (make-type-heading 'variable)) ;
                      section :def def)))
 
-@ We'll perform the indexing by walking over the code of each section and
-noting each of the interesting symbols that we find there according to its
-semantic role. In theory, this should be a straightforward task for any
-Common Lisp code walker. What makes it tricky is that references to named
-sections can occur anywhere in a form, which might break the syntax of
-macros and special forms unless we tangle the form first. But once we
-tangle a form, we lose the provenance of the sub-forms that came from
-named sections, and so our index would be wrong.
+@1*Referring symbols. We'll perform the indexing by walking over the code
+of each section and noting each of the interesting symbols that we find
+there according to its semantic role. In theory, this should be a
+straightforward task for any Common Lisp code walker. What makes it tricky
+is that references to named sections can occur anywhere in a form, which
+might break the syntax of macros and special forms unless we tangle the
+form first. But once we tangle a form, we lose the provenance of the
+sub-forms that came from named sections, and so our index would be wrong.
 
 The trick that we use to overcome this problem is to tangle the forms in
 a special way where instead of just splicing the named section code into
@@ -5392,8 +5420,8 @@ we'll walk.
 @ @<Global variables@>=
 (defvar *indexing* nil)
 
-@ Now we're ready to define a specialized walker that does the actual
-indexing.
+@1*The indexing walker. Now we're ready to define a specialized walker that
+does the actual indexing.
 
 @l
 (defclass indexing-walker (walker)
@@ -5850,12 +5878,13 @@ of all of the interesting symbols so encountered.
     (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
       (walk-form walker form))))
 
-@ All that remains now is to write the index entries out to the index file.
-We'll be extra fancy and try to coalesce adjacent locators, so that, e.g.,
-if |foo| is used in sections 1, 2, and~3, the entry will be printed as
-`|foo|:~1--3'. The function |coalesce-locators| takes a sorted list of
-locators and returns a list of locators and |section-range| instances.
-Note that definitional locators will never be part of a range.
+@1*Writing the index. All that remains now is to write the index entries
+out to the index file. We'll be extra fancy and try to coalesce adjacent
+locators, so that, e.g., if |foo| is used in sections 1, 2, and~3, the
+entry will be printed as `|foo|:~1--3'. The function |coalesce-locators|
+takes a sorted list of locators and returns a list of locators and
+|section-range| instances. Note that definitional locators will never be
+part of a range.
 
 @l
 (defclass section-range ()
@@ -5986,10 +6015,11 @@ the extra arguments.
 (defmethod print-entry-heading :before (stream (heading pretty-heading) &key)
   (write-string (macro-heading heading) stream))
 
-@ As a little coda, here's a self-contained example of how one might extend
-the indexer to recognize and record specific kinds of forms. In this program,
-we define reader macro functions for most of the standard macro characters,
-so it might be nice to have dedicated index entries for those definitions.
+@1*Coda: extending the indexer. Here's a self-contained example of how one
+might extend the indexer to recognize and record specific kinds of forms.
+In this program,we define reader macro functions for most of the standard
+macro characters,so it might be nice to have dedicated index entries for
+those definitions.
 
 To begin, we'll define a heading class for macro characters, a subclass for
 dispatch macro characters, and a constructor function for both.

@@ -1,17 +1,17 @@
 ;;;; A major-mode for editing CLWEB programs.
 
-(defvar *start-section-regexp* "^@[ *\nTt]")
-(defvar *start-non-test-section-regexp* "^@[ *\n]")
+(defvar start-section-regexp "^@[0-9]*[ *\nTt]")
+(defvar start-non-test-section-regexp "^@[0-9]*[ *\n]")
 
 (defun move-by-sections (arg &optional skip-test-sections)
   "Move forward or backward ARG sections."
   (let ((regexp (if skip-test-sections
-                    *start-non-test-section-regexp*
-                    *start-section-regexp*)))
+                    start-non-test-section-regexp
+                    start-section-regexp)))
     (cond ((> arg 0)
            (condition-case nil
                (re-search-forward regexp nil nil
-                                  (if (looking-at *start-section-regexp*)
+                                  (if (looking-at start-section-regexp)
                                       (1+ arg)
                                       arg))
              (search-failed (signal 'end-of-buffer nil)))
@@ -63,7 +63,7 @@ any existing code for that section; otherwise, it will be replaced."
   (interactive "P")
   (save-excursion
     (let* ((start (condition-case nil
-                      (if (looking-at *start-section-regexp*)
+                      (if (looking-at start-section-regexp)
                           (point)
                           (move-by-sections -1))
                     (beginning-of-buffer (error "In limbo"))))
@@ -99,7 +99,7 @@ any existing code for that section; otherwise, it will be replaced."
 	  (font-lock-syntactic-face-function
 	   . lisp-font-lock-syntactic-face-function)
           (font-lock-syntactic-keywords
-           . (("\\(^\\|[^@,]\\)\\(@\\)[ *Tt]" 2 "< b")
+           . (("\\(^\\|[^@,]\\)\\(@[0-9]*\\)[ *Tt]" 2 "< b")
               ("\\(^\\|[^@]\\)@\\([LlPp]\\)" 2 "> b")
               ("\\(^\\|[^@]\\)\\(@\\)[<^.]" 2 "< bn")
               ("\\(^\\|[^@]\\)@\\(>\\)[^=]" 2 "> bn")
