@@ -213,8 +213,8 @@ group, terminated by a period. That title will appear as a run-in heading
 at the beginning of the section, as a running head on all subsequent pages
 until the next starred section, and in the table of contents.
 
-The tangler makes no distinction between sections with stars and ones with
-none upon thars.
+The tangler makes no distinction at all between sections with stars and
+ones with none upon thars.
 
 @l
 (defclass starred-section (section) ())
