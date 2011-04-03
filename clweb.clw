@@ -4554,7 +4554,10 @@ the walker classes defined in this program.
 (defmethod walk-atomic-form :before ;
     ((walker tracing-walker) context form env &key)
   (format t "; walking atomic form ~S (~S)~@[ (~(~A~) variable)~]~%"
-          form context (and (symbolp form) (variable-information form env))))
+          form context
+          (and (symbolp form)
+               (eq context ':evaluated)
+               (variable-information form env))))
 
 (defmethod walk-compound-form :before ;
     ((walker tracing-walker) operator form env)
