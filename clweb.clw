@@ -3847,12 +3847,24 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
 @ A compound form might also have a \L~expression as its |car|.
 
 @l
-(deftype lambda-expression () '(cons (eql lambda) (cons cons *)))
+(deftype lambda-expression () '(cons (eql lambda) (cons list *)))
 
 (defmethod walk-compound-form ((walker walker) (operator cons) form env)
   (check-type operator lambda-expression)
   `(,(walk-lambda-expression walker operator env)
     ,@(walk-list walker (cdr form) env)))
+
+@t These sorts of complex type specifiers are surprisingly easy to get wrong.
+
+@l
+(deftest lambda-expression-type
+  (flet ((lambda-expression-p (x) (typep x 'lambda-expression)))
+    (and (lambda-expression-p '(lambda (x) x))
+         (lambda-expression-p '(lambda () t))
+         (lambda-expression-p '(lambda ()))
+         (not (lambda-expression-p '(lambda x x)))
+         (not (lambda-expression-p 'lambda))))
+  t)
 
 @ Common Lisp defines a {\it function name\/} as ``[a] symbol or a list
 |(setf symbol)|.'' Since they're not necessarily atomic, we define a special
