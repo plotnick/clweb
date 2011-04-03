@@ -284,7 +284,10 @@ for |push-section| so that we can override it for test sections.
 (defmethod initialize-instance :after ((section section) &key)
   (setq *current-section* (push-section section)))
 
-@t@l
+@t Ensure that the |*current-section*| variable is updated after a new
+section instance is made.
+
+@l
 (deftest current-section
   (let ((*sections* (make-array 1 :fill-pointer 0)))
     (eql (make-instance 'section) *current-section*))
@@ -314,11 +317,11 @@ need a copy of the limbo text there, too.
 
 @t To make testing with sections a little easier, we'll define a macro,
 |with-temporary-sections|, that will help ensure that we don't accidentally
-clobber any real sections. It executes its |body| in an environment where
+clobber any real sections. It executes |body| in an environment where
 |*sections*| and |*named-sections*| have been rebound and augmented with
-new sections specified by the |sections| argument. That argument should be
-a list of section specifiers, which are lists beginning with one of the
-keywords |:section|, |:starred-section|, or~|:limbo|, followed by keyword
+the new sections specified by the |sections| argument. That argument should
+be a list of {\it section specifiers}, which are lists beginning with one of
+the keywords |:section|, |:starred-section|, or~|:limbo|, followed by keyword
 arguments that will be used to initialize new |section| instances; e.g.,
 |:name| and~|:code|.
 
@@ -408,8 +411,10 @@ to traverse it in-order, applying some function to each node.
   (funcall function tree)
   (map-bst function (right-child tree)))
 
-@t@l
-(deftest (bst 1)
+@t Make sure our binary search trees are working as advertised.
+
+@l
+(deftest (bst simple)
   (let ((tree (make-instance 'binary-search-tree :key 0)))
     (find-or-insert -1 tree)
     (find-or-insert 1 tree)
@@ -418,7 +423,7 @@ to traverse it in-order, applying some function to each node.
             (node-key (right-child tree))))
   0 -1 1)
 
-(deftest (bst 2)
+(deftest (bst random)
   (let ((tree (make-instance 'binary-search-tree :key 0))
         (numbers (cons 0 (loop with limit = 1000
                                for i from 1 to limit
@@ -433,7 +438,7 @@ to traverse it in-order, applying some function to each node.
                (remove-duplicates (sort numbers #'<))))))
   t)
 
-(deftest bst-find-no-insert
+(deftest (bst find-no-insert)
   (let ((tree (make-instance 'binary-search-tree :key 0)))
     (find-or-insert -1 tree :insert-if-not-found nil))
   nil nil)
@@ -1379,7 +1384,10 @@ consing dot.
 (set-macro-character #\( (make-list-reader #'list-reader)
                      nil (readtable-for-mode :lisp))
 
-@t@l
+@t Check that when we read a list, we get both the contents and the character
+positions correct.
+
+@l
 (defmacro define-list-reader-test (name string expected-list expected-charpos)
   `(deftest ,name
      (let* ((marker (read-form-from-string ,string))
@@ -3825,17 +3833,17 @@ walker function just for function names.
                      (invalid-function-name error)))))
 
 @t@l
-(deftest (walk-function-name 1)
+(deftest (walk-function-name symbol)
   (equal (walk-function-name (make-instance 'walker) 'foo nil)
          'foo)
   t)
 
-(deftest (walk-function-name 2)
+(deftest (walk-function-name setf-function)
   (equal (walk-function-name (make-instance 'walker) '(setf foo) nil)
          '(setf foo))
   t)
 
-(deftest (walk-function-name 3)
+(deftest (walk-function-name invalid)
   (let ((error-handled nil))
     (handler-bind ((invalid-function-name
                     (lambda (condition)
@@ -4643,7 +4651,7 @@ for the |macro| initarg.
 (defclass tt-heading (pretty-heading) () (:default-initargs :macro "\\."))
 (defclass custom-heading (pretty-heading) () (:default-initargs :macro "\\9"))
 
-@ We'll allow strings and symbols as headings, too. Notice that we strip
+@ We'll allow string designators as headings, too. Notice that we strip
 leading whitespace and backslashes from strings acting as heading names;
 this helps the common case of a manual entry that begins with a \TeX\
 macro sort correctly.
@@ -4661,16 +4669,18 @@ macro sort correctly.
 (defmethod heading-name ((heading symbol))
   heading)
 
-@t@l
-(deftest heading-name-character
+@t Check the behavior of heading designators.
+
+@l
+(deftest (heading-name character)
   (heading-name #\A)
   "A")
 
-(deftest heading-name-string
+(deftest (heading-name string)
   (heading-name "\\foo")
   "foo")
 
-(deftest heading-name-symbol
+(deftest (heading-name symbol)
   (values (heading-name :foo)
           (heading-name '|\\foo|))
   "FOO" "\\foo")
@@ -4689,8 +4699,8 @@ want them sorted in a particular way. Letter case is ignored by default.
 (defmethod entry-heading-equalp (h1 h2)
   (string-equal (heading-name h1) (heading-name h2)))
 
-@t We have to be careful to check that everything works properly when the
-arguments are swapped around, too.
+@t When testing our comparison functions, we have to be careful to check
+that everything works properly when the arguments are swapped around, too.
 
 @l
 (defun entry-heading-strictly-lessp (x y)
@@ -5569,7 +5579,9 @@ lower the safety level.)
         else if (eql identifier 'optimize)
           collect `(optimize ,@data)))
 
-@t@l
+@t All we care about are |special| and |optimize| declarations.
+
+@l
 (deftest indexing-walk-declaration-specifiers
   (equal (walk-declaration-specifiers (make-instance 'indexing-walker)
                                       '((type foo x)
@@ -5993,7 +6005,10 @@ in with the others in the normal lexicographic ordering.
   (and (char-equal (macro-char h1) (macro-char h2))
        (equalp (sub-heading h1) (sub-heading h2))))
 
-@t@l
+@t We'll use the strict comparison functions we defined above for testing
+|entry-heading-lessp| and |entry-heading-equalp|.
+
+@l
 (deftest macro-char-heading-lessp
   (let* ((a (make-macro-char-heading #\a))
          (b (make-macro-char-heading #\b))
