@@ -218,6 +218,7 @@ ones with none upon thars.
 
 @l
 (defclass starred-section (section) ())
+(defun starred-section-p (x) (typep x 'starred-section))
 
 @ Sections that begin with \.{@@t} are {\it test sections}. They are used to
 include test cases alongside the normal code, but are treated specially by
@@ -3050,7 +3051,7 @@ file.
         (if print
             (flet ((weave (section)
                      (format t "~:[~;*~]~D"
-                             (typep section 'starred-section)
+                             (starred-section-p section)
                              (section-number section))
                      (weave section out)))
               (pprint-logical-block (nil (coerce sections 'list) ;
@@ -3127,7 +3128,7 @@ re-reads such strings and picks up any inner-Lisp material.
 @l
 (defun print-section (stream section)
   (format stream "~&\\~:[M~;N{1}~]{~D}" ; \.{\{1\}} should be depth
-          (typep section 'starred-section)
+          (starred-section-p section)
           (section-number section))
   (let* ((commentary (section-commentary section))
          (name (section-name section))
