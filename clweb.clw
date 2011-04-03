@@ -2605,7 +2605,7 @@ Leading newlines are handled in |@<Accumulate Lisp-mode...@>|.
   (rplaca commentary (string-left-trim *whitespace* (car commentary))))
 (setq code (nreverse (member-if-not #'newlinep code)))
 
-@*The tangler. Tangling involves recursively replacing each reference to a
+@*Tangling. Tangling involves recursively replacing each reference to a
 named section with the code accumulated for that section. The function
 |tangle-1| expands one level of such references, returning the
 possibly-expanded form and a boolean representing whether or not any
@@ -2917,11 +2917,11 @@ warnings about unused named sections.
 @ @<Condition classes@>=
 (define-condition unused-named-section-warning (simple-warning) ())
 
-@*The weaver. The top-level weaver interface is modeled after
-|compile-file|. The function |weave| reads the \WEB\ |input-file| and
-produces an output \TeX\ file named by |output-file|. If |output-file| is
-not supplied or is |nil|, a pathname will be generated from |input-file| by
-replacing its |type| component with \.{"tex"}.
+@*Weaving. The top-level weaver interface is modeled after |compile-file|.
+The function |weave| reads the \WEB\ |input-file| and produces an output
+\TeX\ file named by |output-file|. If |output-file| is not supplied or is
+|nil|, a pathname will be generated from |input-file| by replacing its
+|type| component with \.{"tex"}.
 
 If |verbose| is true, |weave| prints a message in the form of a comment to
 standard output indicating what file is being woven. If |verbose| is not
@@ -3609,7 +3609,7 @@ which see.
             (read-time-conditional-test obj)
             (read-time-conditional-form obj))))
 
-@*The walker. Our last major task is to produce an index of every
+@*Walking. Our last major task is to produce an index of every
 interesting symbol that occurs in a web (we'll define what makes a
 symbol `interesting' later). We would like separate entries for each
 kind of object that a given symbol names: e.g., local or global function,
