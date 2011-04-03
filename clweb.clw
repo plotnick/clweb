@@ -218,7 +218,7 @@ ones with none upon thars.
 
 @l
 (defclass starred-section (section) ())
-(defun starred-section-p (x) (typep x 'starred-section))
+(defun starred-section-p (object) (typep object 'starred-section))
 
 @ Sections that begin with \.{@@t} are {\it test sections}. They are used to
 include test cases alongside the normal code, but are treated specially by
@@ -235,7 +235,7 @@ code they're designed to exercise.
 
 (defclass starred-test-section (test-section starred-section) ())
 
-(defun test-section-p (x) (typep x 'test-section))
+(defun test-section-p (object) (typep object 'test-section))
 
 (defmethod initialize-instance :after ((section test-section) &key)
   (when (> (fill-pointer *sections*) 0)
@@ -785,7 +785,7 @@ error reporting.
 (defvar *eof* (make-symbol "EOF"))
 
 @ @l
-(defun eof-p (x) (eq x *eof*))
+(defun eof-p (object) (eq object *eof*))
 (deftype eof () '(satisfies eof-p))
 
 @t@l
@@ -1164,7 +1164,7 @@ stored in the |value| slot, but often is.
 @l
 (defclass marker ()
   ((value :reader marker-value :initarg :value)))
-(defun markerp (x) (typep x 'marker))
+(defun markerp (object) (typep object 'marker))
 
 (defgeneric marker-boundp (marker))
 (defmethod marker-boundp ((marker marker))
@@ -1531,7 +1531,7 @@ code and the pretty-printing routines.
 
 @l
 (defvar *backquote* (make-symbol "BACKQUOTE"))
-(defun backquotep (x) (eq x *backquote*))
+(defun backquotep (object) (eq object *backquote*))
 (deftype backquote () '(cons (satisfies backquotep)))
 
 (defclass comma ()
