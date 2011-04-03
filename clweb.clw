@@ -713,13 +713,12 @@ having code parts, but later tests will.
     (section-name (find-section "foo...")))
   "foo")
 
-@*Reading. We distinguish five distinct modes for reading. Limbo mode is
-used for \TeX\ text that precedes the first section in a file. \TeX\ mode
-is used for reading the commentary that begins a section. Lisp mode is
-used for reading the code part of a section; inner-Lisp mode is for
-reading Lisp forms that are embedded within \TeX\ material. And finally,
-restricted mode is used for reading material in section names and a few
-other places.
+@*Reading a web. We distinguish five distinct modes for reading. Limbo mode
+is used for \TeX\ text that precedes the first section in a file. \TeX\
+mode is used for reading the commentary that begins a section. Lisp mode is
+used for reading the code part of a section; inner-Lisp mode is for reading
+Lisp forms that are embedded within \TeX\ material. And finally, restricted
+mode is used for reading material in section names and a few other places.
 
 We use separate readtables for each mode, which are stored in |*readtables*|
 and accessed via |readtable-for-mode|. We add an extra readtable with key
@@ -2614,7 +2613,7 @@ Leading newlines are handled in |@<Accumulate Lisp-mode...@>|.
   (rplaca commentary (string-left-trim *whitespace* (car commentary))))
 (setq code (nreverse (member-if-not #'newlinep code)))
 
-@*Tangling. Tangling involves recursively replacing each reference to a
+@*The tangler. Tangling involves recursively replacing each reference to a
 named section with the code accumulated for that section. The function
 |tangle-1| expands one level of such references, returning the
 possibly-expanded form and a boolean representing whether or not any
@@ -2926,7 +2925,7 @@ warnings about unused named sections.
 @ @<Condition classes@>=
 (define-condition unused-named-section-warning (simple-warning) ())
 
-@*Weaving. The top-level weaver interface is modeled after |compile-file|.
+@*The weaver. The top-level weaver interface is modeled after |compile-file|.
 The function |weave| reads the \WEB\ |input-file| and produces an output
 \TeX\ file named by |output-file|. If |output-file| is not supplied or is
 |nil|, a pathname will be generated from |input-file| by replacing its
@@ -3618,7 +3617,7 @@ which see.
             (read-time-conditional-test obj)
             (read-time-conditional-form obj))))
 
-@*Walking. Our last major task is to produce an index of every
+@*Code walking. Our last major task is to produce an index of every
 interesting symbol that occurs in a web (we'll define what makes a
 symbol `interesting' later). We would like separate entries for each
 kind of object that a given symbol names: e.g., local or global function,
