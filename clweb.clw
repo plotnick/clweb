@@ -5525,15 +5525,13 @@ of the call to |index-symbol|.
 
 @l
 (defmethod walk-atomic-form :around ;
-    ((walker indexing-walker) context form env &key def)
-  (if (symbolp form)
-      (multiple-value-bind (symbol section) (symbol-provenance form)
-        (when section
-          (index-symbol (walker-index walker) context symbol env ;
-                        :section section ;
-                        :def def))
-        (call-next-method walker context symbol env))
-      (call-next-method walker context form env)))
+    ((walker indexing-walker) context (form symbol) env &key def)
+  (multiple-value-bind (symbol section) (symbol-provenance form)
+    (when section
+      (index-symbol (walker-index walker) context symbol env ;
+                    :section section ;
+                    :def def))
+    (call-next-method walker context symbol env)))
 
 @t@l
 (define-indexing-test atom
@@ -5545,7 +5543,7 @@ symbol.
 
 @l
 (defmethod walk-compound-form :before ;
-    ((walker indexing-walker) operator form env)
+    ((walker indexing-walker) (operator symbol) form env)
   (multiple-value-bind (symbol section) (symbol-provenance operator)
     (when section
       (index-funcall (walker-index walker) symbol form env section))))
