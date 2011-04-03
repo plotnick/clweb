@@ -1068,7 +1068,7 @@ rewind to the state just after the previous one.
           (,var (make-echo-stream ,stream ,out))
           (,closing (list ,out ,var)))
      (flet ((,rewind ()
-              (let ((,in (make-string-input-stream
+              (let ((,in (make-string-input-stream ;
                           (get-output-stream-string ,out))))
                 (prog1 (setq ,var (make-concatenated-stream ,in ,var))
                   (push ,var ,closing)
