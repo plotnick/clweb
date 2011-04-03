@@ -3800,7 +3800,7 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
 @l
 (defmethod walk-compound-form ((walker walker) operator form env)
   (declare (ignore operator))
-  `(,(walk-atomic-form walker :unevaluated (car form) env)
+  `(,(walk-atomic-form walker :operator (car form) env)
     ,@(walk-list walker (cdr form) env)))
 
 @ Common Lisp defines a {\it function name\/} as ``[a] symbol or a list
