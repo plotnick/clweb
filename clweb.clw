@@ -5027,7 +5027,7 @@ execute all those calls to |type-heading-class-name| at run-time just to
 save a few characters of typing. Fortunately, nearly all of the calls to
 |make-type-heading| use a quoted symbol as the |type|, and so we can just
 do the transformation (and the class lookup, too, while we're at it) at
-compile-time, assuming the implementation supports compiler macros.
+compile-time, assuming the Lisp implementation supports compiler macros.
 
 @l
 (deftype quoted-symbol () '(cons (eql quote) (cons symbol null)))
@@ -5035,8 +5035,8 @@ compile-time, assuming the implementation supports compiler macros.
 (define-compiler-macro make-type-heading (&whole form type &rest initargs ;
                                           &environment env)
   (typecase type
-    (quoted-symbol
-     `(make-instance ,(find-class (type-heading-class-name (cadr type)) t env)
+    (quoted-symbol ;
+     `(make-instance ,(find-class (type-heading-class-name (cadr type)) t env) ;
                      ,@initargs))
     (otherwise form)))
 
