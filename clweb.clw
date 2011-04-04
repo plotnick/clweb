@@ -3350,7 +3350,9 @@ the newline.
 
 (set-weave-dispatch 'string #'print-string)
 
-@ @l
+@ We print non-graphic characters using their names, when available.
+
+@l
 (defun print-char (stream char)
   (let ((graphicp (and (graphic-char-p char) (standard-char-p char)))
         (name (char-name char))
@@ -3358,7 +3360,7 @@ the newline.
     (format stream "\\#\\CH{~/clweb::print-escaped/}"
             (if (and name (not graphicp))
                 name
-                (make-string 1 :initial-element char)))
+                (string char)))
     char))
 
 (set-weave-dispatch 'character #'print-char)

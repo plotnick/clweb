@@ -1427,7 +1427,7 @@
     (FORMAT STREAM "\\#\\CH{~/clweb::print-escaped/}"
             (IF (AND NAME (NOT GRAPHICP))
                 NAME
-                (MAKE-STRING 1 :INITIAL-ELEMENT CHAR)))
+                (STRING CHAR)))
     CHAR))
 (SET-WEAVE-DISPATCH 'CHARACTER #'PRINT-CHAR)
 (DEFUN PRINT-SYMBOL (STREAM SYMBOL)
