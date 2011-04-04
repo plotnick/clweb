@@ -741,6 +741,10 @@
                  (DESCRIBE-BEEF (MAKE-INSTANCE 'KOBE-BEEF)))
          "big, fat, juicy, steak, yum!"
          "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan")
+(DEFTEST QUOTED-SYMBOL-TYPE
+         (AND (TYPEP ''FOO 'QUOTED-SYMBOL) (NOT (TYPEP 'FOO 'QUOTED-SYMBOL))
+              (NOT (TYPEP (CONS 'QUOTE 'FOO) 'QUOTED-SYMBOL)))
+         T)
 (DEFTEST FUNCTION-HEADING-NAME
          (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION))
                  (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION :LOCAL T))

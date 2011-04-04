@@ -4995,25 +4995,57 @@ symbols, which we'll use as prefixes to the heading name.
 @ The following definitions provide a declarative syntax for defining and
 creating instances of the type heading classes. The games we play with the
 class names are to avoid name clashes while still allowing short,
-descriptive names in the interface.
+descriptive names in the interface: the form |(define-type-heading foo ())|
+constructs a new subclass of |type-heading| whose name is \.{FOO-HEADING}
+but which can be instantiated via |(make-type-heading 'foo)|.
 
 @l
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun type-heading-class-name (name)
-    (intern (with-standard-io-syntax (format nil "~A-HEADING" name)))))
+    (intern (concatenate 'string (string name) "-HEADING") ;
+            (find-package "CLWEB"))))
 
 (defmacro define-type-heading (name slots &rest options)
   (flet ((option (indicator) ;
            (cdr (find-if (lambda (option) (eq (car option) indicator)) ;
                          options))))
-    `(defclass ,(type-heading-class-name name) (type-heading)
-       ,slots
-       (:default-initargs
-        :name ,(or (car (option :name)) (string-downcase name))
-        :allowable-modifiers ',(option :modifiers)))))
+    ;; This |eval-when| ought not be necessary, but SBCL doesn't let us use
+    ;; |find-class| at compilation time without it, contrary to the specified
+    ;; behavior of |defclass| in the Common Lisp standard.
+    `(eval-when (:compile-toplevel :load-toplevel :execute)
+       (defclass ,(type-heading-class-name name) (type-heading)
+         ,slots
+         (:default-initargs
+          :name ,(or (car (option :name)) (string-downcase name))
+           :allowable-modifiers ',(option :modifiers))))))
 
 (defun make-type-heading (type &rest initargs)
   (apply #'make-instance (type-heading-class-name type) initargs))
+
+@ Those pretty names come at a cost, though, and we don't actually want to
+execute all those calls to |type-heading-class-name| at run-time just to
+save a few characters of typing. Fortunately, nearly all of the calls to
+|make-type-heading| use a quoted symbol as the |type|, and so we can just
+do the transformation (and the class lookup, too, while we're at it) at
+compile-time, assuming the implementation supports compiler macros.
+
+@l
+(deftype quoted-symbol () '(cons (eql quote) (cons symbol null)))
+
+(define-compiler-macro make-type-heading (&whole form type &rest initargs ;
+                                          &environment env)
+  (typecase type
+    (quoted-symbol
+     `(make-instance ,(find-class (type-heading-class-name (cadr type)) t env)
+                     ,@initargs))
+    (otherwise form)))
+
+@t@l
+(deftest quoted-symbol-type
+  (and (typep ''foo 'quoted-symbol)
+       (not (typep 'foo 'quoted-symbol))
+       (not (typep (cons 'quote 'foo) 'quoted-symbol)))
+  t)
 
 @ {\it Et voil\`a!\/} Note that a name is derived from the class name if no
 |:name| option is provided.
