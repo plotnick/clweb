@@ -164,6 +164,26 @@ that the results are appended together.
       (append (apply function (mapcar #'car args))
               (apply #'mapappend function (mapcar #'cdr args)))))
 
+@ Sometimes, when we're accumulating text, we won't want to bother with
+empty strings. In such cases we'll use the following macro, which is like
+|push| but does nothing if the new object is an empty string or |nil|.
+
+@l
+(defmacro maybe-push (obj place &aux (g (gensym)))
+  `(let ((,g ,obj))
+     (when (if (stringp ,g) (plusp (length ,g)) ,g)
+       (push ,g ,place))))
+
+@t@l
+(deftest maybe-push
+  (let ((list '()))
+    (maybe-push 'a list)
+    (maybe-push nil list)
+    (maybe-push "" list)
+    (maybe-push 'b list)
+    list)
+  (b a))
+
 @*Sections. The fundamental unit of a web is the {\it section}, which may
 be either {\it named\/} or~{\it unnamed}. Named sections are conceptually
 very much like parameterless macros, except that they can be defined
@@ -2482,27 +2502,6 @@ They differ only in how they are typeset in the woven output.
 
 (dolist (sub-char '(#\^ #\. #\:))
   (set-control-code sub-char #'index-entry-reader '(:TeX :lisp)))
-
-@ We need one last utility before coming to the main section reader.
-When we're accumulating text, we don't want to bother with empty strings.
-So we use the following macro, which is like |push|, but does nothing if
-the new object is an empty string or |nil|.
-
-@l
-(defmacro maybe-push (obj place &aux (g (gensym)))
-  `(let ((,g ,obj))
-     (when (if (stringp ,g) (plusp (length ,g)) ,g)
-       (push ,g ,place))))
-
-@t@l
-(deftest maybe-push
-  (let ((list '()))
-    (maybe-push 'a list)
-    (maybe-push nil list)
-    (maybe-push "" list)
-    (maybe-push 'b list)
-    list)
-  (b a))
 
 @1*Reading sections. We come now to the heart of the \WEB\ parser. This
 function is a tiny state machine that models the global syntax of a \WEB\
