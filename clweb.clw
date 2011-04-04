@@ -3130,10 +3130,10 @@ we define here.
 
 @1*Printing the woven output. The individual sections and their contents
 are printed using the pretty printer with a customized dispatch table.
-The rest of the weaver consists entirely of pretty-printing routines that
-we'll install in that table.
+The rest of the weaver proper consists entirely of pretty-printing routines
+that we'll install in that table.
 
-@ @<Global variables@>=
+@<Global variables@>=
 (defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
 
 @ @l
@@ -3169,7 +3169,11 @@ re-reads such strings and picks up any inner-Lisp material.
             if (plusp (length text)) collect text
             if (eof-p forms) do (loop-finish) else collect forms))))
 
-@ @l
+@ Printing a limbo section is simple: we just dump out the \TeX\ text.
+Notice that we use a priority of~$1$ so as to override the normal section
+object printer, which we'll come to next.
+
+@l
 (defun print-limbo (stream section)
   (let ((commentary (section-commentary section)))
     (when commentary
@@ -3178,7 +3182,16 @@ re-reads such strings and picks up any inner-Lisp material.
 
 (set-weave-dispatch 'limbo-section #'print-limbo 1)
 
-@ % FIXME: This needs to be broken up and documented.
+@ Section objects are printed just like any other objects, but they use some
+special \TeX\ macros to set up the formatting. They begin with either \.{\\M}
+or \.{\\N} depending on whether the section is unstarred or starred. Then
+comes the commentary, which is separated from the code part by a bit of
+vertical space using the \.{\\Y} macro if both are present. The code part
+always starts with \.{\\B}, followed by the name if it's a named section.
+Then comes the code, which we output one form at a time, using tabs for
+every line unless it's atomic. Last come the cross-references and a final
+\.{\\fi} that matches the \.{\\ifon} in \.{\\M} and \.{\\N}.
+
 @l
 (defun print-section (stream section)
   (format stream "~&\\~:[M~*~;N{~D}~]{~D}"
@@ -3211,11 +3224,11 @@ re-reads such strings and picks up any inner-Lisp material.
     (when (and named-section
                (= (section-number section)
                   (section-number named-section)))
-      (print-xrefs stream #\A
+      (print-xrefs stream #\A ;
                    (remove section (named-section-sections named-section)))
-      (print-xrefs stream #\U
+      (print-xrefs stream #\U ;
                    (remove section (used-by named-section)))
-      (print-xrefs stream #\Q
+      (print-xrefs stream #\Q ;
                    (remove section (cited-by named-section)))))
   (format stream "\\fi~%"))
 
@@ -3230,13 +3243,12 @@ and~\.{\\ETs} (for between the last of three or more).
 (defun print-xrefs (stream kind xrefs)
   (when xrefs
     ;; This was 16 lines of code over two sections in \CWEB\null. I love |format|.
-@^\CWEB@>
     (format stream "\\~C~{~#[~;~D~;s ~D\\ET~D~:;s~@{~#[~;\\ETs~D~;~D~:;~D, ~]~}~]~}.~%"
             kind (sort (mapcar #'section-number xrefs) #'<))))
 
 @ Aside from printing the section name in the body of the woven output,
-this routine also knows how to print entries for the section name index,
-which uses a similar, but slightly different format.
+this next routine also knows how to print entries for the section name
+index, which uses a similar, but slightly different format.
 
 @l
 (defun print-section-name (stream section &key (indexing nil))
