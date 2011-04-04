@@ -3116,15 +3116,17 @@ whole of the output is in the form of a comment.
       (pprint-newline :fill)
       (weave-section (pprint-pop)))))
 
-@ In the tests output file, we have cross-references to the sections in the
+@ In the tests output file, we generate references to the sections of the
 main program that are presumably being tested. To produce those references,
-the \TeX\ macros \.{\\T} and \.{\\Ts} use the \.{\\progname} macro, which
-we define here.
+the \TeX\ macros \.{\\T} and \.{\\Ts} use the \.{\\progname} macro. We
+provide a default definition here using the name of the input file, but
+the user can easily override this by giving an alternate definition in the
+limbo text.
 
 @<Write the program name...@>=
 (format out "\\def\\progname{~/clweb::print-escaped/}~%"
-        (if input-file ;
-            (string-capitalize (pathname-name input-file)) ;
+        (if input-file
+            (string-capitalize (pathname-name input-file))
             "program"))
 
 @1*Printing the woven output. The individual sections and their contents
