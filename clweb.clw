@@ -184,6 +184,19 @@ empty strings. In such cases we'll use the following macro, which is like
     list)
   (b a))
 
+@ This next macro has been written many times by many authors under
+many names, which seems somehow appropriate. Paul Graham calls it
+|with-gensyms|, but I prefer the more descriptive |with-unique-names|.
+It captures a common idiom used in writing macros: given a list of
+symbols, it executes the given body in an environment augmented with
+bindings for each of those symbols to a fresh, uninterned symbol.
+
+@l
+(defmacro with-unique-names (symbols &body body)
+  `(let ,(loop for symbol in symbols
+               collect `(,symbol (copy-symbol ',symbol)))
+     ,@body))
+
 @*Sections. The fundamental unit of a web is the {\it section}, which may
 be either {\it named\/} or~{\it unnamed}. Named sections are conceptually
 very much like parameterless macros, except that they can be defined
@@ -364,24 +377,22 @@ arguments that will be used to initialize new |section| instances; e.g.,
 |:name| and~|:code|.
 
 @l
-(defmacro with-temporary-sections (sections &body body &aux
-                                   (spec (gensym))
-                                   (section (gensym))
-                                   (name (gensym)))
-  `(let ((*sections* (make-array 16 :adjustable t :fill-pointer 0))
-         (*test-sections* (make-array 16 :adjustable t :fill-pointer 0))
-         (*named-sections* nil))
-     (dolist (,spec ',sections)
-       (let* ((,section (apply #'make-instance
-                               (ecase (pop ,spec)
-                                 (:section 'section)
-                                 (:starred-section 'starred-section)
-                                 (:limbo 'limbo-section))
-                               ,spec))
-              (,name (section-name ,section)))
-         (when ,name
-           (push ,section (named-section-sections (find-section ,name))))))
-     ,@body))
+(defmacro with-temporary-sections (sections &body body)
+  (with-unique-names (spec section name)
+    `(let ((*sections* (make-array 16 :adjustable t :fill-pointer 0))
+           (*test-sections* (make-array 16 :adjustable t :fill-pointer 0))
+           (*named-sections* nil))
+       (dolist (,spec ',sections)
+         (let* ((,section (apply #'make-instance
+                                 (ecase (pop ,spec)
+                                   (:section 'section)
+                                   (:starred-section 'starred-section)
+                                   (:limbo 'limbo-section))
+                                 ,spec))
+                (,name (section-name ,section)))
+           (when ,name
+             (push ,section (named-section-sections (find-section ,name))))))
+       ,@body)))
 
 @ We keep named sections in a binary search tree whose keys are section
 names and whose values are code forms; the tangler will replace references
@@ -1104,20 +1115,19 @@ the body. If |rewind| is invoked more than once, each subsequent invocation
 will rewind to the state just after the previous one.
 
 @l
-(defmacro with-rewind-stream ((var stream &optional (rewind 'rewind)) ;
-                              &body body &aux
-                              (in (gensym)) (out (gensym)) (closing (gensym)))
-  `(let* ((,out (make-string-output-stream))
-          (,var (make-echo-stream ,stream ,out))
-          (,closing (list ,out ,var)))
-     (flet ((,rewind ()
-              (let ((,in (make-string-input-stream ;
-                          (get-output-stream-string ,out))))
-                (prog1 (setq ,var (make-concatenated-stream ,in ,var))
-                  (push ,var ,closing)
-                  (push ,in ,closing)))))
-       (unwind-protect (progn ,@body)
-         (map nil #'close ,closing)))))
+(defmacro with-rewind-stream ((var stream &optional (rewind 'rewind)) &body body)
+  (with-unique-names (in out closing)
+    `(let* ((,out (make-string-output-stream))
+            (,var (make-echo-stream ,stream ,out))
+            (,closing (list ,out ,var)))
+       (flet ((,rewind ()
+                (let ((,in (make-string-input-stream ;
+                            (get-output-stream-string ,out))))
+                  (prog1 (setq ,var (make-concatenated-stream ,in ,var))
+                    (push ,var ,closing)
+                    (push ,in ,closing)))))
+         (unwind-protect (progn ,@body)
+           (map nil #'close ,closing))))))
 
 @t@l
 (deftest rewind-stream
@@ -1137,23 +1147,22 @@ by |read| and |echoed| bound to a variable containing the characters so
 consumed.
 
 @l
-(defmacro read-with-echo ((stream object echoed) &body body &aux
-                          (out (gensym)) (echo (gensym))
-                          (raw-output (gensym)) (length (gensym)))
-  `(with-open-stream (,out (make-string-output-stream))
-     (with-open-stream (,echo (make-echo-stream ,stream ,out))
-       (let* ((,object (read-preserving-whitespace ,echo))
-              (,raw-output (get-output-stream-string ,out))
-              (,length (length ,raw-output))
-              (,echoed (subseq ,raw-output
-                               0
-                               (if (or (eof-p (peek-char nil ,echo nil *eof*))
-                                       (token-delimiter-p ;
-                                        (elt ,raw-output (1- ,length))))
-                                   ,length
-                                   (1- ,length)))))
-         (declare (ignorable ,object ,echoed))
-         ,@body))))
+(defmacro read-with-echo ((stream object echoed) &body body)
+  (with-unique-names (out echo raw-output length)
+    `(with-open-stream (,out (make-string-output-stream))
+       (with-open-stream (,echo (make-echo-stream ,stream ,out))
+         (let* ((,object (read-preserving-whitespace ,echo))
+                (,raw-output (get-output-stream-string ,out))
+                (,length (length ,raw-output))
+                (,echoed (subseq ,raw-output
+                                 0
+                                 (if (or (eof-p (peek-char nil ,echo nil *eof*))
+                                         (token-delimiter-p ;
+                                          (elt ,raw-output (1- ,length))))
+                                     ,length
+                                     (1- ,length)))))
+           (declare (ignorable ,object ,echoed))
+           ,@body)))))
 
 @t@l
 (deftest read-with-echo
@@ -1298,14 +1307,12 @@ reader tests will involve reading a single form in Lisp mode.
 (defmacro read-from-string-with-charpos (string &optional
                                          (eof-error-p t)
                                          (eof-value nil) &key
-                                         (preserve-whitespace nil) &aux
-                                         (string-stream (gensym))
-                                         (charpos-stream (gensym)))
-  `(with-open-stream (,string-stream (make-string-input-stream ,string))
-     (with-charpos-input-stream (,charpos-stream ,string-stream)
-       (if ,preserve-whitespace
-           (read-preserving-whitespace ,charpos-stream ,eof-error-p ,eof-value)
-           (read ,charpos-stream ,eof-error-p ,eof-value)))))
+                                         (preserve-whitespace nil))
+  (let ((reader (if preserve-whitespace 'read-preserving-whitespace 'read)))
+    (with-unique-names (string-stream charpos-stream)
+      `(with-open-stream (,string-stream (make-string-input-stream ,string))
+         (with-charpos-input-stream (,charpos-stream ,string-stream)
+           (,reader ,charpos-stream ,eof-error-p ,eof-value))))))
 
 (defun read-form-from-string (string &key (mode :lisp))
   (let ((*package* (find-package "CLWEB")))
@@ -3990,22 +3997,23 @@ macro'' (\ansi\ Common Lisp, section~3.1.2.1.2.2).
   (walk-as-special-form throw)
   (walk-as-special-form unwind-protect))
 
-@ The rest of the special form walkers we define will need specialized
-methods for both |walk-as-special-form-p| and |walk-compound-form|.
-The following macro makes sure that these are consistently defined.
+@ The rest of the special form walkers we define will need methods
+specialized on particular operators for both |walk-as-special-form-p|
+and |walk-compound-form|. The following macro makes sure that these are
+consistently defined.
 
 @l
 (defmacro define-special-form-walker (operator (walker form env &rest rest) ;
-                                      &body body &aux
-                                      (oparg `(,(gensym) (eql ',operator))))
-  (flet ((arg-name (arg) (if (consp arg) (car arg) arg)))
-    `(progn
-       (defmethod walk-as-special-form-p (,walker ,oparg ,form ,env)
-         (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
-         t)
-       (defmethod walk-compound-form (,walker ,oparg ,form ,env ,@rest)
-         (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
-         ,@body))))
+                                      &body body)
+  (let ((oparg `(,(gensym "OPERATOR") (eql ',operator))))
+    (flet ((arg-name (arg) (if (consp arg) (car arg) arg)))
+      `(progn
+         (defmethod walk-as-special-form-p (,walker ,oparg ,form ,env)
+           (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
+           t)
+         (defmethod walk-compound-form (,walker ,oparg ,form ,env ,@rest)
+           (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
+           ,@body)))))
 
 @t Many of the walker tests will be defined using the following macro,
 which takes a name for the test, a form to be walked, and an optional

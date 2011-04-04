@@ -141,6 +141,10 @@
              (PLUSP (LENGTH ,G))
              ,G)
        (PUSH ,G ,PLACE))))
+(DEFMACRO WITH-UNIQUE-NAMES (SYMBOLS &BODY BODY)
+  `(LET ,(LOOP FOR SYMBOL IN SYMBOLS
+               COLLECT `(,SYMBOL (COPY-SYMBOL ',SYMBOL)))
+     ,@BODY))
 (DEFCLASS SECTION NIL
           ((NAME :ACCESSOR SECTION-NAME :INITARG :NAME)
            (NUMBER :ACCESSOR SECTION-NUMBER)
@@ -416,39 +420,35 @@
            (MAKE-CHARPOS-OUTPUT-STREAM ,STREAM :CHARPOS ,CHARPOS))))
      (UNWIND-PROTECT (PROGN ,@BODY) (RELEASE-CHARPOS-STREAM ,VAR))))
 (DEFMACRO WITH-REWIND-STREAM
-          ((VAR STREAM &OPTIONAL (REWIND 'REWIND))
-           &BODY BODY
-           &AUX (IN (GENSYM)) (OUT (GENSYM)) (CLOSING (GENSYM)))
-  `(LET* ((,OUT (MAKE-STRING-OUTPUT-STREAM))
-          (,VAR (MAKE-ECHO-STREAM ,STREAM ,OUT))
-          (,CLOSING (LIST ,OUT ,VAR)))
-     (FLET ((,REWIND ()
-              (LET ((,IN
-                     (MAKE-STRING-INPUT-STREAM
-                      (GET-OUTPUT-STREAM-STRING ,OUT))))
-                (PROG1 (SETQ ,VAR (MAKE-CONCATENATED-STREAM ,IN ,VAR))
-                  (PUSH ,VAR ,CLOSING)
-                  (PUSH ,IN ,CLOSING)))))
-       (UNWIND-PROTECT (PROGN ,@BODY) (MAP NIL #'CLOSE ,CLOSING)))))
-(DEFMACRO READ-WITH-ECHO
-          ((STREAM OBJECT ECHOED)
-           &BODY BODY
-           &AUX (OUT (GENSYM)) (ECHO (GENSYM)) (RAW-OUTPUT (GENSYM))
-           (LENGTH (GENSYM)))
-  `(WITH-OPEN-STREAM (,OUT (MAKE-STRING-OUTPUT-STREAM))
-     (WITH-OPEN-STREAM (,ECHO (MAKE-ECHO-STREAM ,STREAM ,OUT))
-       (LET* ((,OBJECT (READ-PRESERVING-WHITESPACE ,ECHO))
-              (,RAW-OUTPUT (GET-OUTPUT-STREAM-STRING ,OUT))
-              (,LENGTH (LENGTH ,RAW-OUTPUT))
-              (,ECHOED
-               (SUBSEQ ,RAW-OUTPUT 0
-                       (IF (OR (EOF-P (PEEK-CHAR NIL ,ECHO NIL *EOF*))
-                               (TOKEN-DELIMITER-P
-                                (ELT ,RAW-OUTPUT (1- ,LENGTH))))
-                           ,LENGTH
-                           (1- ,LENGTH)))))
-         (DECLARE (IGNORABLE ,OBJECT ,ECHOED))
-         ,@BODY))))
+          ((VAR STREAM &OPTIONAL (REWIND 'REWIND)) &BODY BODY)
+  (WITH-UNIQUE-NAMES (IN OUT CLOSING)
+    `(LET* ((,OUT (MAKE-STRING-OUTPUT-STREAM))
+            (,VAR (MAKE-ECHO-STREAM ,STREAM ,OUT))
+            (,CLOSING (LIST ,OUT ,VAR)))
+       (FLET ((,REWIND ()
+                (LET ((,IN
+                       (MAKE-STRING-INPUT-STREAM
+                        (GET-OUTPUT-STREAM-STRING ,OUT))))
+                  (PROG1 (SETQ ,VAR (MAKE-CONCATENATED-STREAM ,IN ,VAR))
+                    (PUSH ,VAR ,CLOSING)
+                    (PUSH ,IN ,CLOSING)))))
+         (UNWIND-PROTECT (PROGN ,@BODY) (MAP NIL #'CLOSE ,CLOSING))))))
+(DEFMACRO READ-WITH-ECHO ((STREAM OBJECT ECHOED) &BODY BODY)
+  (WITH-UNIQUE-NAMES (OUT ECHO RAW-OUTPUT LENGTH)
+    `(WITH-OPEN-STREAM (,OUT (MAKE-STRING-OUTPUT-STREAM))
+       (WITH-OPEN-STREAM (,ECHO (MAKE-ECHO-STREAM ,STREAM ,OUT))
+         (LET* ((,OBJECT (READ-PRESERVING-WHITESPACE ,ECHO))
+                (,RAW-OUTPUT (GET-OUTPUT-STREAM-STRING ,OUT))
+                (,LENGTH (LENGTH ,RAW-OUTPUT))
+                (,ECHOED
+                 (SUBSEQ ,RAW-OUTPUT 0
+                         (IF (OR (EOF-P (PEEK-CHAR NIL ,ECHO NIL *EOF*))
+                                 (TOKEN-DELIMITER-P
+                                  (ELT ,RAW-OUTPUT (1- ,LENGTH))))
+                             ,LENGTH
+                             (1- ,LENGTH)))))
+           (DECLARE (IGNORABLE ,OBJECT ,ECHOED))
+           ,@BODY)))))
 (DEFCLASS MARKER NIL ((VALUE :READER MARKER-VALUE :INITARG :VALUE)))
 (DEFUN MARKERP (OBJECT) (TYPEP OBJECT 'MARKER))
 (DEFGENERIC MARKER-BOUNDP
@@ -1711,22 +1711,21 @@
   (WALK-AS-SPECIAL-FORM THROW)
   (WALK-AS-SPECIAL-FORM UNWIND-PROTECT))
 (DEFMACRO DEFINE-SPECIAL-FORM-WALKER
-          (OPERATOR (WALKER FORM ENV &REST REST)
-           &BODY BODY
-           &AUX (OPARG `(,(GENSYM) (EQL ',OPERATOR))))
-  (FLET ((ARG-NAME (ARG)
-           (IF (CONSP ARG)
-               (CAR ARG)
-               ARG)))
-    `(PROGN
-      (DEFMETHOD WALK-AS-SPECIAL-FORM-P (,WALKER ,OPARG ,FORM ,ENV)
-        (DECLARE
-         (IGNORABLE ,@(MAPCAR (FUNCTION ARG-NAME) `(,WALKER ,FORM ,ENV))))
-        T)
-      (DEFMETHOD WALK-COMPOUND-FORM (,WALKER ,OPARG ,FORM ,ENV ,@REST)
-        (DECLARE
-         (IGNORABLE ,@(MAPCAR (FUNCTION ARG-NAME) `(,WALKER ,FORM ,ENV))))
-        ,@BODY))))
+          (OPERATOR (WALKER FORM ENV &REST REST) &BODY BODY)
+  (LET ((OPARG `(,(GENSYM "OPERATOR") (EQL ',OPERATOR))))
+    (FLET ((ARG-NAME (ARG)
+             (IF (CONSP ARG)
+                 (CAR ARG)
+                 ARG)))
+      `(PROGN
+        (DEFMETHOD WALK-AS-SPECIAL-FORM-P (,WALKER ,OPARG ,FORM ,ENV)
+          (DECLARE
+           (IGNORABLE ,@(MAPCAR (FUNCTION ARG-NAME) `(,WALKER ,FORM ,ENV))))
+          T)
+        (DEFMETHOD WALK-COMPOUND-FORM (,WALKER ,OPARG ,FORM ,ENV ,@REST)
+          (DECLARE
+           (IGNORABLE ,@(MAPCAR (FUNCTION ARG-NAME) `(,WALKER ,FORM ,ENV))))
+          ,@BODY)))))
 (MACROLET ((DEFINE-BLOCK-LIKE-WALKER (OPERATOR)
              `(DEFINE-SPECIAL-FORM-WALKER ,OPERATOR
                   ((WALKER WALKER) FORM ENV)
