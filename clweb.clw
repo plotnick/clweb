@@ -5023,8 +5023,9 @@ but which can be instantiated via |(make-type-heading 'foo)|.
        (defclass ,(type-heading-class-name name) (type-heading)
          ,slots
          (:default-initargs
-          :name ,(or (car (option :name)) (string-downcase name))
-           :allowable-modifiers ',(option :modifiers))))))
+          :name ,(or (car (option :name)) ;
+                     (substitute #\Space #\- (string-downcase name)))
+          :allowable-modifiers ',(option :modifiers))))))
 
 (defun make-type-heading (type &rest initargs)
   (apply #'make-instance (type-heading-class-name type) initargs))
@@ -5069,22 +5070,18 @@ compile-time, assuming the Lisp implementation supports compiler macros.
   (:modifiers :local))
 
 (define-type-heading symbol-macro ()
-  (:name "symbol macro")
   (:modifiers :local))
 
 (define-type-heading class ())
 
-(define-type-heading condition-class ()
-  (:name "condition class"))
+(define-type-heading condition-class ())
 
 (define-type-heading variable ()
   (:modifiers :special :constant))
 
-(define-type-heading method-combination ()
-  (:name "method combination"))
+(define-type-heading method-combination ())
 
-(define-type-heading compiler-macro ()
-  (:name "compiler macro"))
+(define-type-heading compiler-macro ())
 
 @t@l
 (deftest function-heading-name
