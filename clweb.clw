@@ -4981,8 +4981,7 @@ symbols, which we'll use as prefixes to the heading name.
   ((allowable-modifiers :reader allowable-modifiers
                         :initarg :allowable-modifiers
                         :allocation :class)
-   (modifiers :accessor heading-modifiers
-              :initarg :modifiers)))
+   (modifiers :accessor heading-modifiers)))
 
 (defmethod initialize-instance :after ;
     ((heading type-heading) &rest initargs &key &allow-other-keys)
