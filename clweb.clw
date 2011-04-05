@@ -658,10 +658,6 @@ trailing whitespace and replaces all runs of one or more whitespace
 characters with a single space.
 
 @l
-(unless (fboundp 'whitespacep) ; CCL, at least, provides a suitable definition
-  (defun whitespacep (char) (find char *whitespace* :test #'char=)))
-@^Clozure Common Lisp@>
-
 (defun squeeze (string)
   (loop with squeezing = nil
         for char across (string-trim *whitespace* string)
@@ -679,6 +675,16 @@ characters with a single space.
 (deftest (squeeze 1) (squeeze "abc") "abc")
 (deftest (squeeze 2) (squeeze "ab c") "ab c")
 (deftest (squeeze 3) (squeeze (format nil " a b ~C c " #\Tab)) "a b c")
+
+@ Clozure Common Lisp provides a suitable definition for this predicate, but
+it's simple enough to define it ourselves. Note, however, that this routine
+does not---and can not, at least not portably---look at the current readtable
+to determine what characters currently have whitespace syntax.
+@^Clozure Common Lisp@>
+
+@l
+#-ccl
+(defun whitespacep (char) (find char *whitespace* :test #'char=))
 
 @ This list should contain the characters named `Space', `Tab', `Newline',
 `Linefeed', `Page', and~`Return', in that order. However, `Linefeed' might
