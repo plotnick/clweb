@@ -192,10 +192,11 @@ symbols, it executes the given body in an environment augmented with
 bindings for each of those symbols to a fresh, uninterned symbol.
 
 @l
-(defmacro with-unique-names (symbols &body body)
-  `(let ,(loop for symbol in symbols
-               collect `(,symbol (copy-symbol ',symbol)))
-     ,@body))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defmacro with-unique-names (symbols &body body)
+    `(let ,(loop for symbol in symbols
+                 collect `(,symbol (copy-symbol ',symbol)))
+       ,@body)))
 
 @*Sections. The fundamental unit of a web is the {\it section}, which may
 be either {\it named\/} or~{\it unnamed}. Named sections are conceptually
