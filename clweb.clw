@@ -5083,6 +5083,9 @@ compile-time, assuming the Lisp implementation supports compiler macros.
 (define-type-heading method-combination ()
   (:name "method combination"))
 
+(define-type-heading compiler-macro ()
+  (:name "compiler macro"))
+
 @t@l
 (deftest function-heading-name
   (values (heading-name (make-type-heading 'function))
@@ -5377,6 +5380,7 @@ the |car| of the defining form as the |operator| argument.
 @<Choose an appropriate heading class@>=
 (case operator
   ((defmacro macrolet) 'macro)
+  ((define-compiler-macro) 'compiler-macro)
   ((define-symbol-macro symbol-macrolet) 'symbol-macro)
   ((defmethod) @<Choose a heading class for method definition@>)
   (otherwise 'function))
@@ -5678,11 +5682,11 @@ context.
   ("FOO local function" ((:def 0)))
   ("FOO local setf function" ((:def 1))))
 
-@ We'll treat |defun| and |defmacro| as special forms, since otherwise they
-will get macro-expanded before we get a chance to walk the function name.
-In fact, we won't even bother expanding them at all, since we don't care
-about the implementation-specific expansions, and we get everything we need
-from this simple walk.
+@ We'll treat |defun|, |defmacro|, and |define-compiler-macro| as special
+forms, since otherwise they will get macro-expanded before we get a chance
+to walk the function name. In fact, we won't even bother expanding them at
+all, since we don't care about the implementation-specific expansions, and
+we get everything we need from this simple walk.
 
 Note in particular that we don't record the macro definition when we walk a
 |defmacro| form. For the macro definition to be available during the walk,
@@ -5700,7 +5704,8 @@ defined, by way of |walk-lambda-expression|.
                                             :operator (car form)
                                             :def t)))))
   (define-defun-like-walker defun)
-  (define-defun-like-walker defmacro))
+  (define-defun-like-walker defmacro)
+  (define-defun-like-walker define-compiler-macro))
 
 @t@l
 (define-indexing-test defun
@@ -5711,6 +5716,10 @@ defined, by way of |walk-lambda-expression|.
   ((:section :code ((defmacro foo (&body body) (mapappend 'identity body)))))
   ("FOO macro" ((:def 0)))
   ("MAPAPPEND function" (0)))
+
+(define-indexing-test define-compiler-macro
+  ((:section :code ((define-compiler-macro foo (&whole form) form))))
+  ("FOO compiler macro" ((:def 0))))
 
 @ The special-variable-defining forms must also be walked as if they were
 special forms. Once again, we'll just skip the macro expansions.
