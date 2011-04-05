@@ -2675,6 +2675,10 @@ capability later in the indexing code.
            (tangle-1 form :expand-named-sections expand-named-sections)))
     (typecase form
       (marker (values (marker-value form) t))
+      (named-section
+       (if expand-named-sections
+           (values (section-code form) t)
+           (values form nil)))
       (atom (values form nil))
       ((cons named-section *)
        (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
@@ -2707,8 +2711,8 @@ capability later in the indexing code.
 
 (deftest (tangle-1 3)
   (let ((*named-sections* *sample-named-sections*))
-    (eql (tangle-1 (read-form-from-string "@<foo@>"))
-         (find-sample-section "foo")))
+    (tangle-1 (read-form-from-string "@<foo@>")))
+  (:foo)
   t)
 
 @ |tangle| repeatedly calls |tangle-1| on |form| until it can no longer be

@@ -418,9 +418,8 @@
          (:A :B :C) T)
 (DEFTEST (TANGLE-1 3)
          (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
-           (EQL (TANGLE-1 (READ-FORM-FROM-STRING "@<foo@>"))
-                (FIND-SAMPLE-SECTION "foo")))
-         T)
+           (TANGLE-1 (READ-FORM-FROM-STRING "@<foo@>")))
+         (:FOO) T)
 (DEFTEST TANGLE
          (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
            (TANGLE (READ-FORM-FROM-STRING (FORMAT NIL "(:a @<foo@>~% :b)"))))
