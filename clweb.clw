@@ -5012,23 +5012,47 @@ but which can be instantiated via |(make-type-heading 'foo)|.
     (intern (concatenate 'string (string name) "-HEADING") ;
             (find-package "CLWEB"))))
 
-(defmacro define-type-heading (name slots &rest options)
+@<Define |pop-qualifiers| macro@>
+
+(defmacro define-type-heading (name slots &rest options &aux
+                               (class-name (type-heading-class-name name)))
   (flet ((option (indicator) ;
            (cdr (find-if (lambda (option) (eq (car option) indicator)) ;
                          options))))
-    ;; This |eval-when| ought not be necessary, but SBCL doesn't let us use
-    ;; |find-class| at compilation time without it, contrary to the specified
-    ;; behavior of |defclass| in the Common Lisp standard.
-    `(eval-when (:compile-toplevel :load-toplevel :execute)
-       (defclass ,(type-heading-class-name name) (type-heading)
-         ,slots
-         (:default-initargs
-          :name ,(or (car (option :name)) ;
-                     (substitute #\Space #\- (string-downcase name)))
-          :allowable-modifiers ',(option :modifiers))))))
+    `(progn
+       ;; This |eval-when| ought not be necessary, but SBCL doesn't let us use
+       ;; |find-class| at compilation time without it, contrary to the specified
+       ;; behavior of |defclass| in the Common Lisp standard.
+       (eval-when (:compile-toplevel :load-toplevel :execute)
+         (defclass ,class-name (type-heading)
+           ,slots
+           (:default-initargs
+            :name ,(or (car (option :name)) ;
+                       (substitute #\Space #\- (string-downcase name)))
+            :allowable-modifiers ',(option :modifiers))))
+       ,@(loop for (option-name . option) in options
+               if (eq option-name :heading-name)
+                 collect @<Generate a specialized |heading-name| method...@>))))
 
 (defun make-type-heading (type &rest initargs)
   (apply #'make-instance (type-heading-class-name type) initargs))
+
+@ As part of our little type-heading-definition {\sc dsl}, we'll allow
+definitions of specialized |heading-name| methods to appear as options
+in a |define-type-heading| form. The primary reason for this is to ensure
+that the full class names won't be needed outside of those forms.
+
+The syntax for such options is `(|:heading-name| \<qualifiers>$^*$
+\<parameters> .~\<body>)'. The \<parameters> list should consist of a
+single, unspecialized parameter name; we'll provide the appropriate
+class specializer.
+
+@<Generate a specialized |heading-name| method from |option|@>=
+(let ((qualifiers (pop-qualifiers option)))
+  (destructuring-bind (parameters . body) option
+    (check-type parameters (cons symbol null))
+    `(defmethod heading-name ,@qualifiers ((,(car parameters) ,class-name))
+       ,@body)))
 
 @ Those pretty names come at a cost, though, and we don't actually want to
 execute all those calls to |type-heading-class-name| at run-time just to
@@ -5063,7 +5087,8 @@ compile-time, assuming the Lisp implementation supports compiler macros.
   (:modifiers :local :generic :setf))
 
 (define-type-heading method
-  (@<Method heading slots@>)
+  @<Define method heading slots@>
+  @<Define specialized |heading-name| for method headings@>
   (:modifiers :setf))
 
 (define-type-heading macro ()
@@ -5121,15 +5146,15 @@ compile-time, assuming the Lisp implementation supports compiler macros.
 @ For method headings, we'll prepend the list of qualifiers if present;
 otherwise, we'll call them `primary'.
 
-@l
-(defmethod heading-name :prefix ((heading method-heading))
+@<Define specialized |heading-name|...@>=
+(:heading-name :prefix (heading)
   (mapcar #'string-downcase ;
           (or (method-heading-qualifiers heading) '(:primary))))
 
-@ @<Method heading slots@>=
-(qualifiers :reader method-heading-qualifiers ;
-            :initarg :qualifiers ;
-            :initform nil)
+@ @<Define method heading slots@>=
+((qualifiers :reader method-heading-qualifiers ;
+             :initarg :qualifiers ;
+             :initform nil))
 
 @t@l
 (deftest method-heading-name
@@ -5786,9 +5811,10 @@ macro to pull off method qualifiers from a |defgeneric| form or a method
 description. Syntactically, the qualifiers are any non-list objects
 preceding the specialized \L-list.
 
-@l
-(defmacro pop-qualifiers (place)
-  `(loop until (listp (car ,place)) collect (pop ,place)))
+@<Define |pop-qualifiers| macro@>=
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defmacro pop-qualifiers (place)
+    `(loop until (listp (car ,place)) collect (pop ,place))))
 
 @ For |defgeneric| forms, we're interested in the name of the generic
 function being defined, the method combination type, and any methods that
