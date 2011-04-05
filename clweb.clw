@@ -1586,12 +1586,23 @@ code and the pretty-printing routines.
 (deftype backquote () '(cons (satisfies backquotep)))
 
 (defclass comma ()
-  ((form :reader comma-form :initarg :form)))
+  ((form :initarg :form)))
 (defclass splicing-comma (comma)
   ((modifier :reader comma-modifier :initarg :modifier)))
-(defmethod comma-form :around ((comma comma))
-  (tangle (call-next-method)))
+
 (defun commap (obj) (typep obj 'comma))
+
+@ To process a comma, we need to tangle the form that followed it. If that
+form is a named section reference, we take the |car| of the tangled form,
+on the assumption that you can't meaningfully unquote more than one form.
+
+@l
+(defgeneric comma-form (comma))
+(defmethod comma-form ((comma comma))
+  (let ((form (slot-value comma 'form)))
+    (typecase form
+      (named-section (car (tangle form)))
+      (t (tangle form)))))
 
 @ The reader macro functions for backquote and comma are straightforward.
 
