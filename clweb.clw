@@ -733,22 +733,22 @@ having code parts, but later tests will.
 @l
 (defvar *sample-named-sections*
   (with-temporary-sections
-      ((:section :name "bar" :code (:bar))
+      ((:section :name "foo" :code (:foo))
+       (:section :name "bar" :code (:bar))
        (:section :name "baz" :code (:baz))
-       (:section :name "foo" :code (:foo))
-       (:section :name "qux" :code (:qux)))
+       (:section :name "quux" :code (:quux :quuux :quuuux)))
     *named-sections*))
 
 (defun find-sample-section (name)
   (find-or-insert name *sample-named-sections* :insert-if-not-found nil))
 
 (deftest find-named-section
-  (section-name (find-sample-section "bar"))
-  "bar")
+  (section-name (find-sample-section "foo"))
+  "foo")
 
 (deftest find-section-by-prefix
-  (section-name (find-sample-section "q..."))
-  "qux")
+  (section-name (find-sample-section "f..."))
+  "foo")
 
 (deftest find-section-by-ambiguous-prefix
   (let ((handled nil))
@@ -1595,14 +1595,23 @@ code and the pretty-printing routines.
 @ To process a comma, we need to tangle the form that followed it. If that
 form is a named section reference, we take the |car| of the tangled form,
 on the assumption that you can't meaningfully unquote more than one form.
+This violation of the general principle that named section expansion has
+splicing semantics is a consequence of our using the Lisp reader to process
+both web syntax and Lisp.
 
 @l
 (defgeneric comma-form (comma))
 (defmethod comma-form ((comma comma))
-  (let ((form (slot-value comma 'form)))
+  (let* ((form (slot-value comma 'form))
+         (tangled-form (tangle form)))
     (typecase form
-      (named-section (car (tangle form)))
-      (t (tangle form)))))
+      (named-section
+       (when (cdr tangled-form)
+         (cerror "Ignore the extra forms."
+                 "Tried to unquote more than one form from section @<~A@>."
+                 (section-name form)))
+       (car tangled-form))
+      (t tangled-form))))
 
 @ The reader macro functions for backquote and comma are straightforward.
 
@@ -1717,6 +1726,27 @@ Appendix~C.
   #(:a)
   #((1 2 3))
   #(1 2 3))
+
+@t Test the interaction between backquote, comma, and named sections.
+
+@l
+(deftest (bq named-section)
+  (let ((*named-sections* *sample-named-sections*))
+    (values (eval (tangle (read-form-from-string "`(, @<foo@>)")))
+            (eval (tangle (read-form-from-string "`(,@ @<foo@>)")))))
+  (:foo)
+  :foo)
+
+(deftest (bq too-many-forms)
+  (let ((*named-sections* *sample-named-sections*)
+        (handled nil))
+    (handler-bind ((error (lambda (condition)
+                            (setq handled t)
+                            (continue condition))))
+      (values (eval (tangle (read-form-from-string "`(,@ @<quux@>)")))
+              handled)))
+  :quux
+  t)
 
 @ During tangling, we print backquotes and commas using the backquote
 syntax, as recommended (but not required) by section~2.4.6.1 of the
