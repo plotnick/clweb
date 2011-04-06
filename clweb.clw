@@ -1622,7 +1622,6 @@ both web syntax and Lisp.
       (declare (ignore char))
       (list *backquote* (read stream t nil t)))
     nil (readtable-for-mode mode))
-
   (set-macro-character #\,
     (lambda (stream char)
       (declare (ignore char))
