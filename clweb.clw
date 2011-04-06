@@ -5019,17 +5019,18 @@ method into one delimited string. We'll use this for |heading-name|.
   "big, fat, juicy, steak, yum!"
   "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan")
 
-@ The type headings will have a set of modifiers provided as initargs,
-since that's the easiest way to pass them down from the walker. So we'll
-arrange for those initargs to be translated into a sorted list of modifier
-symbols, which we'll use as prefixes to the heading name.
+@ The type headings will have a set of modifiers provided via boolean
+initargs, since that's the easiest way to pass them down from the walker.
+So we'll arrange for those initargs to be translated into a sorted list
+of modifier symbols, which we'll use as prefixes to the heading name.
 
 @l
 (defclass type-heading (heading)
   ((allowable-modifiers :reader allowable-modifiers
                         :initarg :allowable-modifiers
                         :allocation :class)
-   (modifiers :accessor heading-modifiers)))
+   (modifiers :accessor heading-modifiers))
+  (:default-initargs :allowable-modifiers nil :modifiers nil))
 
 (defmethod initialize-instance :after ;
     ((heading type-heading) &rest initargs &key &allow-other-keys)
@@ -5040,18 +5041,32 @@ symbols, which we'll use as prefixes to the heading name.
                 collect name into modifiers
               finally (return (sort modifiers
                                     (lambda (x y)
-                                      (< (position x allowable-modifiers)
+                                      (< (position x allowable-modifiers) ;
                                          (position y allowable-modifiers))))))))
 
 (defmethod heading-name :prefix ((heading type-heading))
   (mapcar #'string-downcase (heading-modifiers heading)))
 
-@ The following definitions provide a declarative syntax for defining and
-creating instances of the type heading classes. The games we play with the
-class names are to avoid name clashes while still allowing short,
-descriptive names in the interface: the form |(define-type-heading foo ())|
-constructs a new subclass of |type-heading| whose name is \.{FOO-HEADING}
-but which can be instantiated via |(make-type-heading 'foo)|.
+@ We'll define our type heading classes using the macro |define-type-heading|.
+Its syntax is modeled on that of |defclass|: it takes a name, a list of
+slot specifiers, and zero or more options. We don't bother accepting a
+list of superclass names; all of the classes will be direct subclasses
+of |type-heading|.
+
+The |name| argument is what we'll call a {\it short name\/}---a symbol like
+|function| or |variable|. These short names will be transformed into longer
+names via |type-heading-class-name| to avoid potential conflicts; we don't
+actually want to define a class named |function|. To ensure that the longer
+class names never need to appear in client code, we'll accept options that
+describe methods to be automatically generated that will specialize on the
+class being defined.
+
+We'll handle just two of the options accepted by |define-type-heading|
+in this section. The first is |:name|, which is used to provide a default
+for the |:name| initarg for instances of the defined class. It it's
+omitted (the usual case), we'll generate a name from the short name.
+The second option we'll handle here is |:modifiers|, which specifies an
+ordered list of allowable modifiers.
 
 @l
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -5061,77 +5076,84 @@ but which can be instantiated via |(make-type-heading 'foo)|.
 
 @<Define |pop-qualifiers| macro@>
 
-(defmacro define-type-heading (name slots &rest options &aux
+(defmacro define-type-heading (name slots &rest options &aux ;
                                (class-name (type-heading-class-name name)))
   (flet ((option (indicator) ;
            (cdr (find-if (lambda (option) (eq (car option) indicator)) ;
                          options))))
     `(progn
-       ;; This |eval-when| ought not be necessary, but SBCL doesn't let us use
-       ;; |find-class| at compilation time without it, contrary to the specified
-       ;; behavior of |defclass| in the Common Lisp standard.
-       (eval-when (:compile-toplevel :load-toplevel :execute)
-         (defclass ,class-name (type-heading)
-           ,slots
-           (:default-initargs
-            :name ,(or (car (option :name)) ;
-                       (substitute #\Space #\- (string-downcase name)))
-            :allowable-modifiers ',(option :modifiers))))
-       ,@(loop for (option-name . option) in options
-               if (eq option-name :heading-name)
-                 collect @<Generate a specialized |heading-name| method...@>))))
+       (defclass ,class-name (type-heading)
+         ,slots
+         (:default-initargs
+          :name ,(or (car (option :name)) ;
+                     (substitute #\Space #\- (string-downcase name)))
+          :allowable-modifiers ',(option :modifiers)))
+       ,@ @<Generate specialized |compute-type-heading-class| methods@>
+       ,@ @<Generate specialized |heading-name| methods@>)))
 
-(defun make-type-heading (type &rest initargs)
-  (apply #'make-instance (type-heading-class-name type) initargs))
-
-@ As part of our little type-heading-definition {\sc dsl}, we'll allow
-definitions of specialized |heading-name| methods to appear as options
-in a |define-type-heading| form. The primary reason for this is to ensure
-that the full class names won't be needed outside of those forms.
-
-The syntax for such options is `(|:heading-name| \<qualifiers>$^*$
-\<parameters> .~\<body>)'. The \<parameters> list should consist of a
-single, unspecialized parameter name; we'll provide the appropriate
-class specializer.
-
-@<Generate a specialized |heading-name| method from |option|@>=
-(let ((qualifiers (pop-qualifiers option)))
-  (destructuring-bind (parameters . body) option
-    (check-type parameters (cons symbol null))
-    `(defmethod heading-name ,@qualifiers ((,(car parameters) ,class-name))
-       ,@body)))
-
-@ Those pretty names come at a cost, though, and we don't actually want to
-execute all those calls to |type-heading-class-name| at run-time just to
-save a few characters of typing. Fortunately, nearly all of the calls to
-|make-type-heading| use a quoted symbol as the |type|, and so we can just
-do the transformation (and the class lookup, too, while we're at it) at
-compile-time, assuming the Lisp implementation supports compiler macros.
+@ To instantiate a type heading class, we'll use the constructor function
+|make-type-heading|, which accepts either a short name or a class.
 
 @l
-(deftype quoted-symbol () '(cons (eql quote) (cons symbol null)))
-
-(define-compiler-macro make-type-heading (&whole form type &rest initargs ;
-                                          &environment env)
-  (typecase type
-    (quoted-symbol ;
-     `(make-instance ,(find-class (type-heading-class-name (cadr type)) t env) ;
-                     ,@initargs))
-    (otherwise form)))
+(defgeneric make-type-heading (type &rest initargs))
+(defmethod make-type-heading ((type symbol) &rest initargs)
+  (apply #'make-instance (type-heading-class-name type) initargs))
+(defmethod make-type-heading ((type standard-class) &rest initargs)
+  (apply #'make-instance type initargs))
 
 @t@l
-(deftest quoted-symbol-type
-  (and (typep ''foo 'quoted-symbol)
-       (not (typep 'foo 'quoted-symbol))
-       (not (typep (cons 'quote 'foo) 'quoted-symbol)))
+(deftest make-type-heading
+  (every (lambda (x) (typep x 'type-heading))
+         (list (make-type-heading 'type)
+               (make-type-heading (find-class 'type-heading))))
   t)
 
-@ {\it Et voil\`a!\/} Note that a name is derived from the class name if no
-|:name| option is provided.
+@ One of the options that |define-type-heading| accepts produces specialized
+methods for |heading-name|. The syntax is `(|:heading-name| \<qualifiers>$^*$
+\<parameters> .~\<body>)'. The \<parameters> list should consist of a single,
+unspecialized parameter name; we'll provide the appropriate class specializer.
+
+@<Generate specialized |heading-name| methods@>=
+(loop for (option-name . option) in options
+      when (eq option-name :heading-name)
+      collect (let ((qualifiers (pop-qualifiers option)))
+                (destructuring-bind (parameters . body) option
+                  (check-type parameters (cons symbol null))
+                  `(defmethod heading-name ,@qualifiers ;
+                       ((,(car parameters) ,class-name))
+                     ,@body))))
+
+@ Most of the type headings are associated with a small set of operators
+for which they'll serve as sub-headings. For example, when we walk a |defun|
+form, we'll use a |function| type heading, and so on. Rather than having
+those associations spread all over the indexing walker, we'll put them right
+here, with the type heading definitions themselves.
+
+We do this via methods on the generic function |compute-type-heading-class|,
+which the indexing methods can call with an operator name to determine which
+type heading class to use. The class returned can then be used as the first
+argument to |make-type-heading|.
+
+@l
+(defgeneric compute-type-heading-class (operator &key &allow-other-keys))
+
+@ The |:operators| option to |define-type-heading| takes a list of symbols
+and creates an eql-specialized method on |compute-type-heading-class| for
+each of them. It's important that these methods return the class and not
+the name of the class so that |make-type-heading| can do the right thing.
+
+@<Generate specialized |compute-type-heading-class| methods@>=
+(loop for operator in (option :operators)
+      collect `(defmethod compute-type-heading-class ;
+                   ((operator (eql ',operator)) &key)
+                 (find-class ',class-name)))
+
+@ {\it Et voil\`a!\/}
 
 @l
 (define-type-heading function ()
-  (:modifiers :local :generic :setf))
+  (:modifiers :local :generic :setf)
+  (:operators defun defgeneric flet labels))
 
 (define-type-heading method
   @<Define method heading slots@>
@@ -5139,69 +5161,56 @@ compile-time, assuming the Lisp implementation supports compiler macros.
   (:modifiers :setf))
 
 (define-type-heading macro ()
-  (:modifiers :local))
+  (:modifiers :local)
+  (:operators defmacro macrolet))
 
 (define-type-heading symbol-macro ()
-  (:modifiers :local))
+  (:modifiers :local)
+  (:operators define-symbol-macro symbol-macrolet))
 
-(define-type-heading class ())
+(define-type-heading class ()
+  (:operators defclass))
 
-(define-type-heading condition-class ())
+(define-type-heading condition-class ()
+  (:operators define-condition))
 
 (define-type-heading variable ()
   (:modifiers :special :constant))
 
-(define-type-heading method-combination ())
+(define-type-heading method-combination ()
+  (:operators define-method-combination))
 
-(define-type-heading compiler-macro ())
+(define-type-heading compiler-macro ()
+  (:operators define-compiler-macro))
 
-@t@l
+@t We won't bother testing all of the type heading classes, but we'll verify
+that all of the automatically generated methods are doing what they aughtta.
+
+@l
 (deftest function-heading-name
   (values (heading-name (make-type-heading 'function))
           (heading-name (make-type-heading 'function :local t))
           (heading-name (make-type-heading 'function :generic t :local nil))
           (heading-name (make-type-heading 'function :setf t))
-          (heading-name (make-type-heading 'function :setf t :local t)))
+          (heading-name (make-type-heading 'function :setf t :local t))
+          (every (lambda (class) (eql (class-name class) 'function-heading))
+                 (list (class-of (make-type-heading 'function))
+                       (compute-type-heading-class 'defun)
+                       (compute-type-heading-class 'flet))))
   "function"
   "local function"
   "generic function"
   "setf function"
-  "local setf function")
+  "local setf function"
+  t)
 
-(deftest variable-heading-name
-  (values (heading-name (make-type-heading 'variable))
-          (heading-name (make-type-heading 'variable :special t))
-          (heading-name (make-type-heading 'variable :constant t)))
-  "variable"
-  "special variable"
-  "constant variable")
-
-(deftest macro-heading-name
-  (values (heading-name (make-type-heading 'macro))
-          (heading-name (make-type-heading 'symbol-macro))
-          (heading-name (make-type-heading 'symbol-macro :local t)))
-  "macro"
-  "symbol macro"
-  "local symbol macro")
-
-(deftest class-heading-name
-  (values (heading-name (make-type-heading 'class))
-          (heading-name (make-type-heading 'condition-class)))
-  "class"
-  "condition class")
-
-@ For method headings, we'll prepend the list of qualifiers if present;
-otherwise, we'll call them `primary'.
+@ Method headings get some special treatment. To begin with, we'll prepend
+the list of qualifiers, if any; otherwise, we'll call them `primary'.
 
 @<Define specialized |heading-name|...@>=
 (:heading-name :prefix (heading)
   (mapcar #'string-downcase ;
           (or (method-heading-qualifiers heading) '(:primary))))
-
-@ @<Define method heading slots@>=
-((qualifiers :reader method-heading-qualifiers ;
-             :initarg :qualifiers ;
-             :initform nil))
 
 @t@l
 (deftest method-heading-name
@@ -5211,6 +5220,39 @@ otherwise, we'll call them `primary'.
                                            '(:before :during :after))))
   "primary method"
   "before during after method")
+
+@ @<Define method heading slots@>=
+((qualifiers :reader method-heading-qualifiers ;
+             :initarg :qualifiers ;
+             :initform nil))
+
+@ Non-|setf| primary methods (i.e., methods with empty qualifier lists)
+are indexed as functions so that they'll appear as definitions of the
+generic function they're methods of; only methods with qualifiers and
+|setf| methods get independent entries. This helps keep the index compact
+without significantly affecting usability.
+
+@l
+(defmethod compute-type-heading-class ((operator (eql 'defmethod)) &key ;
+                                       qualifiers function-name)
+  (etypecase function-name
+    (symbol (if qualifiers 'method 'function))
+    (setf-function-name 'method)))
+
+@t@l
+(deftest method/function-heading
+  (values (typep (make-type-heading ;
+                  (compute-type-heading-class 'defmethod))
+                 'function-heading)
+          (typep (make-type-heading ;
+                  (compute-type-heading-class 'defmethod ;
+                                              :function-name '(setf foo)))
+                 'method-heading)
+          (typep (make-type-heading ;
+                  (compute-type-heading-class 'defmethod ;
+                                              :qualifiers '(:foo)))
+                 'method-heading))
+  t t t)
 
 @1*Locators. Now let's turn our attention to the other half of index entries.
 In this program, a locator is either a pointer to a section (the usual case)
@@ -5410,17 +5452,16 @@ being indexed might not be in the environment yet.)
   (multiple-value-bind (type local) (function-information function-name env)
     (when (member type '(:function :macro))
       (add-index-entry
-       index
-       (make-heading function-name
-                     (ecase type
-                       (:function ;
-                        (make-type-heading 'function
-                                           :local local
-                                           :generic (generic-function-p ;
-                                                     function-name)))
-                       (:macro ;
-                        (make-type-heading 'macro :local local))))
-       section))))
+        index
+        (make-heading function-name
+                      (ecase type
+                        (:function ;
+                         (make-type-heading 'function
+                                            :local local
+                                            :generic (generic-function-p ;
+                                                      function-name)))
+                        (:macro (make-type-heading 'macro :local local))))
+        section))))
 
 @ To index definitions, we'll need some information from the walker about
 the context in which the function name occurred. In particular, we'll get
@@ -5431,39 +5472,19 @@ the |car| of the defining form as the |operator| argument.
 (defmethod index-defun ((index index) function-name section &key ;
                         operator local generic qualifiers)
   (add-index-entry
-   index
-   (make-heading (etypecase function-name
-                   (symbol function-name)
-                   (setf-function-name (cadr function-name)))
-                 (make-type-heading @<Choose an appropriate heading class@>
-                                    :setf (setf-function-name-p function-name)
-                                    :local local
-                                    :generic (or generic ;
-                                                 (generic-function-p ;
-                                                  function-name))
-                                    :qualifiers qualifiers))
-   section :def t))
-
-@ We can derive the type of definition from the operator used to define it.
-
-@<Choose an appropriate heading class@>=
-(case operator
-  ((defmacro macrolet) 'macro)
-  ((define-compiler-macro) 'compiler-macro)
-  ((define-symbol-macro symbol-macrolet) 'symbol-macro)
-  ((defmethod) @<Choose a heading class for method definition@>)
-  (otherwise 'function))
-
-@ Non-|setf| primary methods (i.e., methods with empty qualifier lists)
-are indexed as functions so that they'll appear as definitions of the
-generic function they're methods of; only methods with qualifiers and
-|setf| methods get independent entries. This helps keep the index compact
-without significantly affecting usability.
-
-@<Choose a heading class for method definition@>=
-(etypecase function-name
-  (symbol (if qualifiers 'method 'function))
-  (setf-function-name 'method))
+    index
+    (make-heading (etypecase function-name
+                    (symbol function-name)
+                    (setf-function-name (cadr function-name)))
+                  (make-type-heading
+                    (compute-type-heading-class operator
+                                                :qualifiers qualifiers
+                                                :function-name function-name)
+                    :setf (setf-function-name-p function-name)
+                    :local local
+                    :generic (or generic (generic-function-p function-name))
+                    :qualifiers qualifiers))
+    section :def t))
 
 @ We'll use this next generic function to index symbols that occur in
 various contexts during the walk. The primary method provided here just

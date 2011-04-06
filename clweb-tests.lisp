@@ -758,9 +758,10 @@
                  (DESCRIBE-BEEF (MAKE-INSTANCE 'KOBE-BEEF)))
          "big, fat, juicy, steak, yum!"
          "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan")
-(DEFTEST QUOTED-SYMBOL-TYPE
-         (AND (TYPEP ''FOO 'QUOTED-SYMBOL) (NOT (TYPEP 'FOO 'QUOTED-SYMBOL))
-              (NOT (TYPEP (CONS 'QUOTE 'FOO) 'QUOTED-SYMBOL)))
+(DEFTEST MAKE-TYPE-HEADING
+         (EVERY (LAMBDA (X) (TYPEP X 'TYPE-HEADING))
+                (LIST (MAKE-TYPE-HEADING 'TYPE)
+                      (MAKE-TYPE-HEADING (FIND-CLASS 'TYPE-HEADING))))
          T)
 (DEFTEST FUNCTION-HEADING-NAME
          (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION))
@@ -768,29 +769,33 @@
                  (HEADING-NAME
                   (MAKE-TYPE-HEADING 'FUNCTION :GENERIC T :LOCAL NIL))
                  (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION :SETF T))
-                 (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION :SETF T :LOCAL T)))
+                 (HEADING-NAME (MAKE-TYPE-HEADING 'FUNCTION :SETF T :LOCAL T))
+                 (EVERY
+                  (LAMBDA (CLASS) (EQL (CLASS-NAME CLASS) 'FUNCTION-HEADING))
+                  (LIST (CLASS-OF (MAKE-TYPE-HEADING 'FUNCTION))
+                        (COMPUTE-TYPE-HEADING-CLASS 'DEFUN)
+                        (COMPUTE-TYPE-HEADING-CLASS 'FLET))))
          "function" "local function" "generic function" "setf function"
-         "local setf function")
-(DEFTEST VARIABLE-HEADING-NAME
-         (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'VARIABLE))
-                 (HEADING-NAME (MAKE-TYPE-HEADING 'VARIABLE :SPECIAL T))
-                 (HEADING-NAME (MAKE-TYPE-HEADING 'VARIABLE :CONSTANT T)))
-         "variable" "special variable" "constant variable")
-(DEFTEST MACRO-HEADING-NAME
-         (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'MACRO))
-                 (HEADING-NAME (MAKE-TYPE-HEADING 'SYMBOL-MACRO))
-                 (HEADING-NAME (MAKE-TYPE-HEADING 'SYMBOL-MACRO :LOCAL T)))
-         "macro" "symbol macro" "local symbol macro")
-(DEFTEST CLASS-HEADING-NAME
-         (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'CLASS))
-                 (HEADING-NAME (MAKE-TYPE-HEADING 'CONDITION-CLASS)))
-         "class" "condition class")
+         "local setf function" T)
 (DEFTEST METHOD-HEADING-NAME
          (VALUES (HEADING-NAME (MAKE-TYPE-HEADING 'METHOD))
                  (HEADING-NAME
                   (MAKE-TYPE-HEADING 'METHOD :QUALIFIERS
                                      '(:BEFORE :DURING :AFTER))))
          "primary method" "before during after method")
+(DEFTEST METHOD/FUNCTION-HEADING
+         (VALUES
+          (TYPEP (MAKE-TYPE-HEADING (COMPUTE-TYPE-HEADING-CLASS 'DEFMETHOD))
+                 'FUNCTION-HEADING)
+          (TYPEP
+           (MAKE-TYPE-HEADING
+            (COMPUTE-TYPE-HEADING-CLASS 'DEFMETHOD :FUNCTION-NAME '(SETF FOO)))
+           'METHOD-HEADING)
+          (TYPEP
+           (MAKE-TYPE-HEADING
+            (COMPUTE-TYPE-HEADING-CLASS 'DEFMETHOD :QUALIFIERS '(:FOO)))
+           'METHOD-HEADING))
+         T T T)
 (DEFMETHOD PRINT-OBJECT ((ENTRY INDEX-ENTRY) STREAM)
   (PRINT-UNREADABLE-OBJECT (ENTRY STREAM :TYPE T :IDENTITY NIL)
     (FORMAT STREAM "~W:" (ENTRY-HEADING ENTRY))
