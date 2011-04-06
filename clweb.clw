@@ -5436,15 +5436,15 @@ being indexed might not be in the environment yet.)
     (when (or (member type '(:special :symbol-macro :constant))
               (and *index-lexical-variables* (eql type :lexical)))
       (add-index-entry
-       index
-       (make-heading variable
-                     (ecase type
-                       (:lexical (make-type-heading 'variable))
-                       (:special (make-type-heading 'variable :special t))
-                       (:constant (make-type-heading 'variable :constant t))
-                       (:symbol-macro (make-type-heading 'symbol-macro ;
-                                                         :local local))))
-       section))))
+        index
+        (make-heading variable
+                      (ecase type
+                        (:lexical (make-type-heading 'variable))
+                        (:special (make-type-heading 'variable :special t))
+                        (:constant (make-type-heading 'variable :constant t))
+                        (:symbol-macro (make-type-heading 'symbol-macro ;
+                                                          :local local))))
+        section))))
 
 (defgeneric index-funcall (index function-name form env section))
 (defmethod index-funcall ((index index) function-name form env section)
