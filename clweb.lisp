@@ -586,11 +586,11 @@
   (LET* ((FORM (SLOT-VALUE COMMA 'FORM)) (TANGLED-FORM (TANGLE FORM)))
     (TYPECASE FORM
       (NAMED-SECTION
-       (WHEN (CDR TANGLED-FORM)
+       (WHEN (REST TANGLED-FORM)
          (CERROR "Ignore the extra forms."
                  "Tried to unquote more than one form from section @<~A@>."
                  (SECTION-NAME FORM)))
-       (CAR TANGLED-FORM))
+       (FIRST TANGLED-FORM))
       (T TANGLED-FORM))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\`

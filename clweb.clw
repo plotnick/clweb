@@ -1610,11 +1610,11 @@ both web syntax and Lisp.
          (tangled-form (tangle form)))
     (typecase form
       (named-section
-       (when (cdr tangled-form)
+       (when (rest tangled-form)
          (cerror "Ignore the extra forms."
                  "Tried to unquote more than one form from section @<~A@>."
                  (section-name form)))
-       (car tangled-form))
+       (first tangled-form))
       (t tangled-form))))
 
 @ The reader macro functions for backquote and comma are straightforward.
