@@ -739,6 +739,10 @@ having code parts, but later tests will.
        (:section :name "quux" :code (:quux :quuux :quuuux)))
     *named-sections*))
 
+(defmacro with-sample-named-sections (&body body)
+  `(let ((*named-sections* *sample-named-sections*))
+     ,@body))
+
 (defun find-sample-section (name)
   (find-or-insert name *sample-named-sections* :insert-if-not-found nil))
 
@@ -763,7 +767,7 @@ having code parts, but later tests will.
   t)
 
 (deftest find-section
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (find-section (format nil " foo  bar ~C baz..." #\Tab))
     (section-name (find-section "foo...")))
   "foo")
@@ -1730,7 +1734,7 @@ Appendix~C.
 
 @l
 (deftest (bq named-section)
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (values (eval (tangle (read-form-from-string "`(, @<foo@>)")))
             (eval (tangle (read-form-from-string "`(,@ @<foo@>)")))))
   (:foo)
@@ -2480,13 +2484,13 @@ citations, and so are not expanded.
   "foo")
 
 (deftest (read-section-name :lisp)
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (with-mode :lisp
       (section-name (read-from-string "@<foo@>"))))
   "foo")
 
 (deftest section-name-definition-error
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (section-name
      (handler-bind ((section-name-definition-error
                      (lambda (condition)
@@ -2497,7 +2501,7 @@ citations, and so are not expanded.
   "foo")
 
 (deftest section-name-use-error
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (section-name
      (handler-bind ((section-name-use-error
                      (lambda (condition)
@@ -2750,7 +2754,7 @@ capability later in the indexing code.
   t)
 
 (deftest (tangle-1 3)
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (tangle-1 (read-form-from-string "@<foo@>")))
   (:foo)
   t)
@@ -2772,7 +2776,7 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 
 @t@l
 (deftest tangle
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (tangle (read-form-from-string (format nil "(:a @<foo@>~% :b)"))))
   (:a :foo :b)
   t)
