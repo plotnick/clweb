@@ -85,14 +85,18 @@
 (DEFTEST (SQUEEZE 3) (SQUEEZE (FORMAT NIL " a b ~C c " #\Tab)) "a b c")
 (DEFVAR *SAMPLE-NAMED-SECTIONS*
   (WITH-TEMPORARY-SECTIONS
-   ((:SECTION :NAME "bar" :CODE (:BAR)) (:SECTION :NAME "baz" :CODE (:BAZ))
-    (:SECTION :NAME "foo" :CODE (:FOO)) (:SECTION :NAME "qux" :CODE (:QUX)))
+   ((:SECTION :NAME "foo" :CODE (:FOO)) (:SECTION :NAME "bar" :CODE (:BAR))
+    (:SECTION :NAME "baz" :CODE (:BAZ))
+    (:SECTION :NAME "quux" :CODE (:QUUX :QUUUX :QUUUUX)))
    *NAMED-SECTIONS*))
+(DEFMACRO WITH-SAMPLE-NAMED-SECTIONS (&BODY BODY)
+  `(LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
+     ,@BODY))
 (DEFUN FIND-SAMPLE-SECTION (NAME)
   (FIND-OR-INSERT NAME *SAMPLE-NAMED-SECTIONS* :INSERT-IF-NOT-FOUND NIL))
-(DEFTEST FIND-NAMED-SECTION (SECTION-NAME (FIND-SAMPLE-SECTION "bar")) "bar")
-(DEFTEST FIND-SECTION-BY-PREFIX (SECTION-NAME (FIND-SAMPLE-SECTION "q..."))
-         "qux")
+(DEFTEST FIND-NAMED-SECTION (SECTION-NAME (FIND-SAMPLE-SECTION "foo")) "foo")
+(DEFTEST FIND-SECTION-BY-PREFIX (SECTION-NAME (FIND-SAMPLE-SECTION "f..."))
+         "foo")
 (DEFTEST FIND-SECTION-BY-AMBIGUOUS-PREFIX
          (LET ((HANDLED NIL))
            (VALUES
@@ -106,9 +110,9 @@
             HANDLED))
          "bar" T)
 (DEFTEST FIND-SECTION
-         (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
-           (FIND-SECTION (FORMAT NIL " foo  bar ~C baz..." #\Tab))
-           (SECTION-NAME (FIND-SECTION "foo...")))
+         (WITH-SAMPLE-NAMED-SECTIONS
+          (FIND-SECTION (FORMAT NIL " foo  bar ~C baz..." #\Tab))
+          (SECTION-NAME (FIND-SECTION "foo...")))
          "foo")
 (DEFTEST (READTABLE-FOR-MODE 1) (READTABLEP (READTABLE-FOR-MODE :TEX)) T)
 (DEFTEST (READTABLE-FOR-MODE 2) (READTABLEP (READTABLE-FOR-MODE NIL)) T)
@@ -283,6 +287,20 @@
                    (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(,a)")))
                    (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(,@a)")))))
          #(:A) #((1 2 3)) #(1 2 3))
+(DEFTEST (BQ NAMED-SECTION)
+         (WITH-SAMPLE-NAMED-SECTIONS
+          (VALUES (EVAL (TANGLE (READ-FORM-FROM-STRING "`(, @<foo@>)")))
+                  (EVAL (TANGLE (READ-FORM-FROM-STRING "`(,@ @<foo@>)")))))
+         (:FOO) :FOO)
+(DEFTEST (BQ TOO-MANY-FORMS)
+         (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*) (HANDLED NIL))
+           (HANDLER-BIND ((ERROR
+                           (LAMBDA (CONDITION)
+                             (SETQ HANDLED T)
+                             (CONTINUE CONDITION))))
+             (VALUES (EVAL (TANGLE (READ-FORM-FROM-STRING "`(,@ @<quux@>)")))
+                     HANDLED)))
+         :QUUX T)
 (DEFTEST READ-FUNCTION
          (LET ((MARKER (READ-FORM-FROM-STRING "#'identity")))
            (VALUES (QUOTED-FORM MARKER) (MARKER-VALUE MARKER)))
@@ -384,29 +402,29 @@
            (SECTION-NAME (READ-FROM-STRING "@<foo@>=")))
          "foo")
 (DEFTEST (READ-SECTION-NAME :LISP)
-         (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
-           (WITH-MODE :LISP
-             (SECTION-NAME (READ-FROM-STRING "@<foo@>"))))
+         (WITH-SAMPLE-NAMED-SECTIONS
+          (WITH-MODE :LISP
+            (SECTION-NAME (READ-FROM-STRING "@<foo@>"))))
          "foo")
 (DEFTEST SECTION-NAME-DEFINITION-ERROR
-         (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
-           (SECTION-NAME
-            (HANDLER-BIND ((SECTION-NAME-DEFINITION-ERROR
-                            (LAMBDA (CONDITION)
-                              (DECLARE (IGNORE CONDITION))
-                              (INVOKE-RESTART 'USE-SECTION))))
-              (WITH-MODE :LISP
-                (READ-FROM-STRING "@<foo@>=")))))
+         (WITH-SAMPLE-NAMED-SECTIONS
+          (SECTION-NAME
+           (HANDLER-BIND ((SECTION-NAME-DEFINITION-ERROR
+                           (LAMBDA (CONDITION)
+                             (DECLARE (IGNORE CONDITION))
+                             (INVOKE-RESTART 'USE-SECTION))))
+             (WITH-MODE :LISP
+               (READ-FROM-STRING "@<foo@>=")))))
          "foo")
 (DEFTEST SECTION-NAME-USE-ERROR
-         (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
-           (SECTION-NAME
-            (HANDLER-BIND ((SECTION-NAME-USE-ERROR
-                            (LAMBDA (CONDITION)
-                              (DECLARE (IGNORE CONDITION))
-                              (INVOKE-RESTART 'CITE-SECTION))))
-              (WITH-MODE :TEX
-                (READ-FROM-STRING "@<foo@>")))))
+         (WITH-SAMPLE-NAMED-SECTIONS
+          (SECTION-NAME
+           (HANDLER-BIND ((SECTION-NAME-USE-ERROR
+                           (LAMBDA (CONDITION)
+                             (DECLARE (IGNORE CONDITION))
+                             (INVOKE-RESTART 'CITE-SECTION))))
+             (WITH-MODE :TEX
+               (READ-FROM-STRING "@<foo@>")))))
          "foo")
 (DEFTEST INDEX-PACKAGE-READER
          (LET ((*INDEX-PACKAGES* NIL))
@@ -417,12 +435,12 @@
 (DEFTEST (TANGLE-1 2) (TANGLE-1 (READ-FORM-FROM-STRING "(:a :b :c)"))
          (:A :B :C) T)
 (DEFTEST (TANGLE-1 3)
-         (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
-           (TANGLE-1 (READ-FORM-FROM-STRING "@<foo@>")))
+         (WITH-SAMPLE-NAMED-SECTIONS
+          (TANGLE-1 (READ-FORM-FROM-STRING "@<foo@>")))
          (:FOO) T)
 (DEFTEST TANGLE
-         (LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
-           (TANGLE (READ-FORM-FROM-STRING (FORMAT NIL "(:a @<foo@>~% :b)"))))
+         (WITH-SAMPLE-NAMED-SECTIONS
+          (TANGLE (READ-FORM-FROM-STRING (FORMAT NIL "(:a @<foo@>~% :b)"))))
          (:A :FOO :B) T)
 (DEFTEST (TESTS-FILE-PATHNAME 1)
          (EQUAL

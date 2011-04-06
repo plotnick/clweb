@@ -583,8 +583,15 @@
 (DEFGENERIC COMMA-FORM
     (COMMA))
 (DEFMETHOD COMMA-FORM ((COMMA COMMA))
-  (LET ((FORM (SLOT-VALUE COMMA 'FORM)))
-    (TYPECASE FORM (NAMED-SECTION (CAR (TANGLE FORM))) (T (TANGLE FORM)))))
+  (LET* ((FORM (SLOT-VALUE COMMA 'FORM)) (TANGLED-FORM (TANGLE FORM)))
+    (TYPECASE FORM
+      (NAMED-SECTION
+       (WHEN (CDR TANGLED-FORM)
+         (CERROR "Ignore the extra forms."
+                 "Tried to unquote more than one form from section @<~A@>."
+                 (SECTION-NAME FORM)))
+       (CAR TANGLED-FORM))
+      (T TANGLED-FORM))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-MACRO-CHARACTER #\`
                        (LAMBDA (STREAM CHAR)

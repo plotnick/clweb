@@ -733,22 +733,26 @@ having code parts, but later tests will.
 @l
 (defvar *sample-named-sections*
   (with-temporary-sections
-      ((:section :name "bar" :code (:bar))
+      ((:section :name "foo" :code (:foo))
+       (:section :name "bar" :code (:bar))
        (:section :name "baz" :code (:baz))
-       (:section :name "foo" :code (:foo))
-       (:section :name "qux" :code (:qux)))
+       (:section :name "quux" :code (:quux :quuux :quuuux)))
     *named-sections*))
+
+(defmacro with-sample-named-sections (&body body)
+  `(let ((*named-sections* *sample-named-sections*))
+     ,@body))
 
 (defun find-sample-section (name)
   (find-or-insert name *sample-named-sections* :insert-if-not-found nil))
 
 (deftest find-named-section
-  (section-name (find-sample-section "bar"))
-  "bar")
+  (section-name (find-sample-section "foo"))
+  "foo")
 
 (deftest find-section-by-prefix
-  (section-name (find-sample-section "q..."))
-  "qux")
+  (section-name (find-sample-section "f..."))
+  "foo")
 
 (deftest find-section-by-ambiguous-prefix
   (let ((handled nil))
@@ -763,7 +767,7 @@ having code parts, but later tests will.
   t)
 
 (deftest find-section
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (find-section (format nil " foo  bar ~C baz..." #\Tab))
     (section-name (find-section "foo...")))
   "foo")
@@ -1595,14 +1599,23 @@ code and the pretty-printing routines.
 @ To process a comma, we need to tangle the form that followed it. If that
 form is a named section reference, we take the |car| of the tangled form,
 on the assumption that you can't meaningfully unquote more than one form.
+This violation of the general principle that named section expansion has
+splicing semantics is a consequence of our using the Lisp reader to process
+both web syntax and Lisp.
 
 @l
 (defgeneric comma-form (comma))
 (defmethod comma-form ((comma comma))
-  (let ((form (slot-value comma 'form)))
+  (let* ((form (slot-value comma 'form))
+         (tangled-form (tangle form)))
     (typecase form
-      (named-section (car (tangle form)))
-      (t (tangle form)))))
+      (named-section
+       (when (cdr tangled-form)
+         (cerror "Ignore the extra forms."
+                 "Tried to unquote more than one form from section @<~A@>."
+                 (section-name form)))
+       (car tangled-form))
+      (t tangled-form))))
 
 @ The reader macro functions for backquote and comma are straightforward.
 
@@ -1613,7 +1626,6 @@ on the assumption that you can't meaningfully unquote more than one form.
       (declare (ignore char))
       (list *backquote* (read stream t nil t)))
     nil (readtable-for-mode mode))
-
   (set-macro-character #\,
     (lambda (stream char)
       (declare (ignore char))
@@ -1717,6 +1729,27 @@ Appendix~C.
   #(:a)
   #((1 2 3))
   #(1 2 3))
+
+@t Test the interaction between backquote, comma, and named sections.
+
+@l
+(deftest (bq named-section)
+  (with-sample-named-sections
+    (values (eval (tangle (read-form-from-string "`(, @<foo@>)")))
+            (eval (tangle (read-form-from-string "`(,@ @<foo@>)")))))
+  (:foo)
+  :foo)
+
+(deftest (bq too-many-forms)
+  (let ((*named-sections* *sample-named-sections*)
+        (handled nil))
+    (handler-bind ((error (lambda (condition)
+                            (setq handled t)
+                            (continue condition))))
+      (values (eval (tangle (read-form-from-string "`(,@ @<quux@>)")))
+              handled)))
+  :quux
+  t)
 
 @ During tangling, we print backquotes and commas using the backquote
 syntax, as recommended (but not required) by section~2.4.6.1 of the
@@ -2451,13 +2484,13 @@ citations, and so are not expanded.
   "foo")
 
 (deftest (read-section-name :lisp)
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (with-mode :lisp
       (section-name (read-from-string "@<foo@>"))))
   "foo")
 
 (deftest section-name-definition-error
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (section-name
      (handler-bind ((section-name-definition-error
                      (lambda (condition)
@@ -2468,7 +2501,7 @@ citations, and so are not expanded.
   "foo")
 
 (deftest section-name-use-error
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (section-name
      (handler-bind ((section-name-use-error
                      (lambda (condition)
@@ -2721,7 +2754,7 @@ capability later in the indexing code.
   t)
 
 (deftest (tangle-1 3)
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (tangle-1 (read-form-from-string "@<foo@>")))
   (:foo)
   t)
@@ -2743,7 +2776,7 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 
 @t@l
 (deftest tangle
-  (let ((*named-sections* *sample-named-sections*))
+  (with-sample-named-sections
     (tangle (read-form-from-string (format nil "(:a @<foo@>~% :b)"))))
   (:a :foo :b)
   t)
