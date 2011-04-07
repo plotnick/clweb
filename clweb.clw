@@ -2185,11 +2185,12 @@ characters that the reader scans, and use that to reconstruct the form.
 @t@l
 (deftest (read-time-conditional 1)
   (let* ((*evaluating* nil)
-         (conditional (marker-value (read-form-from-string "#-a 1"))))
+         (*features* nil)
+         (conditional (marker-value (read-form-from-string "#-foo 1"))))
     (values (read-time-conditional-plusp conditional)
             (read-time-conditional-test conditional)
             (read-time-conditional-form conditional)))
-  nil :a "1")
+  nil :foo "1")
 
 (deftest (read-time-conditional 2)
   (let ((*features* '(:a))
