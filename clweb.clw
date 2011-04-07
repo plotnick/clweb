@@ -790,8 +790,8 @@ section names and a few other places. The modes are named by the symbols
 @ We use separate readtables for each mode, stored as an alist keyed on the
 mode name. We add an extra mode with name |nil| that keeps a virgin copy of
 the standard readtable for when we want to read in `no-mode'. Although we
-will modify the readtables themselves, the |*readtables*| list is never
-changed once it's initialized.
+will modify the readtables stored there, the |*readtables*| list itself
+is never changed.
 
 @<Global variables@>=
 (defvar *readtables* ;
@@ -812,8 +812,8 @@ changed once it's initialized.
   (eql (readtable-for-mode :tex) (readtable-for-mode :lisp))
   nil)
 
-@ The following macro is just a bit of syntactic sugar for executing the
-given forms with |*readtable*| bound appropriately for the given mode.
+@ The following macro executes the given |body| with |*readtable*| bound
+appropriately for |mode|.
 
 @l
 (defmacro with-mode (mode &body body)
@@ -847,8 +847,8 @@ error reporting.
          :format-control control
          :format-arguments args))
 
-@ We frequently need an object to use as the |eof-value| argument to
-|read|. It need not be a symbol; it need not even be an atom.
+@ We'll use this as the |eof-value| argument to |read|. It need not be a
+symbol; it need not even be an atom.
 
 @<Global variables@>=
 (defvar *eof* (make-symbol "EOF"))
