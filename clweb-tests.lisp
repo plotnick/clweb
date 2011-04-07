@@ -871,6 +871,12 @@
               T)))
 (DEFINE-INDEXING-TEST ATOM ((:SECTION :CODE (*SECTIONS*)))
  ("*SECTIONS* special variable" (0)))
+(DEFINE-INDEXING-TEST (VARIABLES :INDEX-LEXICALS T)
+ ((:SECTION :CODE
+   ((LET ((FOO NIL) (BAR NIL) (BAZ NIL))
+      ))))
+ ("BAR variable" ((:DEF 0))) ("BAZ variable" ((:DEF 0)))
+ ("FOO variable" ((:DEF 0))))
 (DEFINE-INDEXING-TEST FUNCALL
  ((:SECTION :CODE ((MAPAPPEND 'IDENTITY '(1 2 3))))) ("MAPAPPEND function" (0)))
 (DEFINE-INDEXING-TEST FUNCTION-NAME

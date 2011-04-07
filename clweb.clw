@@ -5736,6 +5736,20 @@ of the call to |index-symbol|.
   ((:section :code (*sections*)))
   ("*SECTIONS* special variable" (0)))
 
+@ Bindings {\it are\/} definitions for lexical variables.
+
+@l
+(defmethod walk-atomic-form :around ;
+    ((walker indexing-walker) (context (eql :binding)) (form symbol) env &key)
+  (call-next-method walker context form env :def t))
+
+@t@l
+(define-indexing-test (variables :index-lexicals t)
+  ((:section :code ((let ((foo nil) (bar nil) (baz nil))))))
+  ("BAR variable" ((:def 0)))
+  ("BAZ variable" ((:def 0)))
+  ("FOO variable" ((:def 0))))
+
 @ We'll index all function-call-like forms whose |operator| is a referring
 symbol.
 
