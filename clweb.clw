@@ -1002,7 +1002,7 @@ to the next multiple of |*tab-width*|.
           finally (return charpos))))
 
 @ @<Glob...@>=
-(defvar *tab-width* 8)
+(defparameter *tab-width* 8)
 
 @ For tracking the character position of an input stream, our proxy stream
 will be an echo stream that takes input from the underlying stream and sends
