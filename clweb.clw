@@ -847,19 +847,29 @@ error reporting.
          :format-control control
          :format-arguments args))
 
-@ We'll use this as the |eof-value| argument to |read|. It need not be a
-symbol; it need not even be an atom.
+@ We'll use this object as our end-of-file marker (i.e., as the |eof-value|
+argument to |read|). It need not be a symbol; it need not even be an atom.
 
 @<Global variables@>=
 (defvar *eof* (make-symbol "EOF"))
 
-@ @l
-(defun eof-p (object) (eq object *eof*))
+@ But instead of using the variable |*eof*| directly in calls to |read|,
+we'll use the symbol macro |eof|, which bypasses the variable lookup at
+run-time.
+
+@l
+(eval-when (:compile-toplevel :execute)
+  (define-symbol-macro eof (load-time-value *eof* t)))
+
+@ We'll test for our {\sc eof}-value using |eof-p|.
+
+@l
+(defun eof-p (object) (eq object eof))
 (deftype eof () '(satisfies eof-p))
 
 @t@l
-(deftest eof-p (eof-p (read-from-string "" nil *eof*)) t)
-(deftest eof-type (typep (read-from-string "" nil *eof*) 'eof) t)
+(deftest eof-p (eof-p (read-from-string "" nil eof)) t)
+(deftest eof-type (typep (read-from-string "" nil eof) 'eof) t)
 
 @ We'll occasionally need to know if a given character terminates a token
 or not. This function answers that question, but only approximately---if
@@ -1178,7 +1188,7 @@ consumed.
                 (,length (length ,raw-output))
                 (,echoed (subseq ,raw-output
                                  0
-                                 (if (or (eof-p (peek-char nil ,echo nil *eof*))
+                                 (if (or (eof-p (peek-char nil ,echo nil eof))
                                          (token-delimiter-p ;
                                           (elt ,raw-output (1- ,length))))
                                      ,length
@@ -1296,7 +1306,7 @@ since indentation is completely ignored there.
 (set-macro-character #\Newline
   (lambda (stream char)
     (declare (ignore char))
-    (case (peek-char nil stream nil *eof* t)
+    (case (peek-char nil stream nil eof t)
       (#\Newline (read-char stream t nil t)
                  (make-instance 'par-marker))
       (otherwise (make-instance 'newline-marker))))
@@ -2204,7 +2214,7 @@ list of characters.
 (defun snarf-until-control-char (stream control-chars &aux ;
                                  (control-chars (ensure-list control-chars)))
   (with-output-to-string (string)
-    (loop for char = (peek-char nil stream nil *eof* nil)
+    (loop for char = (peek-char nil stream nil eof nil)
           until (or (eof-p char) (member char control-chars))
           do (write-char (read-char stream) string))))
 
@@ -2612,7 +2622,7 @@ inner-Lisp material is not recognized in limbo text.
   (loop
     (maybe-push (snarf-until-control-char stream #\@) commentary)
     (let ((next-input (read-maybe-nothing-preserving-whitespace ;
-                       stream nil *eof* nil)))
+                       stream nil eof nil)))
       (when next-input
         (typecase (setq form (car next-input))
           (eof (go eof))
@@ -2636,7 +2646,7 @@ is detected, we also set the name of the current section, which may be |nil|.
   (loop
     (maybe-push (snarf-until-control-char stream '(#\@ #\|)) commentary)
     (let ((next-input (read-maybe-nothing-preserving-whitespace ;
-                       stream nil *eof* nil)))
+                       stream nil eof nil)))
       (when next-input
         (typecase (setq form (car next-input))
           (eof (go eof))
@@ -2654,7 +2664,7 @@ where we evaluate \.{@@e} forms.
 (with-mode :lisp
   (loop
     (let ((next-input (read-maybe-nothing-preserving-whitespace ;
-                       stream nil *eof* nil)))
+                       stream nil eof nil)))
       (when next-input
         (typecase (setq form (car next-input))
           (eof (go eof))
@@ -3239,7 +3249,7 @@ re-reads such strings and picks up any inner-Lisp material.
   (with-mode :restricted
     (with-input-from-string (stream input-string)
       (loop for text = (snarf-until-control-char stream #\|)
-            for forms = (read-preserving-whitespace stream nil *eof* nil)
+            for forms = (read-preserving-whitespace stream nil eof nil)
             if (plusp (length text)) collect text
             if (eof-p forms) do (loop-finish) else collect forms))))
 

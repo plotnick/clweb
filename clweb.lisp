@@ -305,7 +305,9 @@
 (DEFUN SIMPLE-READER-ERROR (STREAM CONTROL &REST ARGS)
   (ERROR 'SIMPLE-READER-ERROR :STREAM STREAM :FORMAT-CONTROL CONTROL
          :FORMAT-ARGUMENTS ARGS))
-(DEFUN EOF-P (OBJECT) (EQ OBJECT *EOF*))
+(EVAL-WHEN (:COMPILE-TOPLEVEL :EXECUTE)
+  (DEFINE-SYMBOL-MACRO EOF (LOAD-TIME-VALUE *EOF* T)))
+(DEFUN EOF-P (OBJECT) (EQ OBJECT EOF))
 (DEFTYPE EOF () '(SATISFIES EOF-P))
 (DEFUN TOKEN-DELIMITER-P (CHAR)
   (DECLARE (TYPE CHARACTER CHAR))
@@ -442,7 +444,7 @@
                 (,LENGTH (LENGTH ,RAW-OUTPUT))
                 (,ECHOED
                  (SUBSEQ ,RAW-OUTPUT 0
-                         (IF (OR (EOF-P (PEEK-CHAR NIL ,ECHO NIL *EOF*))
+                         (IF (OR (EOF-P (PEEK-CHAR NIL ,ECHO NIL EOF))
                                  (TOKEN-DELIMITER-P
                                   (ELT ,RAW-OUTPUT (1- ,LENGTH))))
                              ,LENGTH
@@ -468,7 +470,7 @@
 (SET-MACRO-CHARACTER #\Newline
                      (LAMBDA (STREAM CHAR)
                        (DECLARE (IGNORE CHAR))
-                       (CASE (PEEK-CHAR NIL STREAM NIL *EOF* T)
+                       (CASE (PEEK-CHAR NIL STREAM NIL EOF T)
                          (#\Newline
                           (READ-CHAR STREAM T NIL T)
                           (MAKE-INSTANCE 'PAR-MARKER))
@@ -850,7 +852,7 @@
 (DEFUN SNARF-UNTIL-CONTROL-CHAR
        (STREAM CONTROL-CHARS &AUX (CONTROL-CHARS (ENSURE-LIST CONTROL-CHARS)))
   (WITH-OUTPUT-TO-STRING (STRING)
-    (LOOP FOR CHAR = (PEEK-CHAR NIL STREAM NIL *EOF* NIL)
+    (LOOP FOR CHAR = (PEEK-CHAR NIL STREAM NIL EOF NIL)
           UNTIL (OR (EOF-P CHAR) (MEMBER CHAR CONTROL-CHARS))
           DO (WRITE-CHAR (READ-CHAR STREAM) STRING))))
 (DEFUN READ-INNER-LISP (STREAM CHAR)
@@ -995,8 +997,8 @@
         (WITH-MODE :LIMBO
           (LOOP (MAYBE-PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM #\@) COMMENTARY)
                 (LET ((NEXT-INPUT
-                       (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL
-                                                                 *EOF* NIL)))
+                       (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL EOF
+                                                                 NIL)))
                   (WHEN NEXT-INPUT
                     (TYPECASE (SETQ FORM (CAR NEXT-INPUT))
                       (EOF (GO EOF))
@@ -1012,7 +1014,7 @@
           (LOOP
            (MAYBE-PUSH (SNARF-UNTIL-CONTROL-CHAR STREAM '(#\@ #\|)) COMMENTARY)
            (LET ((NEXT-INPUT
-                  (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL *EOF*
+                  (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL EOF
                                                             NIL)))
              (WHEN NEXT-INPUT
                (TYPECASE (SETQ FORM (CAR NEXT-INPUT))
@@ -1027,7 +1029,7 @@
         (WITH-MODE :LISP
           (LOOP
            (LET ((NEXT-INPUT
-                  (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL *EOF*
+                  (READ-MAYBE-NOTHING-PRESERVING-WHITESPACE STREAM NIL EOF
                                                             NIL)))
              (WHEN NEXT-INPUT
                (TYPECASE (SETQ FORM (CAR NEXT-INPUT))
@@ -1328,7 +1330,7 @@
   (WITH-MODE :RESTRICTED
     (WITH-INPUT-FROM-STRING (STREAM INPUT-STRING)
       (LOOP FOR TEXT = (SNARF-UNTIL-CONTROL-CHAR STREAM #\|)
-            FOR FORMS = (READ-PRESERVING-WHITESPACE STREAM NIL *EOF* NIL)
+            FOR FORMS = (READ-PRESERVING-WHITESPACE STREAM NIL EOF NIL)
             IF (PLUSP (LENGTH TEXT))
             COLLECT TEXT
             IF (EOF-P FORMS)
