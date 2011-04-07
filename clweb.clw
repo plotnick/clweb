@@ -827,7 +827,7 @@ given forms with |*readtable*| bound appropriately for the given mode.
   t)
 
 @ Sometimes we'll have to detect and report errors during reading. This
-condition class and associated signaling function allow |format|-style
+condition class and the associated signaling function allow |format|-style
 error reporting.
 
 @<Condition classes@>=
@@ -838,6 +838,9 @@ error reporting.
                      (simple-condition-format-control condition)
                      (simple-condition-format-arguments condition)))))
 
+@ This function just signals an error of type |simple-reader-error|.
+
+@l
 (defun simple-reader-error (stream control &rest args)
   (error 'simple-reader-error
          :stream stream
