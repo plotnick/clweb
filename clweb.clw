@@ -1186,25 +1186,53 @@ consumed.
          (let* ((,object (read-preserving-whitespace ,echo))
                 (,raw-output (get-output-stream-string ,out))
                 (,length (length ,raw-output))
-                (,echoed (subseq ,raw-output
-                                 0
-                                 (if (or (eof-p (peek-char nil ,echo nil eof))
-                                         (token-delimiter-p ;
-                                          (elt ,raw-output (1- ,length))))
+                (,echoed (subseq ,raw-output 0 ;
+                                 (if @<Should we include...@>
                                      ,length
                                      (1- ,length)))))
            (declare (ignorable ,object ,echoed))
            ,@body)))))
 
+@ We have to be very careful here about delimiters: for self-delimiting
+forms like quoted strings, the final delimiter will be---and should
+be---the last character consumed, but if there's some other kind of
+delimiter---a closing parenthesis, say---then it should {\it not\/} be
+delivered as part of |echoed|. The problem is that such a delimiter may
+very well have been read and then unread, and the standard says that when
+|unread-char| is called with an echo stream as its |input-stream| argument,
+``no attempt is made to undo any echoing of the character that might
+already have been done on |input-stream|. However,'' it continues,
+``characters placed on |input-stream| by |unread-char| are marked in such
+a way as to inhibit later re-echo by |read-char|.'' So we can detect a
+previously-unread character by reading and then unreading the next character
+in the echo stream and seeing if it actually gets echoed.
+
+@<Should we include the last character of |raw-input|?@>=
+(or (eof-p (peek-char nil ,echo nil eof)) ; clearly `yes' for {\sc eof}
+    (progn (unread-char (read-char ,echo) ,echo)
+           (plusp (length (get-output-stream-string ,out)))))
+
 @t@l
-(deftest read-with-echo
+(deftest (read-with-echo eof)
+  (with-input-from-string (stream ":foo")
+    (read-with-echo (stream object chars)
+      (values object chars)))
+  :foo ":foo")
+
+(deftest (read-with-echo space)
   (with-input-from-string (stream  ":foo :bar")
     (read-with-echo (stream object chars)
       (values object chars)))
-  :foo ":foo ")
+  :foo ":foo")
 
-(deftest read-with-echo-to-eof
-  (with-input-from-string (stream ":foo")
+(deftest (read-with-echo string)
+  (with-input-from-string (stream "\"foo\" :bar")
+    (read-with-echo (stream object chars)
+      (values object chars)))
+  "foo" "\"foo\"")
+
+(deftest (read-with-echo paren)
+  (with-input-from-string (stream ":foo)")
     (read-with-echo (stream object chars)
       (values object chars)))
   :foo ":foo")

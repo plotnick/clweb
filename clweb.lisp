@@ -445,8 +445,10 @@
                 (,ECHOED
                  (SUBSEQ ,RAW-OUTPUT 0
                          (IF (OR (EOF-P (PEEK-CHAR NIL ,ECHO NIL EOF))
-                                 (TOKEN-DELIMITER-P
-                                  (ELT ,RAW-OUTPUT (1- ,LENGTH))))
+                                 (PROGN
+                                  (UNREAD-CHAR (READ-CHAR ,ECHO) ,ECHO)
+                                  (PLUSP
+                                   (LENGTH (GET-OUTPUT-STREAM-STRING ,OUT)))))
                              ,LENGTH
                              (1- ,LENGTH)))))
            (DECLARE (IGNORABLE ,OBJECT ,ECHOED))
