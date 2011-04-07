@@ -5174,6 +5174,9 @@ the name of the class so that |make-type-heading| can do the right thing.
 (define-type-heading condition-class ()
   (:operators define-condition))
 
+(define-type-heading structure ()
+  (:operators defstruct))
+
 (define-type-heading variable ()
   (:modifiers :special :constant))
 
@@ -5646,29 +5649,37 @@ locations)|, where each location is either a section number or a list
      (index-entries index))
     (nreverse entries)))
 
-@t To test our indexing walker, we'll use the following macro. It takes
-a list of section specifiers acceptable to |with-temporary-sections|,
-followed by zero or more expected index entry specifiers which should
-match the output of |all-index-entries|. It verifies that the walked forms
-match the originals and that the index contains all and only the expected
-entries.
+@t To test our indexing walker, we'll use the following macro.
+It takes a name and options, a list of section specifiers acceptable
+to |with-temporary-sections| and zero or more expected index entry
+specifiers that should match the output of |all-index-entries|.
+
+The |name-and-options| argument may be either an atom providing a name
+for the test or a list of the form `(\<name> \<options>)', where \<options>
+is a plist of keyword arguments. If the option |:verify-walk| is true (the
+default), the test will include an assertion the walked forms match the
+originals. During the walk, |*index-lexical-variables*| will be bound to
+the value of the |:index-lexicals| option (false by default).
 
 @l
-(defmacro define-indexing-test (name sections &rest expected-entries)
-  `(deftest (index ,name)
-     (with-temporary-sections ,sections
-       (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
-             (mangled-code (tangle-code-for-indexing *sections*))
-             (walker (make-instance 'indexing-walker)))
-         (loop with *index-lexical-variables* = nil
-               for form in tangled-code and mangled-form in mangled-code
-               as walked-form = (walk-form walker mangled-form)
-               do (assert (tree-equal walked-form form)
-                          (walked-form mangled-form form)))
-         (tree-equal (all-index-entries (walker-index walker))
-                     ',expected-entries
-                     :test #'equal)))
-     t))
+(defmacro define-indexing-test (name-and-options sections &rest expected-entries)
+  (destructuring-bind (name &key (verify-walk t) (index-lexicals nil)) ;
+      (ensure-list name-and-options)
+    `(deftest (index ,name)
+       (with-temporary-sections ,sections
+         (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
+               (mangled-code (tangle-code-for-indexing *sections*))
+               (walker (make-instance 'indexing-walker))
+               (*index-lexical-variables* ,index-lexicals))
+           (loop for form in tangled-code and mangled-form in mangled-code
+                 as walked-form = (walk-form walker mangled-form)
+                 ,@(when verify-walk
+                     `(do (assert (tree-equal walked-form form)
+                                  (walked-form mangled-form form)))))
+           (tree-equal (all-index-entries (walker-index walker))
+                       ',expected-entries
+                       :test #'equal)))
+       t)))
 
 @ We have to override the walker's macro expansion function, since the
 forms that we're considering might be or contain referring symbols, which
@@ -5810,6 +5821,28 @@ defined, by way of |walk-lambda-expression|.
 (define-indexing-test define-compiler-macro
   ((:section :code ((define-compiler-macro foo (&whole form) form))))
   ("FOO compiler macro" ((:def 0))))
+
+@ Structure definitions also get indexed, although we won't bother to
+grovel through all of the options. We'll let them expand, since we can
+often pick up at least the constructor definitions that way.
+
+@l
+(define-special-form-walker defstruct ((walker indexing-walker) form env)
+  (let ((name (typecase (cadr form)
+                (symbol (cadr form))
+                (cons (caadr form)))))
+    (multiple-value-bind (symbol section) (symbol-provenance name)
+      (when section
+        (index-defun (walker-index walker) symbol section ;
+                     :operator 'defstruct)))
+    (throw form t)))
+
+@t@l
+(define-indexing-test (defstruct :verify-walk nil)
+  ((:section :code ((defstruct foo)))
+   (:section :code ((defstruct (bar (:type list)) a b c))))
+  ("BAR structure" ((:def 1)))
+  ("FOO structure" ((:def 0))))
 
 @ The special-variable-defining forms must also be walked as if they were
 special forms. Once again, we'll just skip the macro expansions.

@@ -844,23 +844,31 @@
         ENTRIES))
      (INDEX-ENTRIES INDEX))
     (NREVERSE ENTRIES)))
-(DEFMACRO DEFINE-INDEXING-TEST (NAME SECTIONS &REST EXPECTED-ENTRIES)
-  `(DEFTEST (INDEX ,NAME)
-            (WITH-TEMPORARY-SECTIONS ,SECTIONS
-             (LET ((TANGLED-CODE
-                    (TANGLE (UNNAMED-SECTION-CODE-PARTS *SECTIONS*)))
-                   (MANGLED-CODE (TANGLE-CODE-FOR-INDEXING *SECTIONS*))
-                   (WALKER (MAKE-INSTANCE 'INDEXING-WALKER)))
-               (LOOP WITH *INDEX-LEXICAL-VARIABLES* = NIL
-                     FOR FORM IN TANGLED-CODE
-                     AND MANGLED-FORM IN MANGLED-CODE AS WALKED-FORM = (WALK-FORM
-                                                                        WALKER
-                                                                        MANGLED-FORM)
-                     DO (ASSERT (TREE-EQUAL WALKED-FORM FORM)
-                                (WALKED-FORM MANGLED-FORM FORM)))
-               (TREE-EQUAL (ALL-INDEX-ENTRIES (WALKER-INDEX WALKER))
-                           ',EXPECTED-ENTRIES :TEST #'EQUAL)))
-            T))
+(DEFMACRO DEFINE-INDEXING-TEST
+          (NAME-AND-OPTIONS SECTIONS &REST EXPECTED-ENTRIES)
+  (DESTRUCTURING-BIND
+      (NAME &KEY (VERIFY-WALK T) (INDEX-LEXICALS NIL))
+      (ENSURE-LIST NAME-AND-OPTIONS)
+    `(DEFTEST (INDEX ,NAME)
+              (WITH-TEMPORARY-SECTIONS ,SECTIONS
+               (LET ((TANGLED-CODE
+                      (TANGLE (UNNAMED-SECTION-CODE-PARTS *SECTIONS*)))
+                     (MANGLED-CODE (TANGLE-CODE-FOR-INDEXING *SECTIONS*))
+                     (WALKER (MAKE-INSTANCE 'INDEXING-WALKER))
+                     (*INDEX-LEXICAL-VARIABLES* ,INDEX-LEXICALS))
+                 (LOOP FOR FORM IN TANGLED-CODE
+                       AND MANGLED-FORM IN MANGLED-CODE AS WALKED-FORM = (WALK-FORM
+                                                                          WALKER
+                                                                          MANGLED-FORM) ,@(WHEN
+                                                                                              VERIFY-WALK
+                                                                                            `(DO (ASSERT
+                                                                                                  (TREE-EQUAL WALKED-FORM
+                                                                                                              FORM)
+                                                                                                  (WALKED-FORM MANGLED-FORM
+                                                                                                               FORM)))))
+                 (TREE-EQUAL (ALL-INDEX-ENTRIES (WALKER-INDEX WALKER))
+                             ',EXPECTED-ENTRIES :TEST #'EQUAL)))
+              T)))
 (DEFINE-INDEXING-TEST ATOM ((:SECTION :CODE (*SECTIONS*)))
  ("*SECTIONS* special variable" (0)))
 (DEFINE-INDEXING-TEST FUNCALL
@@ -880,6 +888,10 @@
         (&WHOLE FORM)
       FORM))))
  ("FOO compiler macro" ((:DEF 0))))
+(DEFINE-INDEXING-TEST (DEFSTRUCT :VERIFY-WALK NIL)
+ ((:SECTION :CODE ((DEFSTRUCT FOO)))
+  (:SECTION :CODE ((DEFSTRUCT (BAR (:TYPE LIST)) A B C))))
+ ("BAR structure" ((:DEF 1))) ("FOO structure" ((:DEF 0))))
 (DEFINE-INDEXING-TEST DEFVAR
  ((:SECTION :CODE ((DEFVAR *A* T))) (:SECTION :CODE ((DEFPARAMETER *B* T)))
   (:SECTION :CODE ((DEFCONSTANT *C* T))))
