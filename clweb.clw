@@ -772,27 +772,35 @@ having code parts, but later tests will.
     (section-name (find-section "foo...")))
   "foo")
 
-@*Reading a web. We distinguish five distinct modes for reading. Limbo mode
-is used for \TeX\ text that precedes the first section in a file. \TeX\
-mode is used for reading the commentary that begins a section. Lisp mode is
-used for reading the code part of a section; inner-Lisp mode is for reading
-Lisp forms that are embedded within \TeX\ material. And finally, restricted
-mode is used for reading material in section names and a few other places.
-
-We use separate readtables for each mode, which are stored in |*readtables*|
-and accessed via |readtable-for-mode|. We add an extra readtable with key
-|nil| that stores a virgin copy of the standard readtable.
+@*Reading a web. We distinguish five distinct modes for reading.
+{\it Limbo mode\/} is used for \TeX\ text that precedes the first section
+in a web. {\it \TeX\ mode\/} is used for reading the commentary that begins
+a section. {\it Lisp mode\/} is used for reading the code part of a section.
+{\it Inner-Lisp mode\/} is for reading Lisp forms that are embedded within
+\TeX\ material. And {\it restricted mode\/} is used for reading material in
+section names and a few other places. The modes are named by the symbols
+|:limbo|, |:TeX|, |:lisp|, |:inner-lisp|, and~|:restricted|, respectively.
 
 @<Global variables@>=
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *modes* '(:limbo :TeX :lisp :inner-lisp :restricted)))
+
 (deftype mode () `(member ,@*modes*))
 
-(defvar *readtables*
-  (loop for mode in (cons nil *modes*)
+@ We use separate readtables for each mode, stored as an alist keyed on the
+mode name. We add an extra mode with name |nil| that keeps a virgin copy of
+the standard readtable for when we want to read in `no-mode'. Although we
+will modify the readtables themselves, the |*readtables*| list is never
+changed once it's initialized.
+
+@<Global variables@>=
+(defvar *readtables* ;
+  (loop for mode in (cons 'nil *modes*) ;
         collect (cons mode (copy-readtable nil))))
 
-@ @l
+@ We'll access the mode-specific readtables via |readtable-for-mode|.
+
+@l
 (defun readtable-for-mode (mode)
   (declare (type (or mode null) mode))
   (cdr (assoc mode *readtables*)))
