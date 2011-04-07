@@ -858,7 +858,7 @@ we'll use the symbol macro |eof|, which bypasses the variable lookup at
 run-time.
 
 @l
-(eval-when (:compile-toplevel :execute)
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (define-symbol-macro eof (load-time-value *eof* t)))
 
 @ We'll test for our {\sc eof}-value using |eof-p|.
