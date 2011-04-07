@@ -4093,12 +4093,25 @@ unevaluated form, followed by zero or more evaluated forms.
                   ,(walk-atomic-form walker :unevaluated (cadr form) env)
                   ,@(walk-list walker (cddr form) env)))))
   (define-block-like-walker block)
-  (define-block-like-walker return-from)
-  (define-block-like-walker the))
+  (define-block-like-walker return-from))
 
 @t@l
-(define-simple-walker-test block/return-from/the
-  (block foo (return-from foo (the number 4))))
+(define-simple-walker-test block/return-from
+  (block foo (return-from foo 4)))
+
+@ The special form |the| takes an unevaluated type specifier and a form.
+We can't sensibly do anything at all with a general type specifier, so
+we simply won't walk it.
+
+@l
+(define-special-form-walker the ((walker walker) form env)
+  `(,(car form)
+    ,(cadr form)
+    ,@(walk-list walker (cddr form) env)))
+
+@t@l
+(define-simple-walker-test the
+  (the (or number nil) (sqrt 4)))
 
 @ Quote-like special forms are entirely unevaluated.
 
