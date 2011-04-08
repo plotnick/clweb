@@ -4192,14 +4192,33 @@ otherwise, it signals an error.
          (walk-list walker symbols env)
          (walk-form walker symbols env)))))
 
-@t The second special form we'll recognize is |(top-level)|, which simply
-asserts that it occurs as a top level form. The form itself is returned.
+@t The second special form we'll recognize is |top-level|, which simply
+asserts that it occurs at top level, or not if an argument of |nil|
+is given. It returns |t| if successful.
 
 @l
 (define-special-form-walker top-level ((walker test-walker) form env ;
                                        &key top-level)
-  (assert top-level (top-level) "Not at top level.")
-  form)
+  (destructuring-bind (operator &optional (check-top-level t)) form
+    (assert (if check-top-level
+                top-level
+                (not top-level))
+            (form check-top-level top-level)
+            "~:[At~;Not at~] top level." check-top-level)
+    t))
+
+@t@l
+(deftest top-level
+  (let ((walker (make-instance 'test-walker)))
+    (macrolet ((walk (form top-level)
+                 `(walk-form walker ',form nil :top-level ,top-level)))
+      (values (walk (top-level) t)
+              (walk (top-level nil) nil)
+              (not (null (walk (let () (top-level nil)) t)))
+              (handler-case (walk (top-level) nil) (error () nil))
+              (handler-case (walk (top-level nil) t) (error () nil))
+              (handler-case (walk (let () (top-level)) t) (error () nil)))))
+  t t t nil nil nil)
 
 @t Many of the walker tests will be defined using the following macro,
 which takes a name for the test, a form to be walked, and an optional
