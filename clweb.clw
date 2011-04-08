@@ -4285,16 +4285,17 @@ evaluate top-level forms that appear in an |eval-when| with situation
 |:compile-toplevel|.
 
 @l
-(define-special-form-walker eval-when ((walker walker) form env &key top-level)
-  (let ((walked-form
-         `(,(car form)
-           ,(cadr form)
-           ,@(walk-list walker (cddr form) env :top-level top-level))))
-    (when (and top-level
-               (or (member :compile-toplevel (cadr walked-form))
-                   (member 'compile (cadr walked-form))))
-      (eval `(progn ,@(cddr walked-form))))
-    walked-form))
+(define-special-form-walker eval-when ;
+    ((walker walker) form env &key top-level &aux
+     (eval (and top-level
+                (or (member :compile-toplevel (cadr form))
+                    (member 'compile (cadr form))))))
+  `(,(car form)
+    ,(cadr form)
+    ,@(loop for form in (cddr form)
+            as walked-form = (walk-form walker form env :top-level top-level)
+            when eval do (eval walked-form)
+            collect walked-form)))
 
 @t@l
 (define-walker-test (eval-when-non-toplevel :top-level nil)
