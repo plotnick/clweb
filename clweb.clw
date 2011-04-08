@@ -4802,7 +4802,7 @@ former case.
           defs))
 
 (define-special-form-walker macrolet
-    ((walker walker) form env &key &aux
+    ((walker walker) form env &key top-level &aux
      (bindings (mapcar (lambda (p) ;
                          (walk-lambda-expression walker p env ;
                                                  :operator 'macrolet ;
@@ -4817,14 +4817,15 @@ former case.
                    (augment-walker-environment walker env
                                                :macro (make-macro-definitions ;
                                                        walker bindings env)
-                                               :declare decls)))))
+                                               :declare decls)
+                   :top-level top-level))))
 
 @ Walking |symbol-macrolet| is simpler, since the definitions are given in
 the bindings themselves.
 
 @l
 (define-special-form-walker symbol-macrolet
-    ((walker walker) form env &key &aux
+    ((walker walker) form env &key top-level &aux
      (bindings (mapcar (lambda (p) (walk-variable-binding walker p env)) ;
                        (cadr form)))
      (body (cddr form)))
@@ -4835,7 +4836,8 @@ the bindings themselves.
       ,@(walk-list walker forms
                    (augment-walker-environment walker env
                                                :symbol-macro bindings
-                                               :declare decls)))))
+                                               :declare decls)
+                   :top-level top-level))))
 
 @t@l
 (define-walker-test let
@@ -4854,18 +4856,20 @@ the bindings themselves.
     (check-binding foo :function :function))
   (flet ((foo (x) x) (bar (y) y)) (declare (special x)) x foo))
 
-(define-walker-test macrolet
+(define-walker-test (macrolet :top-level t)
   (macrolet ((foo (x) `,(check-binding x :variable :lexical))
              (bar (y) `,y))
     (check-binding foo :function :macro)
+    (top-level)
     (foo :foo))
-  (macrolet ((foo (x) x) (bar (y) y)) foo :foo))
+  (macrolet ((foo (x) x) (bar (y) y)) foo t :foo))
 
-(define-walker-test symbol-macrolet
+(define-walker-test (symbol-macrolet :top-level t)
   (symbol-macrolet ((foo :foo)
                     (bar :bar))
-    (check-binding (foo bar) :variable :symbol-macro))
-  (symbol-macrolet ((foo :foo) (bar :bar)) (:foo :bar)))
+    (check-binding (foo bar) :variable :symbol-macro)
+    (top-level))
+  (symbol-macrolet ((foo :foo) (bar :bar)) (:foo :bar) t))
 
 @ The two outliers are |let*|, which augments its environment sequentially,
 and |labels|, which does so before walking any of its bindings.
@@ -4940,18 +4944,15 @@ body forms.
                    :top-level top-level))))
 
 @t@l
-(define-walker-test locally
-  (let ((y t))
-    (check-binding y :variable :lexical)
-    (locally (declare (special y))
-      (check-binding y :variable :special)))
-  (let ((y t)) y (locally (declare (special y)) y)))
-
-(define-walker-test (locally-top-level :top-level t)
-  (locally (declare (optimize speed))
-    (top-level))
-  (locally (declare (optimize speed))
-    t))
+(define-walker-test (locally :top-level t)
+  (locally ()
+    (top-level)
+    (let ((y t))
+      (check-binding y :variable :lexical)
+      (locally (declare (special y))
+        (top-level nil)
+        (check-binding y :variable :special))))
+  (locally () t (let ((y t)) y (locally (declare (special y)) t y))))
 
 @ In order to recognize global proclamations, we'll treat |declaim| as a
 special form.
