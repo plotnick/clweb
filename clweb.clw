@@ -4023,14 +4023,19 @@ use |eql|~specializers. The |operator| of a form passed to
     (error () nil))
   nil)
 
-@ The default method for |walk-compound-form| is used for most funcall-like
-forms; it leaves its |car| unevaluated and walks its |cdr|.
+@ This method for |walk-compound-form| is used for most funcall-like forms;
+it leaves its |car| unevaluated and walks its |cdr|.
 
 @l
 (defmethod walk-compound-form ((walker walker) (operator symbol) form env &key)
   (declare (ignore operator))
   `(,(walk-atomic-form walker :operator (car form) env)
     ,@(walk-list walker (cdr form) env)))
+
+@t@l
+(deftest walk-compound-form
+  (walk-compound-form (make-instance 'walker) 1 '(1 2 3) nil)
+  (1 2 3))
 
 @ A compound form might also have a \L~expression as its |car|.
 
@@ -4041,6 +4046,16 @@ forms; it leaves its |car| unevaluated and walks its |cdr|.
   (check-type operator lambda-expression)
   `(,(walk-lambda-expression walker operator env)
     ,@(walk-list walker (cdr form) env)))
+
+@t@l
+(deftest (walk-compound-form lambda)
+  (walk-compound-form (make-instance 'walker) '#1=(lambda (x) x) '(#1# 0) nil)
+  ((lambda (x) x) 0))
+
+(deftest (walk-compound-form invalid)
+  (handler-case (walk-compound-form (make-instance 'walker) '#1=(x) '(#1#) nil)
+    (error () nil))
+  nil)
 
 @t These sorts of complex type specifiers are surprisingly easy to get wrong.
 
