@@ -3937,8 +3937,8 @@ to override all of the macroexpansion and environment access functions.
 @ The main entry point for the walker is |walk-form|. The walk ordinarily
 stops after encountering an atomic or special form; otherwise, we macro
 expand and try again. If a walker method wants to decline to walk, however,
-it may |throw| to the tag |continue-walk|, and the walk will continue with
-macro expansion of the current form.
+it may throw a form to the tag |continue-walk|, and the walk will continue
+with macro expansion of that form.
 
 @l
 (defmethod walk-form ((walker walker) form &optional
@@ -3963,7 +3963,8 @@ macro expansion of the current form.
       ((or (not expanded)
            (walk-as-special-form-p walker (car form) form env))
        (return (walk-compound-form walker (car form) form env ;
-                                   :top-level top-level))))
+                                   :top-level top-level)))
+      (t form))
 
 @ @<Walker generic functions@>=
 (defgeneric walk-form (walker form &optional env &key top-level))
