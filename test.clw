@@ -73,6 +73,20 @@ be all on one line.
 @ And one more, with a different name.
 @<Another unused section@>=t
 
+@ Here's a symbol macro, an ordinary macro, and a generic function
+walk into a bar\dots
+
+@l
+(define-symbol-macro three-bears '(:fred :jerry :samuel))
+(defmacro bears () three-bears)
+(defgeneric generic-foo (foo))
+
+@ Not so funny now, is it?
+
+@l
+(defun bearp (x) (member x (bears)))
+(defun compute-foo-generically (foo) (generic-foo foo))
+
 @*Markers. Here we test out some of the trickier markers.
 
 @l
