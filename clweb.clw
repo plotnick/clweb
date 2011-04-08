@@ -4035,8 +4035,8 @@ it leaves its |car| unevaluated and walks its |cdr|.
 
 @t@l
 (deftest walk-compound-form
-  (walk-compound-form (make-instance 'walker) 1 '(1 2 3) nil)
-  (1 2 3))
+  (walk-compound-form (make-instance 'walker) nil '(nil 2 3) nil)
+  (nil 2 3))
 
 @ A compound form might also have a \L~expression as its |car|.
 
