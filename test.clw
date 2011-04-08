@@ -73,6 +73,16 @@ be all on one line.
 @ And one more, with a different name.
 @<Another unused section@>=t
 
+@ Here's a global symbol macro, just for the heck of it.
+
+@l
+(define-symbol-macro three-bears '(:fred :jerry :samuel))
+
+@ And here's a use of that symbol macro.
+
+@l
+(defun bears () three-bears)
+
 @*Markers. Here we test out some of the trickier markers.
 
 @l

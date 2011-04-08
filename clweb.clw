@@ -113,6 +113,7 @@ signaled while processing a web.
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
   (:shadow "ENCLOSE"
+           #+allegro "ENSURE-PORTABLE-WALKING-ENVIRONMENT"
            #+allegro "FUNCTION-INFORMATION"
            #+allegro "VARIABLE-INFORMATION"))
 @e
@@ -3818,18 +3819,6 @@ actually be walking a special sort of munged code that isn't exactly
 Common Lisp. And because of this, none of the available code walkers
 will quite do what we want. So we'll roll our own.
 
-@ We'll pass around instances of a |walker| class during our code walk
-to provide a hook (via subclassing) for overriding walker methods.
-
-@l
-(defclass walker () ())
-
-@ The walker protocol consists of a handful of generic functions, which
-we'll describe as we come to them.
-
-@l
-@<Walker generic functions@>
-
 @ We'll use the environments {\sc api} defined in~\cltl, since even
 though it's not part of the Common Lisp standard, it's widely supported,
 and does everything we need it to do.
@@ -3843,8 +3832,9 @@ a trivial definition for other Lisps.
 @^Allegro Common Lisp@>
 
 @l
-(unless (fboundp 'ensure-portable-walking-environment)
-  (defun ensure-portable-walking-environment (env) env))
+(defun ensure-portable-walking-environment (env)
+  #+allegro (sys:ensure-portable-walking-environment env)
+  #-allegro env)
 
 @ Allegro doesn't define |parse-macro| or |enclose|, so we'll need
 to provide our own definitions. In fact, we'll use our own version
@@ -3893,31 +3883,83 @@ Thanks, Franz!
 #+allegro
 (reorder-env-information function-information #'sys:function-information)
 
+@ We'll pass around instances of a |walker| class during our code walk
+to provide a hook (via subclassing) for overriding walker methods.
+
+@l
+(defclass walker ()
+  ((global-environment :accessor walker-global-environment
+                       :initform (ensure-portable-walking-environment nil))))
+
+@ The walker protocol consists of a handful of generic functions, which
+we'll describe as we come to them.
+
+@l
+@<Walker generic functions@>
+
+@ We don't want to use the running Lisp image's global environment for our
+walk, so we keep our own in the walker instance. We therefore need to override
+all of the macroexpansion and environment access functions.
+
+@l
+(defmethod macroexpand-for-walk ((walker walker) form env)
+  (macroexpand-1 form (or env (walker-global-environment walker))))
+
+(defmethod augment-walker-environment ((walker walker) env &rest args)
+  (apply #'augment-environment (or env (walker-global-environment walker)) ;
+         args))
+
+(defmethod walker-variable-information ((walker walker) symbol &optional env)
+  (variable-information symbol ;
+                        (or env (walker-global-environment walker))))
+
+(defmethod walker-function-information ((walker walker) function &optional env)
+  (function-information function ;
+                        (or env (walker-global-environment walker))))
+
+(defmethod walker-declaration-information ((walker walker) decl &optional env)
+  (declaration-information decl (or env (walker-global-environment walker))))
+
+@ @<Walker generic functions@>=
+(defgeneric macroexpand-for-walk (walker form env))
+(defgeneric augment-walker-environment (walker env &rest args))
+(defgeneric walker-variable-information (walker symbol &optional env))
+(defgeneric walker-function-information (walker function &optional env))
+(defgeneric walker-declaration-information (walker decl &optional env))
+
 @ The main entry point for the walker is |walk-form|. The walk ordinarily
 stops after encountering an atomic or special form; otherwise, we macro
 expand and try again. If a walker method wants to decline to walk, however,
-it may |throw| the given form, and the walk will continue with macro
-expansion.
+it may |throw| to the tag |continue-walk|, and the walk will continue with
+macro expansion of the current form.
 
 @l
-(defmethod walk-form ((walker walker) form &optional env &aux
-                      (env (ensure-portable-walking-environment env))
+(defmethod walk-form ((walker walker) form &optional
+                      (env (ensure-portable-walking-environment nil)) &aux
                       (expanded t))
-  (flet ((symbol-macro-p (form env)
-           (and (symbolp form)
-                (eql (variable-information form env) :symbol-macro))))
-    (loop
-      (catch form
-        (cond ((symbol-macro-p form env)) ; wait for macro expansion
-              ((atom form)
-               (return (walk-atomic-form walker :evaluated form env)))
-              ((not (symbolp (car form)))
-               (return (walk-list walker form env)))
-              ((or (not expanded)
-                   (walk-as-special-form-p walker (car form) form env))
-               (return (walk-compound-form walker (car form) form env)))))
-      (multiple-value-setq (form expanded)
-        (macroexpand-for-walk walker form env)))))
+  (loop
+    (catch 'continue-walk
+      (cond ((and (symbolp form)
+                  (eql (walker-variable-information walker form env) ;
+                       :symbol-macro))
+             (walk-atomic-form walker :symbol-macro form env))
+            ((and (symbolp form)
+                  (eql (walker-variable-information walker form) :symbol-macro))
+             (multiple-value-setq (form expanded)
+               (macroexpand-for-walk walker
+                                     (walk-atomic-form walker :symbol-macro ;
+                                                       form nil)
+                                     nil))
+             (throw 'continue-walk form))
+            ((atom form)
+             (return (walk-atomic-form walker :evaluated form env)))
+            ((not (symbolp (car form)))
+             (return (walk-list walker form env)))
+            ((or (not expanded)
+                 (walk-as-special-form-p walker (car form) form env))
+             (return (walk-compound-form walker (car form) form env)))))
+    (multiple-value-setq (form expanded)
+      (macroexpand-for-walk walker form env))))
 
 @ @<Walker generic functions@>=
 (defgeneric walk-form (walker form &optional env))
@@ -3932,21 +3974,6 @@ expansion.
 
 @ @<Walker generic functions@>=
 (defgeneric walk-as-special-form-p (walker operator form env))
-
-@ Macroexpansion and environment augmentation both get wrapped in generic
-functions to allow subclasses to override the usual behavior. The default
-methods just call down to the normal Lisp functions.
-
-@l
-(defmethod macroexpand-for-walk ((walker walker) form env)
-  (macroexpand-1 form env))
-
-(defmethod augment-walker-environment ((walker walker) env &rest args)
-  (apply #'augment-environment env args))
-
-@ @<Walker generic functions@>=
-(defgeneric macroexpand-for-walk (walker form env))
-(defgeneric augment-walker-environment (walker env &rest args))
 
 @ Here's a utility function we'll use often in walker methods: it walks
 each element of the supplied list and returns a new list of the results
@@ -3971,8 +3998,6 @@ use |eql|~specializers. The |operator| of a form passed to
 (defgeneric walk-compound-form (walker operator form env))
 
 @ The default method for |walk-atomic-form| simply returns the form.
-Note that this function won't be called for symbol macros; those are
-expanded in |walk-form|.
 
 @l
 (defmethod walk-atomic-form ((walker walker) context form env &key)
@@ -4532,18 +4557,20 @@ environment, and simply returns |symbols| if the checks are all successful.
 (defclass test-walker (walker) ())
 
 (define-special-form-walker check-binding ((walker test-walker) form env)
-  (flet ((check-binding (name namespace env type)
-           (assert (eql (ecase namespace
-                          (:function (function-information name env))
-                          (:variable (variable-information name env)))
-                        type)
-                   (name namespace env type)
-                   "~@(~A~) binding of ~A not of type ~A."
-                   namespace name type)))
-   (destructuring-bind (symbols namespace type) (cdr form)
+  (flet ((check-binding (name namespace expected-type local &aux ;
+                         (env (and local env)))
+           (let ((actual-type
+                  (ecase namespace
+                    (:function (walker-function-information walker name env))
+                    (:variable (walker-variable-information walker name env)))))
+             (assert (eql actual-type expected-type)
+                     (name namespace local)
+                     "~:[Global~;Local~] ~(~A~) binding of ~S type ~S, not ~S."
+                     local namespace name actual-type expected-type))))
+   (destructuring-bind (symbols namespace type &optional (local t)) (cdr form)
      (loop with symbols = (ensure-list symbols)
            for symbol in symbols
-           do (check-binding symbol namespace env type))
+           do (check-binding symbol namespace type local))
      (if (listp symbols)
          (walk-list walker symbols env)
          (walk-form walker symbols env)))))
@@ -4803,6 +4830,26 @@ set of declarations.
       (check-binding y :variable :special)))
   (let ((y t)) y (locally (declare (special y)) y)))
 
+@ We'll treat |define-symbol-macro| as a special form as well, since we need
+to record the symbol macro in the walker's global environment. After we've
+done so, we'll let the walk continue with the macro expansion.
+
+@l
+(define-special-form-walker define-symbol-macro ((walker walker) form env)
+  (let ((symbol (walk-atomic-form walker :define-symbol-macro 
+                                  (second form) env)))
+    (setf (walker-global-environment walker)
+          (augment-walker-environment walker (walker-global-environment walker)
+                                      :symbol-macro `((,symbol ,(third form)))))
+    (throw 'continue-walk form)))
+
+@t@l
+(deftest walk-define-symbol-macro
+  (null (walk-form (make-instance 'test-walker)
+                   '(progn (define-symbol-macro foo '(bar baz))
+                           (check-binding (foo) :variable :symbol-macro nil))))
+  nil)
+
 @t Here's a simple walker mix-in class that allows easy tracing of a walk.
 It's only here for debugging purposes; it's not a superclass of any of
 the walker classes defined in this program.
@@ -4816,7 +4863,7 @@ the walker classes defined in this program.
           form context
           (and (symbolp form)
                (eq context ':evaluated)
-               (variable-information form env))))
+               (walker-variable-information walker form env))))
 
 (defmethod walk-compound-form :before ;
     ((walker tracing-walker) operator form env)
@@ -5748,34 +5795,48 @@ the value of the |:index-lexicals| option (false by default).
 forms that we're considering might be or contain referring symbols, which
 won't have macro definitions. There are two important cases here:
   (1)~a form that is a referring symbol whose referent is a symbol macro
-  in the current environment; and
+  in the local or global environment; and
   (2)~a compound form, the operator of which is a referring symbol whose
-  referent is a macro in the current environment.
+  referent is a macro in the local environment.
 In both cases, we'll index the use of the (symbol) macro, then hand control
 off to the next method for the actual expansion.
 @^referring symbols@>
 
 @l
+(defmethod walker-variable-information ;
+    ((walker indexing-walker) form &optional env)
+  (multiple-value-bind (symbol section) (symbol-provenance form)
+    (declare (ignore section))
+    (call-next-method walker symbol env)))
+
 (defmethod macroexpand-for-walk ((walker indexing-walker) form env)
   (typecase form
     (symbol
      (multiple-value-bind (symbol section) (symbol-provenance form)
-       (cond (section
-              (case (variable-information symbol env)
-                (:symbol-macro
-                 (index-variable (walker-index walker) symbol env section)
-                 (call-next-method walker (cons symbol (cdr form)) env))
-                (t form)))
-             (t (call-next-method)))))
+       (if section
+           (let ((local))
+             (case (or (walker-variable-information walker symbol env)
+                       (prog1 (walker-variable-information walker symbol)
+                         (setq local t)))
+               (:symbol-macro
+                (add-index-entry
+                   (walker-index walker)
+                   (make-heading symbol ;
+                                 (make-type-heading 'symbol-macro ;
+                                                    :local local)) ;
+                   section)
+                (call-next-method walker symbol env))
+               (t form)))
+           (call-next-method))))
     (cons
      (multiple-value-bind (symbol section) (symbol-provenance (car form))
-       (cond (section
-              (case (function-information symbol env)
-                (:macro
-                 (index-funcall (walker-index walker) symbol form env section)
-                 (call-next-method walker (cons symbol (cdr form)) env))
-                (t form)))
-             (t (call-next-method)))))
+       (if section
+           (case (walker-function-information walker symbol env)
+             (:macro
+              (index-funcall (walker-index walker) symbol form env section)
+              (call-next-method walker (cons symbol (cdr form)) env))
+             (t form))
+           (call-next-method))))
     (t form)))
 
 @ The only atoms we care about indexing are referring symbols. We'll return
@@ -5899,6 +5960,21 @@ defined, by way of |walk-lambda-expression|.
   ((:section :code ((define-compiler-macro foo (&whole form) form))))
   ("FOO compiler macro" ((:def 0))))
 
+@ @l
+(defmethod walk-atomic-form :around ;
+    ((walker indexing-walker) ;
+     (context (eql :define-symbol-macro)) ;
+     (form symbol) env &key)
+  (call-next-method walker context form env :def t))
+
+(define-symbol-indexer :define-symbol-macro 'symbol-macro)
+
+@t@l
+(define-indexing-test (symbol-macro :verify-walk nil)
+  ((:section :code ((define-symbol-macro foo (or bar baz))))
+   (:section :code (foo)))
+  ("FOO symbol macro" (1 (:def 0))))
+
 @ Structure definitions also get indexed, although we won't bother to
 grovel through all of the options. We'll let them expand, since we can
 often pick up at least the constructor definitions that way.
@@ -5912,7 +5988,7 @@ often pick up at least the constructor definitions that way.
       (when section
         (index-defun (walker-index walker) symbol section ;
                      :operator 'defstruct)))
-    (throw form t)))
+    (throw 'continue-walk form)))
 
 @t@l
 (define-indexing-test (defstruct :verify-walk nil)
