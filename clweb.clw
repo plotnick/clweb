@@ -3897,9 +3897,9 @@ we'll describe as we come to them.
 @l
 @<Walker generic functions@>
 
-@ We don't want to use the running Lisp image's global environment for our
-walk, so we keep our own in the walker instance. We therefore need to override
-all of the macroexpansion and environment access functions.
+@ We don't want to depend on the running Lisp image's global environment
+for our walk, so we keep our own in the walker instance. We therefore need
+to override all of the macroexpansion and environment access functions.
 
 @l
 (defmethod macroexpand-for-walk ((walker walker) form env)
@@ -3942,36 +3942,28 @@ macro expansion of the current form.
 
 @l
 (defmethod walk-form ((walker walker) form &optional
-                      (env (ensure-portable-walking-environment nil)) &key
-                      top-level &aux
-                      (expanded t))
-  (loop
-    (catch 'continue-walk
-      (cond ((and (symbolp form)
-                  (eql (walker-variable-information walker form env) ;
-                       :symbol-macro))
-             (walk-atomic-form walker :symbol-macro form env
-                               :top-level top-level))
-            ((and (symbolp form)
-                  (eql (walker-variable-information walker form) :symbol-macro))
-             (multiple-value-setq (form expanded)
-               (macroexpand-for-walk walker
-                                     (walk-atomic-form walker :symbol-macro ;
-                                                       form nil
-                                                       :top-level top-level)
-                                     nil))
-             (throw 'continue-walk form))
-            ((atom form)
-             (return (walk-atomic-form walker :evaluated form env
-                                       :top-level top-level)))
-            ((not (symbolp (car form)))
-             (return (walk-list walker form env :top-level top-level)))
-            ((or (not expanded)
-                 (walk-as-special-form-p walker (car form) form env))
-             (return (walk-compound-form walker (car form) form env
-                                         :top-level top-level)))))
-    (multiple-value-setq (form expanded)
-      (macroexpand-for-walk walker form env))))
+                      (env (ensure-portable-walking-environment nil)) &key ;
+                      top-level)
+  (let ((expanded t))
+    (loop
+      (setq form (catch 'continue-walk @<Walk |form|@>))
+      (multiple-value-setq (form expanded)
+        (macroexpand-for-walk walker form env)))))
+
+@ @<Walk |form|@>=
+(cond ((and (symbolp form)
+            (eql (walker-variable-information walker form env) :symbol-macro))
+       (throw 'continue-walk
+         (walk-atomic-form walker :symbol-macro form env :top-level top-level)))
+      ((atom form)
+       (return (walk-atomic-form walker :evaluated form env ;
+                                 :top-level top-level)))
+      ((not (symbolp (car form)))
+       (return (walk-list walker form env :top-level top-level)))
+      ((or (not expanded)
+           (walk-as-special-form-p walker (car form) form env))
+       (return (walk-compound-form walker (car form) form env ;
+                                   :top-level top-level))))
 
 @ @<Walker generic functions@>=
 (defgeneric walk-form (walker form &optional env &key top-level))
