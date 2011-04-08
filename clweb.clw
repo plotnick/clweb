@@ -4280,19 +4280,36 @@ we simply won't walk it.
 (define-walker-test quote 'foo)
 (define-walker-test go (go home))
 
-@ |eval-when| takes a list of situations and some forms. We don't need to
-do anything special with either.
+@ We'll pretend to be a compiler for the purposes of walking, and
+evaluate top-level forms that appear in an |eval-when| with situation
+|:compile-toplevel|.
 
 @l
-(define-special-form-walker eval-when ((walker walker) form env &key)
-  `(,(car form)
-    ,(walk-list walker (cadr form) env)
-    ,@(walk-list walker (cddr form) env)))
+(define-special-form-walker eval-when ((walker walker) form env &key top-level)
+  (let ((walked-form
+         `(,(car form)
+           ,(cadr form)
+           ,@(walk-list walker (cddr form) env :top-level top-level))))
+    (when (and top-level
+               (or (member :compile-toplevel (cadr walked-form))
+                   (member 'compile (cadr walked-form))))
+      (eval `(progn ,@(cddr walked-form))))
+    walked-form))
 
 @t@l
-(define-walker-test eval-when
+(define-walker-test (eval-when-non-toplevel :top-level nil)
   (eval-when (:compile-toplevel :load-toplevel :execute)
     (do-some-stuff)))
+
+(deftest (walk eval-when-toplevel)
+  (let* ((string-output-stream (make-string-output-stream))
+         (*standard-output* string-output-stream)
+         (walker (make-instance 'test-walker))
+         (form '(eval-when (:compile-toplevel)
+                  (prin1 'foo))))
+    (and (tree-equal (walk-form walker form nil :top-level t) form)
+         (get-output-stream-string string-output-stream)))
+  "FOO")
 
 @ The |function| special form takes either a valid function name or a
 \L~expression.
