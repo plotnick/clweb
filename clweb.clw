@@ -4165,44 +4165,16 @@ consistently defined.
            (declare (ignorable ,@(mapcar #'arg-name `(,walker ,form ,env))))
            ,@body)))))
 
-@t To test the walker on binding forms, including \L~expressions, we'll use
-a specialized walker class that recognizes a few non-standard special forms.
+@t To make writing walker tests easier and more complete, we'll use a walker
+subclass that recognizes a few non-standard special forms that are useful for
+testing.
 
 @l
 (defclass test-walker (walker) ())
 
-@t The first is |check-binding|, which verifies that a list of symbols have the
-appropriate kind of binding in the current lexical environment. Its syntax is
-|(check-binding symbols namespace type)|, where |symbols| is an unevaluated
-designator for a list of symbols, |namespace| is one of |:function|
-or~|:variable|, and |type| is the type of binding expected for each of the
-given symbols (e.g., |:lexical|, |:special|, |:function|). If all of the
-symbols have the correct type of binding, it returns the |symbols| list;
-otherwise, it signals an error.
-
-@l
-(define-special-form-walker check-binding ((walker test-walker) form env &key)
-  (flet ((check-binding (name namespace expected-type local &aux ;
-                         (env (and local env)))
-           (let ((actual-type
-                  (ecase namespace
-                    (:function (walker-function-information walker name env))
-                    (:variable (walker-variable-information walker name env)))))
-             (assert (eql actual-type expected-type)
-                     (name namespace local)
-                     "~:[Global~;Local~] ~(~A~) binding of ~S type ~S, not ~S."
-                     local namespace name actual-type expected-type))))
-   (destructuring-bind (symbols namespace type &optional (local t)) (cdr form)
-     (loop with symbols = (ensure-list symbols)
-           for symbol in symbols
-           do (check-binding symbol namespace type local))
-     (if (listp symbols)
-         (walk-list walker symbols env)
-         (walk-form walker symbols env)))))
-
-@t The second special form we'll recognize is |top-level|, which simply
-asserts that it occurs at top level, or not if an argument of |nil|
-is given. It returns |t| if successful.
+@t The simplest special form we'll recognize is |top-level|, which simply
+asserts that it occurs at top level, or not if an argument of |nil| is given.
+It returns |t| if successful.
 
 @l
 (define-special-form-walker top-level ((walker test-walker) form env ;
@@ -4228,12 +4200,12 @@ is given. It returns |t| if successful.
               (handler-case (walk (let () (top-level)) t) (error () nil)))))
   t t t nil nil nil)
 
-@t Many of the walker tests will be defined using the following macro,
-which takes a name for the test, a form to be walked, and an optional
-result. Neither the form nor the result is evaluated. If the result is
-omitted, it is assumed that the result of the walk should be the same
-as the walked form. If it is supplied and |nil|, the result will not be
-checked.
+@t Most of our walker tests will be defined using the following macro,
+which takes a name for the test and a few options, a form to be walked,
+and~an optional result. If the result is omitted, it is assumed that the
+result of the walk should be the same as the walked form. If it is supplied
+and |nil|, the result will not be checked. Neither the form nor the result
+is evaluated.
 
 @l
 (defmacro define-walker-test (name-and-options form &optional ;
@@ -4261,7 +4233,8 @@ checked.
   (progn foo bar baz))
 
 (define-walker-test (progn-top-level :top-level t)
-  (progn (top-level)))
+  (progn (top-level))
+  (progn t))
 
 @ Block-like special forms have a |cdr| that begins with a single
 unevaluated form, followed by zero or more evaluated forms.
@@ -4676,6 +4649,37 @@ this will be used later to aid in the indexing process.
 (define-special-form-walker lambda ((walker walker) form env &key)
   (walk-lambda-expression walker form env))
 
+@t To test the walker on binding forms, including \L~expressions, we'll
+define a new special form for our test walker, |check-binding|, which
+checks that a list of symbols have the right kind of binding in the
+current lexical environment. Its syntax is `(|check-binding| \<symbols>
+\<namespace> \<type>)', where \<symbols> is an unevaluated designator
+for a list of symbols, \<namespace> is one of |:function| or~|:variable|,
+and~\<type> is the type of binding expected for each of the given
+symbols (e.g., |:lexical|, |:special|, |:function|). If all of the
+symbols have the correct type of binding, it returns the symbols list;
+otherwise, it signals an error.
+
+@l
+(define-special-form-walker check-binding ((walker test-walker) form env &key)
+  (flet ((check-binding (name namespace expected-type local &aux ;
+                         (env (and local env)))
+           (let ((actual-type
+                  (ecase namespace
+                    (:function (walker-function-information walker name env))
+                    (:variable (walker-variable-information walker name env)))))
+             (assert (eql actual-type expected-type)
+                     (name namespace local)
+                     "~:[Global~;Local~] ~(~A~) binding of ~S type ~S, not ~S."
+                     local namespace name actual-type expected-type))))
+   (destructuring-bind (symbols namespace type &optional (local t)) (cdr form)
+     (loop with symbols = (ensure-list symbols)
+           for symbol in symbols
+           do (check-binding symbol namespace type local))
+     (if (listp symbols)
+         (walk-list walker symbols env)
+         (walk-form walker symbols env)))))
+
 @t@l
 (define-walker-test ordinary-lambda-list
   (lambda (x y
@@ -4928,7 +4932,9 @@ body forms.
 
 (define-walker-test (locally-top-level :top-level t)
   (locally (declare (optimize speed))
-    (top-level)))
+    (top-level))
+  (locally (declare (optimize speed))
+    t))
 
 @ In order to recognize global proclamations, we'll treat |declaim| as a
 special form.
