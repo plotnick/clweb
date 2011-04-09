@@ -4922,7 +4922,7 @@ body forms.
     (let ((y t))
       (check-binding y :variable :lexical)
       (locally (declare (special y))
-        (ensure-toplevel)
+        (ensure-toplevel nil)
         (check-binding y :variable :special))))
   (locally () t (let ((y t)) y (locally (declare (special y)) t y))))
 
@@ -5651,7 +5651,7 @@ passed in as keyword arguments, which we'll pass down to |make-type-heading|.
 (defgeneric index (index name section def &rest args))
 
 (defmethod index ((index index) (name symbol) section def &rest args &key ;
-                  operator)
+                  operator &allow-other-keys)
   (add-index-entry
     index
     (make-heading name
@@ -5781,8 +5781,8 @@ method on |index| that specializes on |indexing-walker| instances so that
 we don't even have to bother pulling out the index manually.
 
 @l
-(defmethod index ((index indexing-walker) name section def &rest args)
-  (apply #'index (walker-index) name section def args))
+(defmethod index ((walker indexing-walker) name section def &rest args)
+  (apply #'index (walker-index walker) name section def args))
 
 @t Here's a little routine that returns a list of all the entries in an
 index. The elements of that list are lists of the form |(heading-names
