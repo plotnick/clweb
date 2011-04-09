@@ -384,7 +384,7 @@ arguments that will be used to initialize new |section| instances; e.g.,
     `(let ((*sections* (make-array 16 :adjustable t :fill-pointer 0))
            (*test-sections* (make-array 16 :adjustable t :fill-pointer 0))
            (*named-sections* nil))
-       (dolist (,spec ',sections)
+       (dolist (,spec ,sections)
          (let* ((,section (apply #'make-instance
                                  (ecase (pop ,spec)
                                    (:section 'section)
@@ -530,9 +530,9 @@ the sections that reference this named section.
 @t@l
 (deftest named-section-number/code
   (with-temporary-sections
-      ((:section :name "foo" :code (1))
-       (:section :name "foo" :code (2))
-       (:section :name "foo" :code (3)))
+      '((:section :name "foo" :code (1))
+        (:section :name "foo" :code (2))
+        (:section :name "foo" :code (3)))
     (let ((section (find-section "foo")))
       (values (section-code section)
               (section-number section))))
@@ -734,10 +734,10 @@ having code parts, but later tests will.
 @l
 (defvar *sample-named-sections*
   (with-temporary-sections
-      ((:section :name "foo" :code (:foo))
-       (:section :name "bar" :code (:bar))
-       (:section :name "baz" :code (:baz))
-       (:section :name "quux" :code (:quux :quuux :quuuux)))
+      '((:section :name "foo" :code (:foo))
+        (:section :name "bar" :code (:bar))
+        (:section :name "baz" :code (:baz))
+        (:section :name "quux" :code (:quux :quuux :quuuux)))
     *named-sections*))
 
 (defmacro with-sample-named-sections (&body body)
@@ -5816,24 +5816,37 @@ default), the test will include an assertion the walked forms match the
 originals. During the walk, |*index-lexical-variables*| will be bound to
 the value of the |:index-lexicals| option (false by default).
 
+The helper function |walk-sections| does the actual walking and is
+useful on its own, especially for interactive testing.
+
 @l
+(defclass tracing-indexing-walker (tracing-walker indexing-walker) ())
+
+(defun walk-sections (walker sections &key (verify-walk t))
+  (with-temporary-sections sections
+    (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
+          (mangled-code (tangle-code-for-indexing *sections*)))
+      (loop for form in tangled-code
+            and mangled-form in mangled-code
+            as walked-form = (walk-form walker mangled-form)
+            when verify-walk
+              do (assert (tree-equal walked-form form)
+                         (walked-form mangled-form form)
+                         "Walked form does not match original.")
+            collect walked-form))))
+
 (defmacro define-indexing-test (name-and-options sections &rest expected-entries)
-  (destructuring-bind (name &key (verify-walk t) (index-lexicals nil)) ;
+  (destructuring-bind (name &key (verify-walk t) index-lexicals trace) ;
       (ensure-list name-and-options)
     `(deftest (index ,name)
-       (with-temporary-sections ,sections
-         (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
-               (mangled-code (tangle-code-for-indexing *sections*))
-               (walker (make-instance 'indexing-walker))
-               (*index-lexical-variables* ,index-lexicals))
-           (loop for form in tangled-code and mangled-form in mangled-code
-                 as walked-form = (walk-form walker mangled-form)
-                 ,@(when verify-walk
-                     `(do (assert (tree-equal walked-form form)
-                                  (walked-form mangled-form form)))))
-           (tree-equal (all-index-entries (walker-index walker))
-                       ',expected-entries
-                       :test #'equal)))
+       (let ((walker (make-instance (if ,trace
+                                        'tracing-indexing-walker
+                                        'indexing-walker)))
+             (*index-lexical-variables* ,index-lexicals))
+         (walk-sections walker ',sections :verify-walk ,verify-walk)
+         (tree-equal (all-index-entries (walker-index walker))
+                     ',expected-entries
+                     :test #'equal))
        t)))
 
 @ We have to override the walker's macro expansion function, since the
