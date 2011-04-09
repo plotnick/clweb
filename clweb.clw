@@ -5855,35 +5855,24 @@ won't have macro definitions. There are two important cases here:
   (1)~a form that is a referring symbol whose referent is a symbol macro
   in the local or global environment; and
   (2)~a compound form, the operator of which is a referring symbol whose
-  referent is a macro in the local environment.
-In both cases, we'll index the use of the (symbol) macro, then hand control
-off to the next method for the actual expansion.
+  referent has a macro definition in the local environment.
+The first case is handled via the call to |walk-atomic-form| in |walk-form|
+for symbol macros. We handle the second case here: we index the use of the
+macro, then hand off control to the next method (which will perform the
+actual expansion), passing the referent of the referring symbol.
 @^referring symbols@>
 
 @l
-(defmethod macroexpand-for-walk ((walker indexing-walker) form env)
-  (typecase form
-    (symbol
-     (multiple-value-bind (symbol section) (symbol-provenance form)
-       (if section
-           (multiple-value-bind (type local) ;
-               (variable-information symbol env)
-             (case type
-               (:symbol-macro ;
-                (index walker section nil :type 'symbol-macro :local local)))
-             (call-next-method walker symbol env))
-           (call-next-method))))
-    (cons
-     (multiple-value-bind (symbol section) (symbol-provenance (car form))
-       (if section
-           (multiple-value-bind (type local) ;
-               (function-information symbol env)
-             (case type
-               (:macro ;
-                (index walker section nil :type 'macro :local local)))
+(defmethod macroexpand-for-walk ((walker indexing-walker) (form cons) env)
+  (multiple-value-bind (symbol section) (symbol-provenance (car form))
+    (if section
+        (multiple-value-bind (type local) (function-information symbol env)
+          (case type
+            (:macro
+             (index walker section nil :type 'macro :local local)
              (call-next-method walker (cons symbol (cdr form)) env))
-           (call-next-method))))
-    (t form)))
+            (t (call-next-method))))
+        (call-next-method))))
 
 @ The only atoms we care about indexing are referring symbols. We'll return
 the referents; this is where the reverse-substitution of referring symbols
