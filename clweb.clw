@@ -5655,14 +5655,15 @@ passed in as keyword arguments, which we'll pass down to |make-type-heading|.
 (defgeneric index (index name section def &rest args))
 
 (defmethod index ((index index) (name symbol) section def &rest args &key ;
-                  operator &allow-other-keys)
+                  operator type &allow-other-keys)
   (add-index-entry
     index
     (make-heading name
                   (apply #'make-type-heading
                          (cond
                            (type type)
-                           (operator (apply #'compute-type-heading-class args)))
+                           (operator (apply #'compute-type-heading-class args))
+                           (t (error "Missing index entry type for ~S" name)))
                          args))
     section
     def))
