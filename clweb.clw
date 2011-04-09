@@ -5401,7 +5401,11 @@ the name of the class so that |make-type-heading| can do the right thing.
   (:operators defstruct))
 
 (define-type-heading variable ()
-  (:modifiers :special :constant))
+  (:modifiers :special))
+
+(define-type-heading constant ())
+
+(define-type-heading special-form ())
 
 (define-type-heading method-combination ()
   (:operators define-method-combination))
