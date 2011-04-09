@@ -3912,7 +3912,7 @@ it may throw a form to the tag |continue-walk|, and the walk will continue
 with macro expansion of that form.
 
 @l
-(defmethod walk-form ((walker walker) form &optional env &key top-level &aux
+(defmethod walk-form ((walker walker) form &optional env &key toplevel &aux
                       (env (ensure-portable-walking-environment env)))
   (let ((expanded t))
     (loop
@@ -3923,20 +3923,20 @@ with macro expansion of that form.
 @ @<Walk |form|@>=
 (cond ((and (symbolp form)
             (eql (variable-information form env) :symbol-macro))
-       (walk-atomic-form walker :symbol-macro form env :top-level top-level))
+       (walk-atomic-form walker :symbol-macro form env :toplevel toplevel))
       ((atom form)
        (return (walk-atomic-form walker :evaluated form env ;
-                                 :top-level top-level)))
+                                 :toplevel toplevel)))
       ((not (symbolp (car form)))
-       (return (walk-list walker form env :top-level top-level)))
+       (return (walk-list walker form env :toplevel toplevel)))
       ((or (not expanded)
            (walk-as-special-form-p walker (car form) form env))
        (return (walk-compound-form walker (car form) form env ;
-                                   :top-level top-level)))
+                                   :toplevel toplevel)))
       (t form))
 
 @ @<Walker generic functions@>=
-(defgeneric walk-form (walker form &optional env &key top-level))
+(defgeneric walk-form (walker form &optional env &key toplevel))
 
 @ The walker will treat a form as a special form if and only if
 |walk-as-special-form-p| returns true of that form.
@@ -4142,33 +4142,34 @@ testing.
 @l
 (defclass test-walker (walker) ())
 
-@t The simplest special form we'll recognize is |top-level|, which simply
-asserts that it occurs at top level, or not if an argument of |nil| is given.
-It returns |t| if successful.
+@t The simplest special form we'll recognize is |ensure-toplevel|, which
+simply asserts that it occurs at top level, or not if an argument of |nil|
+is given. It returns |t|.
 
 @l
-(define-special-form-walker top-level ((walker test-walker) form env ;
-                                       &key top-level)
-  (destructuring-bind (operator &optional (check-top-level t)) form
-    (assert (if check-top-level
-                top-level
-                (not top-level))
-            (form check-top-level top-level)
-            "~:[At~;Not at~] top level." check-top-level)
+(define-special-form-walker ensure-toplevel ((walker test-walker) form env ;
+                                             &key toplevel)
+  (destructuring-bind (operator &optional (ensure-toplevel t)) form
+    (assert (if ensure-toplevel toplevel (not toplevel))
+            (form ensure-toplevel toplevel)
+            "~:[At~;Not at~] top level." ensure-toplevel)
     t))
 
 @t@l
-(deftest top-level
+(deftest toplevel
   (let ((walker (make-instance 'test-walker))
         (env (ensure-portable-walking-environment nil)))
-    (macrolet ((walk (form top-level)
-                 `(walk-form walker ',form env :top-level ,top-level)))
-      (values (walk (top-level) t)
-              (walk (top-level nil) nil)
-              (not (null (walk (let () (top-level nil)) t)))
-              (handler-case (walk (top-level) nil) (error () nil))
-              (handler-case (walk (top-level nil) t) (error () nil))
-              (handler-case (walk (let () (top-level)) t) (error () nil)))))
+    (macrolet ((walk (form toplevel)
+                 `(walk-form walker ',form env :toplevel ,toplevel)))
+      (values (walk (ensure-toplevel) t)
+              (walk (ensure-toplevel nil) nil)
+              (not (null (walk (let () (ensure-toplevel nil)) t)))
+              (handler-case (walk (ensure-toplevel) nil)
+                (error () nil))
+              (handler-case (walk (ensure-toplevel nil) t)
+                (error () nil))
+              (handler-case (walk (let () (ensure-toplevel)) t)
+                (error () nil)))))
   t t t nil nil nil)
 
 @t Most of our walker tests will be defined using the following macro,
@@ -4181,12 +4182,12 @@ is evaluated.
 @l
 (defmacro define-walker-test (name-and-options form &optional ;
                               (result nil resultp))
-  (destructuring-bind (name &key (top-level nil)) (ensure-list name-and-options)
+  (destructuring-bind (name &key (toplevel nil)) (ensure-list name-and-options)
     (with-unique-names (walker walked-form)
       `(deftest (walk ,name)
          (let* ((,walker (make-instance 'test-walker))
                 (,walked-form (walk-form ,walker ',form nil ;
-                                         :top-level ,top-level)))
+                                         :toplevel ,toplevel)))
            ,(if (or result (null resultp))
                 `(tree-equal ,walked-form ',(or result form))
                 t))
@@ -4195,16 +4196,16 @@ is evaluated.
 @ |progn| is special because it preserves top-levelness.
 
 @l
-(define-special-form-walker progn ((walker walker) form env &key top-level)
+(define-special-form-walker progn ((walker walker) form env &key toplevel)
   `(,(car form)
-    ,@(walk-list walker (cdr form) env :top-level top-level)))
+    ,@(walk-list walker (cdr form) env :toplevel toplevel)))
 
 @t@l
 (define-walker-test progn
   (progn foo bar baz))
 
-(define-walker-test (progn-top-level :top-level t)
-  (progn (top-level))
+(define-walker-test (progn-toplevel :toplevel t)
+  (progn (ensure-toplevel))
   (progn t))
 
 @ Block-like special forms have a |cdr| that begins with a single
@@ -4252,24 +4253,24 @@ we simply won't walk it.
 (define-walker-test go (go home))
 
 @ We'll pretend to be a compiler for the purposes of walking, and
-evaluate top-level forms that appear in an |eval-when| with situation
+evaluate top level forms that appear in an |eval-when| with situation
 |:compile-toplevel|.
 
 @l
 (define-special-form-walker eval-when ;
-    ((walker walker) form env &key top-level &aux
-     (eval (and top-level
+    ((walker walker) form env &key toplevel &aux
+     (eval (and toplevel
                 (or (member :compile-toplevel (cadr form))
                     (member 'compile (cadr form))))))
   `(,(car form)
     ,(cadr form)
     ,@(loop for form in (cddr form)
-            as walked-form = (walk-form walker form env :top-level top-level)
+            as walked-form = (walk-form walker form env :toplevel toplevel)
             when eval do (eval walked-form)
             collect walked-form)))
 
 @t@l
-(define-walker-test (eval-when-non-toplevel :top-level nil)
+(define-walker-test (eval-when-non-toplevel :toplevel nil)
   (eval-when (:compile-toplevel :load-toplevel :execute)
     (do-some-stuff)))
 
@@ -4279,7 +4280,7 @@ evaluate top-level forms that appear in an |eval-when| with situation
          (walker (make-instance 'test-walker))
          (form '(eval-when (:compile-toplevel)
                   (prin1 'foo))))
-    (and (tree-equal (walk-form walker form nil :top-level t) form)
+    (and (tree-equal (walk-form walker form nil :toplevel t) form)
          (get-output-stream-string string-output-stream)))
   "FOO")
 
@@ -4647,7 +4648,7 @@ otherwise, it signals an error.
 
 @l
 (define-special-form-walker check-binding ((walker test-walker) form env &key ;
-                                           top-level)
+                                           toplevel)
   (flet ((check-binding (name namespace expected-type local &aux ;
                          (env (and local env)))
            (let ((actual-type
@@ -4663,8 +4664,8 @@ otherwise, it signals an error.
            for symbol in symbols
            do (check-binding symbol namespace type local))
      (if (listp symbols)
-         (walk-list walker symbols env :top-level top-level)
-         (walk-form walker symbols env :top-level top-level)))))
+         (walk-list walker symbols env :toplevel toplevel)
+         (walk-form walker symbols env :toplevel toplevel)))))
 
 @t@l
 (define-walker-test ordinary-lambda-list
@@ -4772,7 +4773,7 @@ forms.
           defs))
 
 (define-special-form-walker macrolet
-    ((walker walker) form env &key top-level &aux
+    ((walker walker) form env &key toplevel &aux
      (bindings (mapcar (lambda (p) ;
                          (walk-lambda-expression walker p env ;
                                                  :operator 'macrolet ;
@@ -4788,7 +4789,7 @@ forms.
                                         :macro (make-macro-definitions ;
                                                 walker bindings env)
                                         :declare decls)
-                   :top-level top-level))))
+                   :toplevel toplevel))))
 
 @ Walking |symbol-macrolet| is simpler, since the definitions are given in
 the bindings themselves. The body forms of a top level |macrolet| form are
@@ -4796,7 +4797,7 @@ also considered top level.
 
 @l
 (define-special-form-walker symbol-macrolet
-    ((walker walker) form env &key top-level &aux
+    ((walker walker) form env &key toplevel &aux
      (bindings (mapcar (lambda (p) (walk-variable-binding walker p env)) ;
                        (cadr form)))
      (body (cddr form)))
@@ -4808,7 +4809,7 @@ also considered top level.
                    (augment-environment env
                                         :symbol-macro bindings
                                         :declare decls)
-                   :top-level top-level))))
+                   :toplevel toplevel))))
 
 @t@l
 (define-walker-test let
@@ -4827,19 +4828,19 @@ also considered top level.
     (check-binding foo :function :function))
   (flet ((foo (x) x) (bar (y) y)) (declare (special x)) x foo))
 
-(define-walker-test (macrolet :top-level t)
+(define-walker-test (macrolet :toplevel t)
   (macrolet ((foo (x) `,(check-binding x :variable :lexical))
              (bar (y) `,y))
     (check-binding foo :function :macro)
-    (top-level)
+    (ensure-toplevel)
     (foo :foo))
   (macrolet ((foo (x) x) (bar (y) y)) foo t :foo))
 
-(define-walker-test (symbol-macrolet :top-level t)
+(define-walker-test (symbol-macrolet :toplevel t)
   (symbol-macrolet ((foo :foo)
                     (bar :bar))
     (check-binding (foo bar) :variable :symbol-macro)
-    (top-level))
+    (ensure-toplevel))
   (symbol-macrolet ((foo :foo) (bar :bar)) (:foo :bar) t))
 
 @ The two outliers are |let*|, which augments its environment sequentially,
@@ -4905,23 +4906,23 @@ set of declarations. Note that |locally| preserves top-levelness of its
 body forms.
 
 @l
-(define-special-form-walker locally ((walker walker) form env &key top-level)
+(define-special-form-walker locally ((walker walker) form env &key toplevel)
   (multiple-value-bind (forms decls) ;
       (parse-body (cdr form) :walker walker :env env)
     `(,(car form)
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
                    (augment-environment env :declare decls)
-                   :top-level top-level))))
+                   :toplevel toplevel))))
 
 @t@l
-(define-walker-test (locally :top-level t)
+(define-walker-test (locally :toplevel t)
   (locally ()
-    (top-level)
+    (ensure-toplevel)
     (let ((y t))
       (check-binding y :variable :lexical)
       (locally (declare (special y))
-        (top-level nil)
+        (ensure-toplevel)
         (check-binding y :variable :special))))
   (locally () t (let ((y t)) y (locally (declare (special y)) t y))))
 
@@ -4929,15 +4930,15 @@ body forms.
 special form.
 
 @l
-(define-special-form-walker declaim ((walker walker) form env &key top-level)
+(define-special-form-walker declaim ((walker walker) form env &key toplevel)
   `(,(car form)
     ,@(let ((decls (walk-declaration-specifiers walker (cdr form) env)))
-        (when top-level
+        (when toplevel
           (augment-environment nil :declare decls))
         decls)))
 
 @t@l
-(define-walker-test (declaim :top-level t)
+(define-walker-test (declaim :toplevel t)
   (progn
     (declaim (special *foo*))
     (check-binding *foo* :variable :special nil))
@@ -4946,15 +4947,21 @@ special form.
     *foo*))
 
 @t We don't do anything special with |define-symbol-macro|, but it should
-expand into an |(eval-when (:compile-toplevel) ...)| form that will let us
-pick up the definition.
+expand into an `(|eval-when| (|:compile-toplevel|) ...)' form that will
+let us pick up the definition. We need to write this test out long-hand
+because we'll use a gensym for the symbol macro name to avoid cluttering
+the global environment.
 
 @l
-(define-walker-test (define-symbol-macro :top-level t)
-  (progn
-    (define-symbol-macro #1=#:foo (top-level))
-    (check-binding #1# :variable :symbol-macro nil))
-  nil)
+(deftest (walk define-symbol-macro)
+  (let ((walker (make-instance 'test-walker))
+        (name (gensym)))
+    (not (null (walk-form walker
+                          `(progn
+                             (define-symbol-macro ,name (ensure-toplevel))
+                             (check-binding ,name :variable :symbol-macro nil))
+                          nil :toplevel t))))
+  t)
 
 @t Here's a simple walker mix-in class that allows easy tracing of a walk.
 It's only here for debugging purposes; it's not a superclass of any of
