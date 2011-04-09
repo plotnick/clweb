@@ -3887,9 +3887,7 @@ Thanks, Franz!
 to provide a hook (via subclassing) for overriding walker methods.
 
 @l
-(defclass walker ()
-  ((global-environment :accessor walker-global-environment
-                       :initform (ensure-portable-walking-environment nil))))
+(defclass walker () ())
 
 @ The walker protocol consists of a handful of generic functions, which
 we'll describe as we come to them.
@@ -3897,42 +3895,15 @@ we'll describe as we come to them.
 @l
 @<Walker generic functions@>
 
-@ We don't want to depend on the running Lisp image's global environment
-for our walk, so we keep our own in the walker instance. We therefore need
-to override all of the macroexpansion and environment access functions.
+@ We'll wrap |macroexpand-1| so that walker sub-classes get a chance to
+override it.
 
 @l
 (defmethod macroexpand-for-walk ((walker walker) form env)
-  (macroexpand-1 form (or env (walker-global-environment walker))))
-
-(defmethod augment-walker-environment ((walker walker) env &rest args)
-  (apply #'augment-environment (or env (walker-global-environment walker)) ;
-         args))
-
-(defmethod walker-variable-information ((walker walker) symbol &optional env)
-  (variable-information symbol ;
-                        (or env (walker-global-environment walker))))
-
-(defmethod walker-function-information ((walker walker) function &optional env)
-  (function-information function ;
-                        (or env (walker-global-environment walker))))
-
-(defmethod walker-declaration-information ((walker walker) decl &optional env)
-  (declaration-information decl (or env (walker-global-environment walker))))
+  (macroexpand-1 form env))
 
 @ @<Walker generic functions@>=
 (defgeneric macroexpand-for-walk (walker form env))
-(defgeneric augment-walker-environment (walker env &rest args))
-(defgeneric walker-variable-information (walker symbol &optional env))
-(defgeneric walker-function-information (walker function &optional env))
-(defgeneric walker-declaration-information (walker decl &optional env))
-
-@ Augmenting the global walker environment changes it.
-
-@l
-(defmethod augment-walker-environment ((walker walker) (env null) &rest args)
-  (declare (ignore args))
-  (setf (walker-global-environment walker) (call-next-method)))
 
 @ The main entry point for the walker is |walk-form|. The walk ordinarily
 stops after encountering an atomic or special form; otherwise, we macro
@@ -3941,9 +3912,8 @@ it may throw a form to the tag |continue-walk|, and the walk will continue
 with macro expansion of that form.
 
 @l
-(defmethod walk-form ((walker walker) form &optional
-                      (env (ensure-portable-walking-environment nil)) &key ;
-                      top-level)
+(defmethod walk-form ((walker walker) form &optional env &key top-level &aux
+                      (env (ensure-portable-walking-environment env)))
   (let ((expanded t))
     (loop
       (setq form (catch 'continue-walk @<Walk |form|@>))
@@ -3952,9 +3922,8 @@ with macro expansion of that form.
 
 @ @<Walk |form|@>=
 (cond ((and (symbolp form)
-            (eql (walker-variable-information walker form env) :symbol-macro))
-       (throw 'continue-walk
-         (walk-atomic-form walker :symbol-macro form env :top-level top-level)))
+            (eql (variable-information form env) :symbol-macro))
+       (walk-atomic-form walker :symbol-macro form env :top-level top-level))
       ((atom form)
        (return (walk-atomic-form walker :evaluated form env ;
                                  :top-level top-level)))
@@ -4035,8 +4004,8 @@ it leaves its |car| unevaluated and walks its |cdr|.
 
 @t@l
 (deftest walk-compound-form
-  (walk-compound-form (make-instance 'walker) nil '(nil 2 3) nil)
-  (nil 2 3))
+  (walk-compound-form (make-instance 'walker) :foo '(:foo 2 3) nil)
+  (:foo 2 3))
 
 @ A compound form might also have a \L~expression as its |car|.
 
@@ -4050,7 +4019,8 @@ it leaves its |car| unevaluated and walks its |cdr|.
 
 @t@l
 (deftest (walk-compound-form lambda)
-  (walk-compound-form (make-instance 'walker) '#1=(lambda (x) x) '(#1# 0) nil)
+  (walk-compound-form (make-instance 'walker) '#1=(lambda (x) x) '(#1# 0)
+                      (ensure-portable-walking-environment nil))
   ((lambda (x) x) 0))
 
 (deftest (walk-compound-form invalid)
@@ -4189,9 +4159,10 @@ It returns |t| if successful.
 
 @t@l
 (deftest top-level
-  (let ((walker (make-instance 'test-walker)))
+  (let ((walker (make-instance 'test-walker))
+        (env (ensure-portable-walking-environment nil)))
     (macrolet ((walk (form top-level)
-                 `(walk-form walker ',form nil :top-level ,top-level)))
+                 `(walk-form walker ',form env :top-level ,top-level)))
       (values (walk (top-level) t)
               (walk (top-level nil) nil)
               (not (null (walk (let () (top-level nil)) t)))
@@ -4452,9 +4423,7 @@ object containing bindings for all of the parameters found therein.
 (defun walk-lambda-list (walker lambda-list decls env &aux
                          new-lambda-list (state :reqvars))
   (labels ((augment-env (&rest vars &aux (vars (remove-if #'null vars)))
-             (setq env (augment-walker-environment walker env ;
-                                                   :variable vars ;
-                                                   :declare decls)))
+             (setq env (augment-environment env :variable vars :declare decls)))
            (walk-var (var)
              (walk-atomic-form walker :binding var env))
            (update-state (keyword)
@@ -4621,10 +4590,8 @@ the parameters found therein.
       (values (nconc req-params other-params) env))))
 
 @ @<Extract the required...@>=
-(flet ((augment-env (var)
-         (setq env (augment-walker-environment walker env ;
-                                               :variable (list var) ;
-                                               :declare decls)))
+(flet ((augment-env (var &aux (vars (ensure-list var)))
+         (setq env (augment-environment env :variable vars :declare decls)))
        (walk-var (spec)
          (etypecase spec
            (symbol (walk-atomic-form walker :binding spec env))
@@ -4675,17 +4642,18 @@ current lexical environment. Its syntax is `(|check-binding| \<symbols>
 for a list of symbols, \<namespace> is one of |:function| or~|:variable|,
 and~\<type> is the type of binding expected for each of the given
 symbols (e.g., |:lexical|, |:special|, |:function|). If all of the
-symbols have the correct type of binding, it returns the symbols list;
+symbols have the correct type of binding, it returns the walked symbols;
 otherwise, it signals an error.
 
 @l
-(define-special-form-walker check-binding ((walker test-walker) form env &key)
+(define-special-form-walker check-binding ((walker test-walker) form env &key ;
+                                           top-level)
   (flet ((check-binding (name namespace expected-type local &aux ;
                          (env (and local env)))
            (let ((actual-type
                   (ecase namespace
-                    (:function (walker-function-information walker name env))
-                    (:variable (walker-variable-information walker name env)))))
+                    (:function (function-information name env))
+                    (:variable (variable-information name env)))))
              (assert (eql actual-type expected-type)
                      (name namespace local)
                      "~:[Global~;Local~] ~(~A~) binding of ~S type ~S, not ~S."
@@ -4695,8 +4663,8 @@ otherwise, it signals an error.
            for symbol in symbols
            do (check-binding symbol namespace type local))
      (if (listp symbols)
-         (walk-list walker symbols env)
-         (walk-form walker symbols env)))))
+         (walk-list walker symbols env :top-level top-level)
+         (walk-form walker symbols env :top-level top-level)))))
 
 @t@l
 (define-walker-test ordinary-lambda-list
@@ -4763,9 +4731,9 @@ their body forms in an environment that contains all of the new bindings.
       ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
-                   (augment-walker-environment walker env
-                                               :variable (mapcar #'car bindings)
-                                               :declare decls)))))
+                   (augment-environment env
+                                        :variable (mapcar #'car bindings)
+                                        :declare decls)))))
 
 @ @l
 (define-special-form-walker flet
@@ -4781,16 +4749,17 @@ their body forms in an environment that contains all of the new bindings.
       ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
-                   (augment-walker-environment walker env
-                                               :function (mapcar #'car bindings)
-                                               :declare decls)))))
+                   (augment-environment env
+                                        :function (mapcar #'car bindings)
+                                        :declare decls)))))
 
 
 @ The bindings established by |macrolet| and |symbol-macrolet| are
 different from those established by the other binding forms in that they
 include definitions as well as names. We'll use a little helper function,
 |make-macro-definitions|, for building the expander functions in the
-former case.
+former case. Note that |macrolet| preserves top-levelness of its body
+forms.
 
 @l
 (defun make-macro-definitions (walker defs env)
@@ -4815,14 +4784,15 @@ former case.
       ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
-                   (augment-walker-environment walker env
-                                               :macro (make-macro-definitions ;
-                                                       walker bindings env)
-                                               :declare decls)
+                   (augment-environment env
+                                        :macro (make-macro-definitions ;
+                                                walker bindings env)
+                                        :declare decls)
                    :top-level top-level))))
 
 @ Walking |symbol-macrolet| is simpler, since the definitions are given in
-the bindings themselves.
+the bindings themselves. The body forms of a top level |macrolet| form are
+also considered top level.
 
 @l
 (define-special-form-walker symbol-macrolet
@@ -4835,9 +4805,9 @@ the bindings themselves.
       ,bindings
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
-                   (augment-walker-environment walker env
-                                               :symbol-macro bindings
-                                               :declare decls)
+                   (augment-environment env
+                                        :symbol-macro bindings
+                                        :declare decls)
                    :top-level top-level))))
 
 @t@l
@@ -4885,9 +4855,9 @@ and |labels|, which does so before walking any of its bindings.
       ,(mapcar (lambda (p &aux
                         (walked-binding (walk-variable-binding walker p env))
                         (variable (list (car walked-binding))))
-                 (setq env (augment-walker-environment walker env
-                                                       :variable variable
-                                                       :declare decls))
+                 (setq env (augment-environment env
+                                                :variable variable
+                                                :declare decls))
                  walked-binding)
                bindings)
       ,@(if decls `((declare ,@decls)))
@@ -4905,9 +4875,9 @@ and |labels|, which does so before walking any of its bindings.
                                                          :local t
                                                          :def t))
                                    bindings))
-           (env (augment-walker-environment walker env
-                                            :function function-names
-                                            :declare decls)))
+           (env (augment-environment env
+                                     :function function-names
+                                     :declare decls)))
       `(,(car form)
         ,(mapcar (lambda (p) (walk-lambda-expression walker p env)) bindings)
         ,@(if decls `((declare ,@decls)))
@@ -4941,7 +4911,7 @@ body forms.
     `(,(car form)
       ,@(if decls `((declare ,@decls)))
       ,@(walk-list walker forms
-                   (augment-walker-environment walker env :declare decls)
+                   (augment-environment env :declare decls)
                    :top-level top-level))))
 
 @t@l
@@ -4963,7 +4933,7 @@ special form.
   `(,(car form)
     ,@(let ((decls (walk-declaration-specifiers walker (cdr form) env)))
         (when top-level
-          (augment-walker-environment walker nil :declare decls))
+          (augment-environment nil :declare decls))
         decls)))
 
 @t@l
@@ -4975,24 +4945,15 @@ special form.
     (declaim (special *foo*))
     *foo*))
 
-@ We'll treat |define-symbol-macro| as a special form as well, since we need
-to record the symbol macro in the walker's global environment. After we've
-done so, we'll let the walk continue with the macro expansion.
+@t We don't do anything special with |define-symbol-macro|, but it should
+expand into an |(eval-when (:compile-toplevel) ...)| form that will let us
+pick up the definition.
 
 @l
-(define-special-form-walker define-symbol-macro ((walker walker) form env &key)
-  (let ((symbol (walk-atomic-form walker :define-symbol-macro ;
-                                  (second form) env))
-        (expansion (walk-form walker (third form) env)))
-    (augment-walker-environment walker nil ;
-                                :symbol-macro `((,symbol ,expansion)))
-    (throw 'continue-walk form)))
-
-@t@l
-(deftest walk-define-symbol-macro
-  (null (walk-form (make-instance 'test-walker)
-                   '(progn (define-symbol-macro foo '(bar baz))
-                           (check-binding (foo) :variable :symbol-macro nil))))
+(define-walker-test (define-symbol-macro :top-level t)
+  (progn
+    (define-symbol-macro #1=#:foo (top-level))
+    (check-binding #1# :variable :symbol-macro nil))
   nil)
 
 @t Here's a simple walker mix-in class that allows easy tracing of a walk.
@@ -5008,7 +4969,7 @@ the walker classes defined in this program.
           form context
           (and (symbolp form)
                (eq context ':evaluated)
-               (walker-variable-information walker form env))))
+               (variable-information form env))))
 
 (defmethod walk-compound-form :before ;
     ((walker tracing-walker) operator form env &key)
@@ -5880,19 +5841,13 @@ off to the next method for the actual expansion.
 @^referring symbols@>
 
 @l
-(defmethod walker-variable-information ;
-    ((walker indexing-walker) form &optional env)
-  (multiple-value-bind (symbol section) (symbol-provenance form)
-    (declare (ignore section))
-    (call-next-method walker symbol env)))
-
 (defmethod macroexpand-for-walk ((walker indexing-walker) form env)
   (typecase form
     (symbol
      (multiple-value-bind (symbol section) (symbol-provenance form)
        (if section
            (multiple-value-bind (type local) ;
-               (walker-variable-information walker symbol env)
+               (variable-information symbol env)
              (case type
                (:symbol-macro ;
                 (index walker section nil :type 'symbol-macro :local local)))
@@ -5902,7 +5857,7 @@ off to the next method for the actual expansion.
      (multiple-value-bind (symbol section) (symbol-provenance (car form))
        (if section
            (multiple-value-bind (type local) ;
-               (walker-function-information walker symbol env)
+               (function-information symbol env)
              (case type
                (:macro ;
                 (index walker section nil :type 'macro :local local)))
