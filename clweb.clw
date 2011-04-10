@@ -6346,7 +6346,7 @@ of all of the interesting symbols so encountered.
   (let ((*evaluating* t))
     (index-package *package*)
     (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
-      (walk-form walker form))))
+      (walk-form walker form nil :toplevel t))))
 
 @1*Writing the index. All that remains now is to write the index entries
 out to the index file. We'll be extra fancy and try to coalesce adjacent
