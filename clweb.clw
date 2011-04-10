@@ -3920,13 +3920,21 @@ with macro expansion of that form.
       (multiple-value-setq (form expanded)
         (macroexpand-for-walk walker form env)))))
 
-@ @<Walk |form|@>=
-(cond ((and (symbolp form)
-            (eql (variable-information form env) :symbol-macro))
-       (walk-atomic-form walker :symbol-macro form env :toplevel toplevel))
-      ((atom form)
-       (return (walk-atomic-form walker :evaluated form env ;
-                                 :toplevel toplevel)))
+@ When we walk an atomic form, we need to check whether or not it's a
+symbol macro. If it is, we'll let the walk continue with the expansion;
+otherwise, we'll just return the walked atom. But it's important to walk
+the atom {\it before\/} checking if it's a symbol macro because of the
+games we play later with referring symbols in the indexer.
+@^referring symbols@>
+
+@<Walk |form|@>=
+(cond ((atom form)
+       (let ((walked-form (walk-atomic-form walker :evaluated form env ;
+                                            :toplevel toplevel)))
+         (if (and (symbolp walked-form)
+                  (eql (variable-information walked-form env) :symbol-macro))
+             walked-form ; wait for macro expansion
+             (return walked-form))))
       ((not (symbolp (car form)))
        (return (walk-list walker form env :toplevel toplevel)))
       ((or (not expanded)
@@ -4049,12 +4057,14 @@ walker function just for function names.
 (defun setf-function-name-p (function-name)
   (typep function-name 'setf-function-name))
 
-(defmethod walk-function-name ((walker walker) function-name env &key)
+(defmethod walk-function-name ((walker walker) function-name env &rest args)
   (typecase function-name
     (symbol ;
-     (walk-atomic-form walker :unevaluated function-name env))
+     (apply #'walk-atomic-form walker :function-name function-name env args))
     (setf-function-name ;
-     `(setf ,(walk-atomic-form walker :unevaluated (cadr function-name) env)))
+     `(setf ;
+       ,(apply #'walk-atomic-form walker :function-name (cadr function-name) ;
+               env :setf t args)))
     (t (cerror "Use the function name anyway." ;
                'invalid-function-name :name function-name)
        function-name)))
@@ -4202,7 +4212,7 @@ is evaluated.
 
 @t@l
 (define-walker-test progn
-  (progn foo bar baz))
+  (progn :foo :bar :baz))
 
 (define-walker-test (progn-toplevel :toplevel t)
   (progn (ensure-toplevel))
@@ -4222,7 +4232,7 @@ unevaluated form, followed by zero or more evaluated forms.
 
 @t@l
 (define-walker-test block/return-from
-  (block foo (return-from foo 4)))
+  (block :foo (return-from :foo 4)))
 
 @ The special form |the| takes an unevaluated type specifier and a form.
 We can't sensibly do anything at all with a general type specifier, so
@@ -4712,8 +4722,9 @@ The function-like binding forms will use |walk-lambda-expression| for
 the same purpose.
 
 @l
-(defun walk-variable-binding (walker p env &aux (binding (ensure-list p)))
-  (list (walk-atomic-form walker :binding (car binding) env)
+(defun walk-variable-binding (walker p env &key operator &aux ;
+                              (binding (ensure-list p)))
+  (list (walk-atomic-form walker :binding (car binding) env :operator operator)
         (and (cdr binding)
              (walk-form walker (cadr binding) env))))
 
@@ -4724,7 +4735,8 @@ their body forms in an environment that contains all of the new bindings.
 @l
 (define-special-form-walker let
     ((walker walker) form env &key &aux
-     (bindings (mapcar (lambda (p) (walk-variable-binding walker p env)) ;
+     (bindings (mapcar (lambda (p)
+                         (walk-variable-binding walker p env :operator 'let))
                        (cadr form)))
      (body (cddr form)))
   (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
@@ -4798,7 +4810,9 @@ also considered top level.
 @l
 (define-special-form-walker symbol-macrolet
     ((walker walker) form env &key toplevel &aux
-     (bindings (mapcar (lambda (p) (walk-variable-binding walker p env)) ;
+     (bindings (mapcar (lambda (p)
+                         (walk-variable-binding walker p env ;
+                                                :operator 'symbol-macrolet))
                        (cadr form)))
      (body (cddr form)))
   (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
@@ -4854,7 +4868,8 @@ and |labels|, which does so before walking any of its bindings.
   (multiple-value-bind (forms decls) (parse-body body :walker walker :env env)
     `(,(car form)
       ,(mapcar (lambda (p &aux
-                        (walked-binding (walk-variable-binding walker p env))
+                        (walked-binding (walk-variable-binding walker p env
+                                                               :operator 'let*))
                         (variable (list (car walked-binding))))
                  (setq env (augment-environment env
                                                 :variable variable
@@ -4971,17 +4986,18 @@ the walker classes defined in this program.
 (defclass tracing-walker (walker) ())
 
 (defmethod walk-atomic-form :before ;
-    ((walker tracing-walker) context form env &key)
-  (format t "; walking atomic form ~S (~S)~@[ (~(~A~) variable)~]~%"
-          form context
+    ((walker tracing-walker) context form env &key toplevel)
+  (format t "; walking~:[~; toplevel~] atomic form ~S (~S)~@[ (~(~A~))~]~%"
+          toplevel form context
           (and (symbolp form)
                (eq context ':evaluated)
                (variable-information form env))))
 
 (defmethod walk-compound-form :before ;
-    ((walker tracing-walker) operator form env &key)
+    ((walker tracing-walker) operator form env &key toplevel)
   (declare (ignore operator env))
-  (format t "~<; ~@;walking compound form ~W~:>~%" (list form)))
+  (format t "~@<; ~@;walking~:[~; toplevel~] compound form ~W~:>~%"
+          toplevel form))
 
 @*Indexing. Having constructed our code walker, we can now use it to
 produce an index of the symbols in a web. By default, we'll say a symbol
@@ -5319,6 +5335,8 @@ ordered list of allowable modifiers.
 
 @l
 (defgeneric make-type-heading (type &rest initargs))
+(defmethod make-type-heading ((type null) &key)
+  (error "Can't make a heading for type NIL."))
 (defmethod make-type-heading ((type symbol) &rest initargs)
   (apply #'make-instance (type-heading-class-name type) initargs))
 (defmethod make-type-heading ((type standard-class) &rest initargs)
@@ -5359,6 +5377,7 @@ argument to |make-type-heading|.
 
 @l
 (defgeneric compute-type-heading-class (operator &key &allow-other-keys))
+(defmethod compute-type-heading-class (operator &key) nil)
 
 @ The |:operators| option to |define-type-heading| takes a list of symbols
 and creates an eql-specialized method on |compute-type-heading-class| for
@@ -5652,30 +5671,35 @@ passes it all down to |index|. Nearly all of the type information will be
 passed in as keyword arguments, which we'll pass down to |make-type-heading|.
 
 @l
-(defgeneric index (index name section def &rest args))
+(defgeneric index (index name section &rest args))
 
-(defmethod index ((index index) (name symbol) section def &rest args &key ;
-                  operator type &allow-other-keys)
-  (add-index-entry
-    index
-    (make-heading name
-                  (apply #'make-type-heading
-                         (cond
-                           (type type)
-                           (operator (apply #'compute-type-heading-class args))
-                           (t (error "Missing index entry type for ~S" name)))
-                         args))
-    section
-    def))
+(defmethod index ((index index) (name symbol) section &rest args &key ;
+                  def operator type special &allow-other-keys)
+  (unless (and (eql type 'variable)
+               (not special)
+               (not *index-lexical-variables*))
+    (add-index-entry index
+                     (make-heading name @<Make a type heading for |name|@>)
+                     section def)))
 
-@ We'll intercept calls to |index| with non-atomic names to handle
-setf-functions.
-
-@l
-(defmethod index ((index index) (name cons) section def &rest args)
-  (typecase name
-    (setf-function-name ;
-     (apply #'index index (cadr name) section def :setf t args))))
+@ @<Make a type heading...@>=
+(handler-case
+    (apply #'make-type-heading
+           (cond
+             (type type)
+             (operator (apply #'compute-type-heading-class operator args))
+             (t (error "Can't determine type of ~S." name type)))
+           args)
+  (simple-error (condition)
+    (warn "Can't make type heading for ~S in section ~D: ~?"
+           name (section-number section)
+           (simple-condition-format-control condition)
+           (simple-condition-format-arguments condition))
+    (return-from index))
+  (error (condition)
+    (warn "Can't make type heading for ~S in section ~D."
+          name (section-number section))
+    (return-from index)))
 
 @1*Referring symbols. We'll perform the indexing by walking over the code
 of each section and noting each of the interesting symbols that we find
@@ -5781,14 +5805,6 @@ does the actual indexing.
 (defclass indexing-walker (walker)
   ((index :accessor walker-index :initarg :index :initform (make-index))))
 
-@ To make the indexing itself as convenient as possible, we'll define a
-method on |index| that specializes on |indexing-walker| instances so that
-we don't even have to bother pulling out the index manually.
-
-@l
-(defmethod index ((walker indexing-walker) name section def &rest args)
-  (apply #'index (walker-index walker) name section def args))
-
 @t Here's a little routine that returns a list of all the entries in an
 index. The elements of that list are lists of the form |(heading-names
 locations)|, where each location is either a section number or a list
@@ -5827,31 +5843,36 @@ useful on its own, especially for interactive testing.
 @l
 (defclass tracing-indexing-walker (tracing-walker indexing-walker) ())
 
-(defun walk-sections (walker sections &key (verify-walk t))
+(defun walk-sections (walker sections env &key (verify-walk t) toplevel)
   (with-temporary-sections sections
     (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
           (mangled-code (tangle-code-for-indexing *sections*)))
       (loop for form in tangled-code
             and mangled-form in mangled-code
-            as walked-form = (walk-form walker mangled-form)
+            as walked-form = (walk-form walker mangled-form nil ;
+                                        :toplevel toplevel)
             when verify-walk
               do (assert (tree-equal walked-form form)
                          (walked-form mangled-form form)
                          "Walked form does not match original.")
             collect walked-form))))
 
-(defmacro define-indexing-test (name-and-options sections &rest expected-entries)
-  (destructuring-bind (name &key (verify-walk t) index-lexicals trace) ;
+(defmacro define-indexing-test (&environment env name-and-options sections ;
+                                &rest expected-entries)
+  (destructuring-bind (name &key ;
+                       (verify-walk t) toplevel index-lexicals trace print)
       (ensure-list name-and-options)
     `(deftest (index ,name)
        (let ((walker (make-instance (if ,trace
                                         'tracing-indexing-walker
                                         'indexing-walker)))
              (*index-lexical-variables* ,index-lexicals))
-         (walk-sections walker ',sections :verify-walk ,verify-walk)
-         (tree-equal (all-index-entries (walker-index walker))
-                     ',expected-entries
-                     :test #'equal))
+         (walk-sections walker ',sections ,env ; 
+                        :verify-walk ,verify-walk ;
+                        :toplevel ,toplevel)
+         (let ((entries (all-index-entries (walker-index walker))))
+           ,@(when print '((print entries)))
+           (tree-equal entries ',expected-entries :test #'equal)))
        t)))
 
 @ We have to override the walker's macro expansion function, since the
@@ -5874,112 +5895,178 @@ actual expansion), passing the referent of the referring symbol.
         (multiple-value-bind (type local) (function-information symbol env)
           (case type
             (:macro
-             (index walker section nil :type 'macro :local local)
+             (index (walker-index walker) symbol section ;
+                    :type 'macro :local local)
              (call-next-method walker (cons symbol (cdr form)) env))
             (t (call-next-method))))
         (call-next-method))))
 
-@ The only atoms we care about indexing are referring symbols. We'll return
-the referents; this is where the reverse-substitution of referring symbols
-takes place. It's also where much of the actual indexing gets done, by way
-of the call to |index|.
+@ The only other point where we actually call |index| is here, in this
+primary method for |walk-atomic-form|. It's also where we do all of the
+rest of the substitution for referring symbols. Because this is the one
+place where we have access to the symbol being indexed, the context in
+which it occurs, and~the section from which it came, it's also where we'll
+make many of the decisions about what kind of index entry to create.
 @^referring symbols@>
 
 @l
-(defmethod walk-atomic-form :around ;
-    ((walker indexing-walker) context (form symbol) env &rest args &key def ;
-     &allow-other-keys)
+(defmethod walk-atomic-form ;
+    ((walker indexing-walker) context (form symbol) env &rest args)
   (multiple-value-bind (symbol section) (symbol-provenance form)
     (when section
-      (apply #'index walker form section def args))
+      (apply #'index (walker-index walker) symbol section
+             (apply #'compute-index-arguments context symbol env args)))
     (call-next-method walker context symbol env)))
 
+@ The ultimate arguments to |index| are gathered from the higher-level
+walker functions and this next generic function, which fills in the gaps.
+We'll use |append| method combination so that we can define it piecemeal;
+the default method defined here just returns the arguments given.
+
+@l
+(defgeneric compute-index-arguments (context name env &rest args &key ;
+                                     &allow-other-keys)
+  (:method-combination append))
+
+(defmethod compute-index-arguments append (context name env &rest args)
+  args)
+
+@ Let's start with a simple one: bindings are definitions of lexical variables
+and local symbol macros.
+
+@l
+(defmethod compute-index-arguments append ;
+    ((context (eql :binding)) (name symbol) env &key operator)
+  `(:type ,(case operator
+             (symbol-macrolet 'symbol-macro)
+             (t 'variable))
+    :local t
+    :def t))
+
 @t@l
-(define-indexing-test atom
-  ((:section :code (*sections*)))
-  ("*SECTIONS* special variable" (0)))
+(define-indexing-test (lexical-variable :index-lexicals t)
+  ((:section :code ((let ((x nil) (y nil) (z nil))))))
+  ("X variable" ((:def 0)))
+  ("Y variable" ((:def 0)))
+  ("Z variable" ((:def 0))))
 
-(define-indexing-test funcall
-  ((:section :code ((mapappend 'identity '(1 2 3)))))
-  ("MAPAPPEND function" (0)))
+(define-indexing-test (symbol-macrolet :verify-walk nil)
+  ((:section :code ((symbol-macrolet ((foo :bar)) foo))))
+  ("FOO local symbol macro" ((:def 0))))
 
+@ Symbols that name variables or symbol macros in the current environment
+should be indexed as such.
+
+@l
+(defmethod compute-index-arguments append ;
+    ((context (eql :evaluated)) (name symbol) env &key)
+  (multiple-value-bind (type local) (variable-information name env)
+    (case type
+      (:lexical `(:type variable :local ,local))
+      (:special '(:type variable :special t))
+      (:constant '(:type constant))
+      (:symbol-macro `(:type symbol-macro :local ,local)))))
+
+@t Note that this test assumes that the walker's global environment is the
+same as the environment in which these tests are defined.
+
+@l
+(defvar *super* t)
+(define-symbol-macro bait switch)
+(defconstant the-ultimate-answer 42)
+
+(define-indexing-test (variables :verify-walk nil)
+  ((:section :code (*super*))
+   (:section :code (bait))
+   (:section :code (the-ultimate-answer)))
+  ("*SUPER* special variable" (0))
+  ("BAIT symbol macro" (1))
+  ("THE-ULTIMATE-ANSWER constant" (2)))
+
+@ Function and macro references generally occur as operators.
+
+@l
+(defmethod compute-index-arguments append ;
+    ((context (eql :operator)) (name symbol) env &key)
+  (multiple-value-bind (type local) (function-information name env)
+    `(:type ,type :local ,local)))
+
+@t These tests, like the |(index variables)| test we just defined, assume
+that the walker sees definitions in the current global environment.
+
+@l
+(defun square (x) (* x x))
+(define-indexing-test function
+  ((:section :code ((square 1))))
+  ("SQUARE function" (0)))
+
+(defmacro frob-foo (foo) `(1+ (* ,foo 42)))
+(define-indexing-test (macro :verify-walk nil)
+  ((:section :code ((frob-foo 6))))
+  ("FROB-FOO macro" (0)))
+
+@t The |:operator|, |:local|, |:setf|, and~|:def| arguments passed down
+from the walker should be enough to handle local function definitions.
+
+@l
 (define-indexing-test function-name
   ((:section :code ((flet ((foo (x) x)))))
-   (:section :code ((flet (((setf foo) (y x) y))))))
+   (:section :code ((labels (((setf foo) (y x) y))))))
   ("FOO local function" ((:def 0)))
   ("FOO local setf function" ((:def 1))))
 
-@ Bindings {\it are\/} definitions for lexical variables.
-
-@l
-(defmethod walk-atomic-form :around ;
-    ((walker indexing-walker) (context (eql :binding)) (form symbol) env &key)
-  (call-next-method walker context form env :def t))
-
-@t@l
-(define-indexing-test (variables :index-lexicals t)
-  ((:section :code ((let ((foo nil) (bar nil) (baz nil))))))
-  ("BAR variable" ((:def 0)))
-  ("BAZ variable" ((:def 0)))
-  ("FOO variable" ((:def 0))))
-
 @ We'll treat |defun|, |defmacro|, and |define-compiler-macro| as special
-forms, since otherwise they will get macro-expanded before we get a chance
-to walk the function name. In fact, we won't even bother expanding them at
-all, since we don't care about the implementation-specific expansions, and
-we get everything we need from this simple walk.
-
-Note in particular that we don't record the macro definition when we walk a
-|defmacro| form. The rationale here is that if we expand user-defined macros,
-forms in the contents of those macros will be indexed for both the macro
-definition and the macro use, which would be confusing.
-{\bf FIXME: This is wrong.}
+forms, since otherwise they'll get macro-expanded before we get a chance
+to walk the function name. But that's all we'll do here: we need to continue
+the walk with the macro expansions so that we can pick up the definitions.
 
 @l
 (macrolet ((define-defun-like-walker (operator)
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env &key)
-                `(,(car form)
-                  ,@(walk-lambda-expression walker (cdr form) env
-                                            :operator (car form)
-                                            :def t)))))
+                (let ((function-name
+                       (walk-function-name walker (cadr form) env
+                                           :operator (car form)
+                                           :def t)))
+                  (throw 'continue-walk `(,(car form)
+                                          ,function-name
+                                          ,@(cddr form)))))))
   (define-defun-like-walker defun)
   (define-defun-like-walker defmacro)
   (define-defun-like-walker define-compiler-macro))
 
 @t@l
-(define-indexing-test defun
-  ((:section :code ((defun foo (x) x))))
-  ("FOO function" ((:def 0))))
+(define-indexing-test (defun :verify-walk nil)
+  ((:section :code ((define-compiler-macro compile-foo (&whole x) x)))
+   (:section :code ((defun foo (x) x))))
+  ("COMPILE-FOO compiler macro" ((:def 0)))
+  ("FOO function" ((:def 1))))
 
-(define-indexing-test defmacro
-  ((:section :code ((defmacro foo (&body body) (mapappend 'identity body)))))
-  ("FOO macro" ((:def 0)))
-  ("MAPAPPEND function" (0)))
+(define-indexing-test (defmacro :verify-walk nil :toplevel t)
+  ((:section :code ((eval-when (:compile-toplevel)
+                      (defun frob (x) (* x 42)))))
+   (:section :code ((defmacro frob-foo (x) `(frob ,x))))
+   (:section :code ((frob-foo 123))))
+  ("FROB function" (1 (:def 0)))
+  ("FROB-FOO macro" (2 (:def 1))))
 
-(define-indexing-test define-compiler-macro
-  ((:section :code ((define-compiler-macro foo (&whole form) form))))
-  ("FOO compiler macro" ((:def 0))))
-
-@ {\bf FIXME: Not anymore.}
+@ We'll do exactly the same thing for |define-symbol-macro|, and for
+exactly the same reason. The only difference is that we walk the name
+with |walk-atomic-form| as opposed to going through |walk-function-name|.
 
 @l
-(defun define-symbol-indexer (&rest args))
-
-@ @l
-(defmethod walk-atomic-form :around ;
-    ((walker indexing-walker) ;
-     (context (eql :define-symbol-macro)) ;
-     (form symbol) env &key)
-  (call-next-method walker context form env :def t))
-
-(define-symbol-indexer :define-symbol-macro 'symbol-macro)
+(define-special-form-walker define-symbol-macro
+    ((walker indexing-walker) form env &key)
+  (let ((name (walk-atomic-form walker :define-symbol-macro (cadr form) env
+                                :operator (car form)
+                                :def t)))
+    (throw 'continue-walk `(,(car form) ,name ,(caddr form)))))
 
 @t@l
-(define-indexing-test (symbol-macro :verify-walk nil)
-  ((:section :code ((define-symbol-macro foo (or bar baz))))
-   (:section :code (foo)))
-  ("FOO symbol macro" (1 (:def 0))))
+(define-indexing-test (symbol-macro :verify-walk nil :toplevel t)
+  ((:section :code ((define-symbol-macro foo-bar-baz (:bar :baz))))
+   (:section :code (foo-bar-baz)))
+  ("FOO-BAR-BAZ symbol macro" (1 (:def 0))))
 
 @ Structure definitions also get indexed, although we won't bother to
 grovel through all of the options. We'll let them expand, since we can
@@ -5990,10 +6077,9 @@ often pick up at least the constructor definitions that way.
   (let ((name (typecase (cadr form)
                 (symbol (cadr form))
                 (cons (caadr form)))))
-    (multiple-value-bind (symbol section) (symbol-provenance name)
-      (when section
-        (index-defun (walker-index walker) symbol section ;
-                     :operator 'defstruct)))
+    (walk-atomic-form walker :defstruct name env
+                      :operator (car form)
+                      :def t)
     (throw 'continue-walk form)))
 
 @t@l
@@ -6004,30 +6090,41 @@ often pick up at least the constructor definitions that way.
   ("FOO structure" ((:def 0))))
 
 @ The special-variable-defining forms must also be walked as if they were
-special forms. Once again, we'll just skip the macro expansions.
+special forms.
 
 @l
-(macrolet ((define-indexing-defvar-walker (operator type)
+(macrolet ((define-indexing-defvar-walker (operator &rest args)
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env &key)
-                `(,(car form)
-                  ,(walk-atomic-form walker ,type (cadr form) env :def t)
-                  ,@(walk-list walker (cddr form) env)))))
-  (define-indexing-defvar-walker defvar :special-binding)
-  (define-indexing-defvar-walker defparameter :special-binding)
-  (define-indexing-defvar-walker defconstant :constant-binding))
-
-(define-symbol-indexer :special-binding 'variable :special t)
-(define-symbol-indexer :constant-binding 'variable :constant t)
+                (let ((name (walk-atomic-form walker :defvar (cadr form) env ;
+                                              :def t ,@args)))
+                  (throw 'continue-walk `(,(car form)
+                                          ,name
+                                          ,@(cddr form)))))))
+  (define-indexing-defvar-walker defvar :type 'variable :special t)
+  (define-indexing-defvar-walker defparameter :type 'variable :special t)
+  (define-indexing-defvar-walker defconstant :type 'constant :constant t))
 
 @t@l
-(define-indexing-test defvar
-  ((:section :code ((defvar *a* t)))
-   (:section :code ((defparameter *b* t)))
-   (:section :code ((defconstant *c* t))))
-  ("*A* special variable" ((:def 0)))
-  ("*B* special variable" ((:def 1)))
-  ("*C* constant variable" ((:def 2))))
+(define-indexing-test (defvar :verify-walk nil :toplevel t)
+  ((:section :code ((defvar *super* 450)))
+   (:section :code ((defparameter *duper* (1+ *super*)))))
+  ("*DUPER* special variable" ((:def 1)))
+  ("*SUPER* special variable" (1 (:def 0))))
+
+@t There's something fishy going on here with Allegro and |defconstant|.
+This test passes, but only the first time. It seems that the expansion
+of |defconstant| includes calls to two functions: |defconstant1| and
+|defconstant2| (both in the \.{EXCL} package). Only the first is wrapped
+in an |(eval-when (compile))| form, so that's the only one we execute, but
+it's the second that actually sets the value. The net effect is that the
+constant gets declaimed special, but remains unbound.
+
+@l
+#-allegro
+(define-indexing-test (defconstant :verify-walk nil :toplevel t)
+  ((:section :code ((defconstant el-gordo most-positive-fixnum))))
+  ("EL-GORDO constant" ((:def 0))))
 
 @ Now we'll turn to the various {\sc clos} forms. We'll start with a little
 macro to pull off method qualifiers from a |defgeneric| form or a method
@@ -6186,15 +6283,10 @@ options.
               ,@(walk-list walker options env))))))
 
 @ @<Index |opt-value| as a slot access method@>=
-(multiple-value-bind (symbol section) (symbol-provenance opt-value)
-  (when section
-    (index-defun (walker-index walker) symbol section ;
-                 :operator 'defmethod ;
-                 :generic t)
-    (when (eql opt-name :accessor)
-      (index-defun (walker-index walker) `(setf ,symbol) section ;
-                   :operator 'defmethod ;
-                   :generic t))))
+(walk-function-name walker opt-value env :operator 'defmethod :def t)
+(when (eql opt-name :accessor)
+  (walk-function-name walker `(setf ,opt-value) env ;
+                      :operator 'defmethod :def t))
 
 @ We'll also walk |define-method-combination| forms to get the names of the
 method combination types. We'll skip the expansion.
