@@ -3906,7 +3906,7 @@ override it.
 (defgeneric macroexpand-for-walk (walker form env))
 
 @ The main entry point for the walker is |walk-form|. The walk ordinarily
-stops after encountering an atomic or special form; otherwise, we macro
+stops after encountering an atom or a special form; otherwise, we macro
 expand and try again. If a walker method wants to decline to walk, however,
 it may throw a form to the tag |continue-walk|, and the walk will continue
 with macro expansion of that form.
@@ -3920,21 +3920,15 @@ with macro expansion of that form.
       (multiple-value-setq (form expanded)
         (macroexpand-for-walk walker form env)))))
 
-@ When we walk an atomic form, we need to check whether or not it's a
-symbol macro. If it is, we'll let the walk continue with the expansion;
-otherwise, we'll just return the walked atom. But it's important to walk
-the atom {\it before\/} checking if it's a symbol macro because of the
-games we play later with referring symbols in the indexer.
-@^referring symbols@>
+@ @<Walker generic functions@>=
+(defgeneric walk-form (walker form &optional env &key toplevel))
+
+@ When we hit an atom that is not a symbol macro, a compound form whose
+car is not a macro, or~a special form, we return the walked form and break
+out of the macro-expansion loop.
 
 @<Walk |form|@>=
-(cond ((atom form)
-       (let ((walked-form (walk-atomic-form walker :evaluated form env ;
-                                            :toplevel toplevel)))
-         (if (and (symbolp walked-form)
-                  (eql (variable-information walked-form env) :symbol-macro))
-             walked-form ; wait for macro expansion
-             (return walked-form))))
+(cond ((atom form) @<Walk the atom |form|@>)
       ((not (symbolp (car form)))
        (return (walk-list walker form env :toplevel toplevel)))
       ((or (not expanded)
@@ -3943,8 +3937,20 @@ games we play later with referring symbols in the indexer.
                                    :toplevel toplevel)))
       (t form))
 
-@ @<Walker generic functions@>=
-(defgeneric walk-form (walker form &optional env &key toplevel))
+@ When we walk an atomic form, we need to check whether or not it's a
+symbol macro. If it is, we'll let the walk continue with the expansion;
+otherwise, we'll just return the walked atom. But it's important to walk
+the atom {\it before\/} checking whether it's a symbol macro because of
+the games we play later with referring symbols in the indexer.
+@^referring symbols@>
+
+@<Walk the atom...@>=
+(let ((walked-form (walk-atomic-form walker :evaluated form env ;
+                                     :toplevel toplevel)))
+  (if (and (symbolp walked-form)
+           (eql (variable-information walked-form env) :symbol-macro))
+      walked-form                       ; wait for macro expansion
+      (return walked-form)))
 
 @ The walker will treat a form as a special form if and only if
 |walk-as-special-form-p| returns true of that form.
