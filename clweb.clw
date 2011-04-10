@@ -5093,7 +5093,7 @@ usually clear in context.
 @1*Headings. In this program, headings are usually represented by instances
 of the class |heading|. Headings may in general be multi-leveled, and are
 sorted lexicographically. Any object with applicable methods for
-|heading-name| and |sub-heading| are treated as valid headings; the former
+|heading-name| and |sub-heading| is treated as a valid heading; the former
 should always return a string designator, and the latter should return the
 next sub-heading or |nil| if there is none.
 
