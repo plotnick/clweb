@@ -4308,6 +4308,35 @@ evaluate top level forms that appear in an |eval-when| with situation
          (get-output-stream-string string-output-stream)))
   "FOO")
 
+@ Allegro's definition of |defconstant| is somewhat funky. Aside from the
+expected |special| declamation, the expansion includes calls to two functions:
+|defconstant1| and |defconstant2| (both in the \.{EXCL} package). Only the
+first is wrapped in an |(eval-when (compile))|, but it's the second that
+actually sets the value. The net effect is that if we walk a |defconstant|
+form in the usual way, the constant gets declaimed special, but remains
+unbound, which can cause problems.
+@^Allegro Common Lisp@>
+
+The work-around is simple: we treat |defconstant| as a special form, and
+wrap the expanded form in an |(eval-when (:compile-toplevel))|. This can't
+hurt, because the standard says that ``[a]n implementation may choose to
+evaluate the value-form [of a top level |defconstant| form] at compile time,
+load time, or~both.''
+
+@l
+(define-special-form-walker defconstant ((walker walker) form env &key)
+  (throw 'continue-walk
+    `(eval-when (:compile-toplevel)
+       ,(macroexpand-for-walk walker form env))))
+
+@t@l
+(deftest (walk defconstant)
+  (let ((name (make-symbol "TWO-PI"))
+        (walker (make-instance 'walker)))
+    (and (walk-form walker `(defconstant ,name (* 2 pi)) nil :toplevel t)
+         (symbol-value name)))
+  #.(* 2 pi))
+
 @ The |function| special form takes either a valid function name or a
 \L~expression.
 
@@ -6102,8 +6131,9 @@ often pick up at least the constructor definitions that way.
   ("BAR structure" ((:def 1)))
   ("FOO structure" ((:def 0))))
 
-@ The special-variable-defining forms must also be walked as if they were
-special forms.
+@ |defvar| and |defparameter| must be walked as if they were special forms
+in order to pick up the definitions of the names. We still have to let them
+expand, though, in order to get the |special| declarations.
 
 @l
 (macrolet ((define-indexing-defvar-walker (operator &rest args)
@@ -6115,8 +6145,7 @@ special forms.
                                           ,name
                                           ,@(cddr form)))))))
   (define-indexing-defvar-walker defvar :type 'variable :special t)
-  (define-indexing-defvar-walker defparameter :type 'variable :special t)
-  (define-indexing-defvar-walker defconstant :type 'constant :constant t))
+  (define-indexing-defvar-walker defparameter :type 'variable :special t))
 
 @t@l
 (define-indexing-test (defvar :verify-walk nil :toplevel t)
@@ -6125,16 +6154,21 @@ special forms.
   ("*DUPER* special variable" ((:def 1)))
   ("*SUPER* special variable" (1 (:def 0))))
 
-@t There's something fishy going on here with Allegro and |defconstant|.
-This test passes, but only the first time. It seems that the expansion
-of |defconstant| includes calls to two functions: |defconstant1| and
-|defconstant2| (both in the \.{EXCL} package). Only the first is wrapped
-in an |(eval-when (compile))| form, so that's the only one we execute, but
-it's the second that actually sets the value. The net effect is that the
-constant gets declaimed special, but remains unbound.
+@ We have to treat |defconstant| specially because of the work-around in
+the walker for Allegro, but it's basically the same as above.
+@^Allegro Common Lisp@>
 
 @l
-#-allegro
+(define-special-form-walker defconstant ;
+    ((walker indexing-walker) form env &rest args)
+  (let ((name (walk-atomic-form walker :defconstant (cadr form) env
+                                :type 'constant
+                                :def t)))
+    (apply #'call-next-method walker 'defconstant
+           `(defconstant ,name ,@(walk-list walker (cddr form) env))
+           env args)))
+
+@t@l
 (define-indexing-test (defconstant :verify-walk nil :toplevel t)
   ((:section :code ((defconstant el-gordo most-positive-fixnum))))
   ("EL-GORDO constant" ((:def 0))))
