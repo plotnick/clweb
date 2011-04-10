@@ -4058,8 +4058,16 @@ it leaves its car unevaluated and walks its cdr.
   t)
 
 @ Common Lisp defines a {\it function name\/} as ``[a] symbol or a list
-|(setf symbol)|.'' Since they're not necessarily atomic, we define a special
-walker function just for function names.
+|(setf symbol)|.'' Since they're not necessarily atomic, we can't use
+|walk-atomic-form|. So we'll define a special walker function just for
+function names.
+
+@ @<Walker generic functions@>=
+(defgeneric walk-function-name (walker function-name env &key &allow-other-keys))
+
+@ The default method for |walk-function-name| calls down to |walk-atomic-form|,
+passing the whole name if it's a symbol, or just the cadr if it's a compound
+name.
 
 @l
 (deftype setf-function-name () '(cons (eql setf) (cons symbol null)))
@@ -4077,9 +4085,6 @@ walker function just for function names.
     (t (cerror "Use the function name anyway." ;
                'invalid-function-name :name function-name)
        function-name)))
-
-@ @<Walker generic functions@>=
-(defgeneric walk-function-name (walker function-name env &key &allow-other-keys))
 
 @ @<Condition classes@>=
 (define-condition invalid-function-name (parse-error)
