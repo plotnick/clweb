@@ -1647,7 +1647,7 @@ code and the pretty-printing routines.
 (defun commap (obj) (typep obj 'comma))
 
 @ To process a comma, we need to tangle the form that followed it. If that
-form is a named section reference, we take the |car| of the tangled form,
+form is a named section reference, we take the car of the tangled form,
 on the assumption that you can't meaningfully unquote more than one form.
 This violation of the general principle that named section expansion has
 splicing semantics is a consequence of our using the Lisp reader to process
@@ -4011,7 +4011,7 @@ walk to the indexer.
   nil)
 
 @ This method for |walk-compound-form| is used for most funcall-like forms;
-it leaves its |car| unevaluated and walks its |cdr|.
+it leaves its car unevaluated and walks its cdr.
 
 @l
 (defmethod walk-compound-form ((walker walker) (operator symbol) form env &key)
@@ -4024,7 +4024,7 @@ it leaves its |car| unevaluated and walks its |cdr|.
   (walk-compound-form (make-instance 'walker) :foo '(:foo 2 3) nil)
   (:foo 2 3))
 
-@ A compound form might also have a \L~expression as its |car|.
+@ A compound form might also have a \L~expression as its car.
 
 @l
 (deftype lambda-expression () '(cons (eql lambda) (cons list *)))
@@ -4227,7 +4227,7 @@ is evaluated.
   (progn (ensure-toplevel))
   (progn t))
 
-@ Block-like special forms have a |cdr| that begins with a single
+@ Block-like special forms have a cdr that begins with a single
 unevaluated form, followed by zero or more evaluated forms.
 
 @l
@@ -4723,7 +4723,7 @@ forms in Common Lisp (|let|, |let*|, |flet|, |labels|, |macrolet|, and
 and namespace of the bindings differ.
 
 We'll start with a little utility routine that walks a variable-like
-binding form (e.g., the |cadr| of a |let|/|let*| or |symbol-macrolet|
+binding form (e.g., the cadr of a |let|/|let*| or |symbol-macrolet|
 form). It normalizes atomic binding forms to conses in order to avoid
 special cases in the actual walker methods.
 
