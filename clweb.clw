@@ -6152,26 +6152,28 @@ preceding the specialized \L-list.
 
 @ For |defgeneric| forms, we're interested in the name of the generic
 function being defined, the method combination type, and any methods that
-may be specified as method descriptions.
+may be specified as method descriptions. We'll let the walk continue with
+macro expansion so that we can pick up the call to |ensure-generic-function|.
 
 @l
 (define-special-form-walker defgeneric ((walker indexing-walker) form env &key)
   (destructuring-bind (operator function-name lambda-list &rest options) form
-    `(,operator
-      ,(walk-function-name walker function-name env ;
-                           :operator 'defgeneric
-                           :generic t
-                           :def t)
-      ,(walk-lambda-list walker lambda-list nil env)
-      ,@(loop for form in options
-              collect (case (car form)
-                        (:method-combination ;
-                         @<Walk the method combination option in |form|@>)
-                        (:method @<Walk the method description in |form|@>)
-                        (t (walk-list walker form env)))))))
+    (throw 'continue-walk
+      `(,operator
+        ,(walk-function-name walker function-name env ;
+                             :operator 'defgeneric
+                             :generic t
+                             :def t)
+        ,(walk-lambda-list walker lambda-list nil env)
+        ,@(loop for form in options
+                collect (case (car form)
+                          (:method-combination ;
+                           @<Walk the method combination option in |form|@>)
+                          (:method @<Walk the method description in |form|@>)
+                          (t (walk-list walker form env))))))))
 
 @t@l
-(define-indexing-test defgeneric
+(define-indexing-test (defgeneric :verify-walk nil)
   ((:section :code ((defgeneric foo (x y)
                       (:documentation "foo")
                       (:method-combination progn)
@@ -6329,7 +6331,7 @@ method combination types. We'll skip the expansion.
   ,@(walk-list walker (cddr form) env))
 
 @t@l
-(define-indexing-test define-method-combination
+(define-indexing-test (define-method-combination :verify-walk nil)
   ((:section :code ((define-method-combination foo)))
    (:section :code ((defgeneric foo () (:method-combination foo)))))
   ("FOO generic function" ((:def 1)))
