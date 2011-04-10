@@ -73,20 +73,6 @@ be all on one line.
 @ And one more, with a different name.
 @<Another unused section@>=t
 
-@ Here's a symbol macro, an ordinary macro, and a generic function
-walk into a bar\dots
-
-@l
-(define-symbol-macro three-bears '(:fred :jerry :samuel))
-(defmacro bears () three-bears)
-(defgeneric generic-foo (foo))
-
-@ Not so funny now, is it?
-
-@l
-(defun bearp (x) (member x (bears)))
-(defun compute-foo-generically (foo) (generic-foo foo))
-
 @*Markers. Here we test out some of the trickier markers.
 
 @l
@@ -142,3 +128,21 @@ newlines and such are ignored:
     (when (endp fast) (return n))
     (when (endp (cdr fast)) (return (+ n 1)))
     (when (and (eq fast slow) (> n 0)) (return nil))))
+
+@*Index tests.
+
+@ @l
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun count-em (list) (length list)))
+
+(define-symbol-macro three-bears '(:fred :jerry :samuel))
+(defmacro how-many-bears () (count-em three-bears))
+(defgeneric generic-foo (foo))
+(defmacro define-bear-class (bear) `(defclass ,bear (bear) ()))
+
+@ @l
+(defun too-many-bears-p (n) (> n (how-many-bears)))
+(defun compute-foo-generically (foo) (generic-foo foo))
+(define-bear-class grizzly)
+
+@*Index.
