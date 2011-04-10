@@ -6234,15 +6234,17 @@ a method description.
 class names, super-classes, and~accessor methods.
 
 @l
-(macrolet ((define-defclass-walker (operator type)
+(macrolet ((define-defclass-walker (operator context)
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env &key)
                 (destructuring-bind ;
                       (operator name supers slot-specs &rest options) form
                   `(,operator
-                    ,(walk-atomic-form walker ,type name env :def t)
+                    ,(walk-atomic-form walker ,context name env
+                                       :operator ',operator
+                                       :def t)
                     ,(mapcar (lambda (super) ;
-                               (walk-atomic-form walker ,type super env)) ;
+                               (walk-atomic-form walker ,context super env)) ;
                              supers)
                     ,(mapcar (lambda (spec) ;
                                (walk-slot-specifier walker spec env)) ;
@@ -6250,9 +6252,6 @@ class names, super-classes, and~accessor methods.
                     ,@(walk-list walker options env))))))
   (define-defclass-walker defclass :class)
   (define-defclass-walker define-condition :condition-class))
-
-(define-symbol-indexer :class 'class)
-(define-symbol-indexer :condition-class 'condition-class)
 
 @t@l
 (define-indexing-test defclass
@@ -6265,7 +6264,7 @@ class names, super-classes, and~accessor methods.
   ("FOO-A1 generic function" ((:def 0)))
   ("FOO-A2 generic function" ((:def 0)))
   ("FOO-B generic function" ((:def 1)))
-  ("FOO-B primary setf method" ((:def 1))))
+  ("FOO-B generic setf function" ((:def 1))))
 
 @ The only slot options we care about are |:reader|, |:writer|,
 and~|:accessor|. We index the methods implicitly created by those
@@ -6283,10 +6282,15 @@ options.
               ,@(walk-list walker options env))))))
 
 @ @<Index |opt-value| as a slot access method@>=
-(walk-function-name walker opt-value env :operator 'defmethod :def t)
+(walk-function-name walker opt-value env ;
+                    :operator 'defmethod ;
+                    :generic t ;
+                    :def t)
 (when (eql opt-name :accessor)
   (walk-function-name walker `(setf ,opt-value) env ;
-                      :operator 'defmethod :def t))
+                      :operator 'defmethod ;
+                      :generic t ;
+                      :def t))
 
 @ We'll also walk |define-method-combination| forms to get the names of the
 method combination types. We'll skip the expansion.
@@ -6298,14 +6302,9 @@ method combination types. We'll skip the expansion.
     ,(walk-atomic-form walker :method-combination (cadr form) env :def t)
     ,@(walk-list walker (cddr form) env)))
 
-(define-symbol-indexer :method-combination 'method-combination)
-
-@t@l
-(define-indexing-test define-method-combination
-  ((:section :code ((define-method-combination foo :operator bar)))
-   (:section :code ((defgeneric foo () (:method-combination foo)))))
-  ("FOO generic function" ((:def 1)))
-  ("FOO method combination" (1 (:def 0))))
+(defmethod compute-index-arguments append
+    ((context (eql :method-combination)) (name symbol) env &key)
+  '(:type method-combination))
 
 @ We'll also index custom method combination type uses, which occur in the
 |:method-combination| option given to a |defgeneric| form.
@@ -6314,6 +6313,13 @@ method combination types. We'll skip the expansion.
 `(,(car form)
   ,(walk-atomic-form walker :method-combination (cadr form) env)
   ,@(walk-list walker (cddr form) env))
+
+@t@l
+(define-indexing-test define-method-combination
+  ((:section :code ((define-method-combination foo)))
+   (:section :code ((defgeneric foo () (:method-combination foo)))))
+  ("FOO generic function" ((:def 1)))
+  ("FOO method combination" (1 (:def 0))))
 
 @ And here, finally, is the top-level indexing routine: it walks the
 tangled, symbol-replaced code of the given sections and returns an index
