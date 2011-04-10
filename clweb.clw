@@ -6025,13 +6025,16 @@ same as the environment in which these tests are defined.
   ("BAIT symbol macro" (1))
   ("THE-ULTIMATE-ANSWER constant" (2)))
 
-@ Function and macro references generally occur as operators.
+@ Function and macro references generally occur as operators. If we can't
+find an entry in the current environment, we assume it's a function.
 
 @l
 (defmethod compute-index-arguments append ;
     ((context (eql :operator)) (name symbol) env &key)
   (multiple-value-bind (type local) (function-information name env)
-    `(:type ,type :local ,local)))
+    `(:type ,(or type 'function)
+      :local ,local
+      :generic ,(generic-function-p name))))
 
 @t These tests, like the |(index variables)| test we just defined, assume
 that the walker sees definitions in the current global environment.
@@ -6185,36 +6188,65 @@ preceding the specialized \L-list.
 
 @ For |defgeneric| forms, we're interested in the name of the generic
 function being defined, the method combination type, and any methods that
-may be specified as method descriptions. We'll let the walk continue with
-macro expansion so that we can pick up the call to |ensure-generic-function|.
+may be specified as method descriptions. The environment objects don't keep
+track of whether a function is generic or not, so we'll have to maintain
+that information ourselves.
 
 @l
 (define-special-form-walker defgeneric ((walker indexing-walker) form env &key)
   (destructuring-bind (operator function-name lambda-list &rest options) form
-    (throw 'continue-walk
-      `(,operator
-        ,(walk-function-name walker function-name env ;
-                             :operator 'defgeneric
-                             :generic t
-                             :def t)
-        ,(walk-lambda-list walker lambda-list nil env)
-        ,@(loop for form in options
-                collect (case (car form)
-                          (:method-combination ;
-                           @<Walk the method combination option in |form|@>)
-                          (:method @<Walk the method description in |form|@>)
-                          (t (walk-list walker form env))))))))
+    `(,operator
+      ,(note-generic-function
+        (walk-function-name walker function-name env
+                            :operator 'defgeneric
+                            :generic t
+                            :def t))
+      ,(walk-lambda-list walker lambda-list nil env)
+      ,@(loop for form in options
+              collect (case (car form)
+                        (:method-combination ;
+                         @<Walk the method combination option in |form|@>)
+                        (:method @<Walk the method description in |form|@>)
+                        (t (walk-list walker form env)))))))
 
 @t@l
-(define-indexing-test (defgeneric :verify-walk nil)
-  ((:section :code ((defgeneric foo (x y)
+(define-indexing-test defgeneric
+  ((:section :code ((defgeneric generic-foo (x y)
                       (:documentation "foo")
                       (:method-combination progn)
                       (:method progn ((x t) y) x)
-                      (:method :around (x (y (eql 't))) y)))))
-  ("FOO around method" ((:def 0)))
-  ("FOO generic function" ((:def 0)))
-  ("FOO progn method" ((:def 0))))
+                      (:method :around (x (y (eql 't))) y))))
+   (:section :code ((generic-foo 2 3))))
+  ("GENERIC-FOO around method" ((:def 0)))
+  ("GENERIC-FOO generic function" (1 (:def 0)))
+  ("GENERIC-FOO progn method" ((:def 0))))
+
+(deftest note-generic-function
+  (let ((name (make-symbol "GENERIC-FUNCTION")))
+    (walk-form (make-instance 'indexing-walker) `(defgeneric ,name ()))
+    (not (null (generic-function-p name))))
+  t)
+
+@ To note that a function is a generic function, we'll stick a property on
+the function name's plist. (If it's a |setf| function, we'll use the cadr
+of the function name.) We can then just check for that property, although
+if the function name is |fboundp|, we'll check the actual type of the
+function object instead.
+
+@l
+(defun note-generic-function (function-name)
+  (typecase function-name
+    (symbol (setf (get 'generic-function function-name) t))
+    (setf-function-name ;
+     (setf (get 'generic-setf-function (cadr function-name)) t)))
+  function-name)
+
+(defmethod generic-function-p (function-name)
+  (if (fboundp function-name)
+      (typep (fdefinition function-name) 'generic-function)
+      (typecase function-name
+        (symbol (get 'generic-function function-name))
+        (setf-function-name (get 'generic-setf-function (cadr function-name))))))
 
 @ Method descriptions are very much like |defmethod| forms with an implicit
 function name; this routine walks both. The function name (if non-null) and
