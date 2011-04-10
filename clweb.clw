@@ -3949,7 +3949,7 @@ the games we play later with referring symbols in the indexer.
                                      :toplevel toplevel)))
   (if (and (symbolp walked-form)
            (eql (variable-information walked-form env) :symbol-macro))
-      walked-form                       ; wait for macro expansion
+      walked-form ; wait for macro expansion
       (return walked-form)))
 
 @ The walker will treat a form as a special form if and only if
