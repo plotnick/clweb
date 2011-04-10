@@ -4303,7 +4303,7 @@ evaluate top level forms that appear in an |eval-when| with situation
          (*standard-output* string-output-stream)
          (walker (make-instance 'test-walker))
          (form '(eval-when (:compile-toplevel)
-                  (prin1 'foo))))
+                  (princ :foo))))
     (and (tree-equal (walk-form walker form nil :toplevel t) form)
          (get-output-stream-string string-output-stream)))
   "FOO")
