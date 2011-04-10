@@ -4780,7 +4780,6 @@ their body forms in an environment that contains all of the new bindings.
                                         :function (mapcar #'car bindings)
                                         :declare decls)))))
 
-
 @ The bindings established by |macrolet| and |symbol-macrolet| are
 different from those established by the other binding forms in that they
 include definitions as well as names. We'll use a little helper function,
