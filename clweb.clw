@@ -3952,8 +3952,11 @@ the games we play later with referring symbols in the indexer.
       walked-form ; wait for macro expansion
       (return walked-form)))
 
-@ The walker will treat a form as a special form if and only if
-|walk-as-special-form-p| returns true of that form.
+@ The walker will treat a compound form as a special form if and only if
+|walk-as-special-form-p| returns true of that form. Besides the walker
+instance, the form being walked, and~the current environment, we'll supply
+the operator of the compound form as a separate argument so that we can
+use |eql|~specializers. The |operator| should be |eql| to~|(car form)|.
 
 @l
 (defmethod walk-as-special-form-p (walker operator form env)
@@ -3975,12 +3978,12 @@ of those walks.
       ((atom form) (nreconc newform form))))
 
 @ The functions |walk-atomic-form| and |walk-compound-form| are the real
-work-horses of the walker. Besides the walker instance, the form, and the
-lexical environment, |walk-atomic-form| takes a keyword symbol denoting the
+work-horses of the walker. Besides the walker instance, the form, and~the
+current environment, |walk-atomic-form| takes a keyword symbol denoting the
 context in which the atom occurs, and |walk-compound-form| takes an
-additional |operator| argument, |eql| to~|(car form)|, so that we can
-use |eql|~specializers. The |operator| of a form passed to
-|walk-compound-form| should always be a symbol or a \L~expression.
+|operator| argument like |walk-as-special-form-p|. They both allow arbitrary
+keyword arguments, since that's how we'll pass information down through the
+walk to the indexer.
 
 @<Walker generic functions@>=
 (defgeneric walk-atomic-form (walker context form env &key &allow-other-keys))
