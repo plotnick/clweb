@@ -3883,75 +3883,44 @@ Thanks, Franz!
 #+allegro
 (reorder-env-information function-information #'sys:function-information)
 
-@ We'll pass around instances of a |walker| class during our code walk
-to provide a hook (via subclassing) for overriding walker methods.
+@ Along with the environment, some of the walker methods will be given
+a `context' argument that gives some extra information about the form
+being walked. Those arguments will always be instances of |walk-context|,
+or |nil| if there is no relevant information to supply.
 
 @l
-(defclass walker () ())
+(defclass walk-context () ())
 
-@ @l
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defvar *namespace-classes* (make-hash-table :test 'eq))
-  (defvar *binding-classes* (make-hash-table :test 'eq))
-  (defun (setf find-namespace-class) (class namespace-name)
-    (setf (gethash namespace-name *namespace-classes*) class))
-  (defun (setf find-binding-class) (class namespace-name)
-    (setf (gethash namespace-name *binding-classes*) class)))
+@ The most important kind of context we'll supply is the {\it namespace\/}
+of a name that's about to be walked. Namespaces are associated with
+environments, but the \cltl\ environments {\sc api} does not provide
+functions for dealing directly with many of the kinds of namespaces
+that we'll define. However, the most important namespaces---variable names,
+function names, macros, \etc.---do have corresponding entries in the
+lexical environment objects that we'll pass around, and we'll make it
+easy to maintain this link.
 
-(defun find-namespace-class (namespace-name)
-  (restart-case
-      (or (gethash namespace-name *namespace-classes*)
-          (error "Can't find namespace class for namespace ~S." namespace-name))
-    (use-value (value)
-      :report "Specify a class to use this time."
-      value)
-    (store-value (value)
-      :report "Specify a value to store and use in the future."
-      (setf (find-namespace-class namespace-name) value))))
+But the real problem that these namespace objects solve is that we'll
+need to walk names of all kinds {\it before\/} we add them to or even
+look them up in the environment because of the referring symbols the
+indexing walker uses to track sections in tangled code. We'll therefore
+use them to represent both a namespace that an evaluated name should
+already exist in, and the namespace in which a new binding is being
+established.
 
-(defun find-binding-class (namespace-name)
-  (restart-case
-      (or (gethash namespace-name *binding-classes*)
-          (error "Can't find binding class for namespace ~S." namespace-name))
-    (use-value (value)
-      :report "Specify a class to use this time."
-      value)
-    (store-value (value)
-      :report "Specify a value to store and use in the future."
-      (setf (find-binding-class namespace-name) value))))
+The former will be represented by instances of the class |namespace|, and
+the latter by subclasses with the class |binding| mixed~in. Every entry in
+a namespace---i.e., every binding---can be either `local' or `global'. For
+some namespaces, only global names are supported (e.g., compiler macros can
+only be global), but the question ``is this binding local or global?'' still
+makes sense for those namespaces.
 
-(defun make-context-from-context (context namespace &rest args)
-  (cond ((null namespace) context)
-        ((eql (namespace-name context) namespace)
-         (apply #'reinitialize-instance context args))
-        (t (let ((new-class (etypecase context
-                              (binding (find-binding-class namespace))
-                              (namespace (find-namespace-class namespace)))))
-             (if new-class
-                 (apply #'make-context new-class args)
-                 context)))))
-
-(defmacro defnamespace (class-name (&optional super) namespace-name)
-  (setf (find-namespace-class namespace-name) class-name)
-  `(defclass ,class-name ,(if super `(,super) '(namespace))
-     ()
-     (:default-initargs :name ',namespace-name)))
-
-(defmacro defbinding (class-name (namespace binding) &optional ;
-                      slot-specs &rest options)
-  (loop for namespace-name being each hash-key of *namespace-classes*
-        using (hash-value namespace-class)
-        when (eql namespace-class namespace)
-          do (setf (find-binding-class namespace-name) class-name)
-             (loop-finish))
-  `(defclass ,class-name (,namespace ,binding)
-     ,slot-specs
-     ,@options))
-
-(defclass namespace ()
-  ((name :reader namespace-name :initarg :name)
+@l
+(defclass namespace (walk-context)
+  ((name :reader namespace-name :initform nil :allocation :class)
    (local :reader local-binding-p :initarg :local :type boolean))
   (:default-initargs :local nil))
+
 (defclass binding ()
   ((local :reader local-binding-p :initarg :local :type boolean)))
 (defclass lexical-binding (binding)
@@ -3962,15 +3931,59 @@ to provide a hook (via subclassing) for overriding walker methods.
   (:default-initargs :local nil))
 (defclass dynamic-binding (binding) ())
 
+@t@l
+(defmethod print-object ((x namespace) stream)
+  (print-unreadable-object (x stream :type t :identity t)
+    (when (local-binding-p x)
+      (prin1 :local stream))))
+
+@ Associated with every namespace is a name---not the name that's being
+walked, but an identifier for the namespace itself, like `variable' or
+`function'. Those names will be keyword symbols, and for namespaces that
+correspond directly to lexical environments, the name should match the
+symbol returned as the second value from the environment accessor for that
+namespace. For instance, |variable-information| returns |:lexical| as its
+second value if the given variable is a lexical variable in the current
+environment, and so our lexical variable namespace has |:lexical| as its
+name.
+
+@ We'll wrap up the namespace and binding class definitions in some nice
+defining macros.
+
+@l
+@<Define |find-namespace-class| and |find-binding-class|@>
+
+(defmacro defnamespace (class-name (&optional super) namespace-name)
+  (setf (find-namespace-class namespace-name) class-name)
+  `(defclass ,class-name ,(if super `(,super) '(namespace))
+     ((name :initform ',namespace-name :allocation :class))))
+
+(defmacro defbinding (class-name (namespace binding &rest other-supers)
+                      &optional slot-specs &rest options)
+  (loop for namespace-name being each hash-key of *namespace-classes*
+        using (hash-value namespace-class)
+        when (eql namespace-class namespace)
+          do (setf (find-binding-class namespace-name) class-name)
+             (loop-finish))
+  `(defclass ,class-name (,namespace ,binding ,@other-supers)
+     ,slot-specs
+     ,@options))
+
 @<Define namespace and binding classes@>
 
-@ @<Define namespace and binding classes@>=
+@ And here are the definitions themselves.
+
+@<Define namespace and binding classes@>=
 (defnamespace variable-name () :variable)
 (defnamespace lexical-variable-name (variable-name) :lexical)
 (defnamespace special-variable-name (variable-name) :special)
 (defbinding variable-binding (variable-name binding))
-(defbinding lexical-variable-binding (lexical-variable-name lexical-binding))
-(defbinding special-variable-binding (special-variable-name dynamic-binding))
+(defbinding lexical-variable-binding (lexical-variable-name ;
+                                      lexical-binding ;
+                                      variable-binding))
+(defbinding special-variable-binding (special-variable-name ;
+                                      dynamic-binding ;
+                                      variable-binding))
 
 (defnamespace symbol-macro-name () :symbol-macro)
 (defbinding symbol-macro-binding (symbol-macro-name lexical-binding))
@@ -4017,10 +4030,124 @@ use caches to avoid constructing new instances whenever possible.
 (defun make-context (context &rest args)
   (apply #'make-instance context args))
 
-@ The walker protocol consists of a handful of generic functions, which
-we'll describe as we come to them.
+@ The reason the association between namespace names and environment types
+is important is that when we walk a name, we can sometimes only give a best
+guess as to the correct namespace. For instance, when we walk an evaluated
+symbol, it could be a lexical variable, a special variable, a constant,
+or~a symbol macro---we can't know until we look it up in the environment.
+But in general, we {\it can't\/} look it up until we've walked it; the best
+we can do is say that it's a variable of some kind. Once the walk happens,
+we can get more information from the environment, and that's exactly what
+we'll do.
+
+The function |update-context| takes a (walked) name, a context instance,
+and~an environment object, and returns a new context that reflects the
+given context as updated by the appropriate environment entry for that
+name. It uses the mapping between namespace names and environment types,
+which we'll retrieve using |find-namespace-class| and |find-binding-class|.
 
 @l
+(defgeneric update-context (name context env))
+
+(defmethod update-context (name (context walk-context) env)
+  (declare (ignore name env))
+  context)
+
+(defmethod update-context (name (context variable-name) env)
+  (multiple-value-bind (type local) (variable-information name env)
+    (when type
+      (make-context (find-namespace-class type) :local local))))
+
+@ The environment here is a `hypothetical' environment in which we've
+already added a binding for |name| with the appropriate declarations.
+
+@l
+(defmethod update-context (name (context variable-binding) env)
+  (multiple-value-bind (type local) (variable-information name env)
+    (make-context (find-binding-class type) :local local)))
+
+@ The more specific variable binding classes, however, are assumed to
+be correct, and don't need any updates.
+
+@l
+(defmethod update-context (name (context lexical-variable-binding) env) context)
+(defmethod update-context (name (context special-variable-binding) env) context)
+
+@ For operator use, we need to check if the operator is a generic function,
+then what type it has in the environment. For operator bindings, we don't
+even bother looking at the environment; we'll just hand back the original
+context.
+
+@l
+(defmethod update-context (function-name (context operator) env)
+  (typecase context
+    (binding context)
+    (otherwise
+     (multiple-value-bind (type local) (function-information function-name env)
+       (if (and (not local) (generic-function-p function-name))
+           (make-context (etypecase function-name
+                           (symbol 'generic-function-name)
+                           (setf-function 'generic-setf-function-name)))
+           (make-context (find-namespace-class (etypecase function-name
+                                                 (symbol (or type :function))
+                                                 (setf-function :setf-function)))
+                         :local (or local (local-binding-p context))))))))
+
+@ Function bindings are special, though, since we use different a context
+for |setf| functions.
+
+@l
+(defmethod update-context (function-name (context function-binding) env)
+  (etypecase function-name
+    (symbol context)
+    (setf-function (make-context 'setf-function-binding
+                                 :local (local-binding-p context)))))
+
+@ Now we have to define the functions that handle the mapping between namespace
+names and classes. They're perfectly straightforward, and only look imposing
+because we've added a bit of error checking and recovery. The |setf| functions
+need to be defined at compile-time because they're used in the |defnamespace|
+and |defbinding| macros.
+
+@<Define |find-namespace-class|...@>=
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defvar *namespace-classes* (make-hash-table :test 'eq))
+  (defvar *binding-classes* (make-hash-table :test 'eq))
+  (defun (setf find-namespace-class) (class namespace-name)
+    (setf (gethash namespace-name *namespace-classes*) class))
+  (defun (setf find-binding-class) (class namespace-name)
+    (setf (gethash namespace-name *binding-classes*) class)))
+
+(defun find-namespace-class (namespace-name)
+  (restart-case
+      (or (gethash namespace-name *namespace-classes*)
+          (error "Can't find namespace class for namespace ~S." namespace-name))
+    (use-value (value)
+      :report "Specify a class to use this time."
+      value)
+    (store-value (value)
+      :report "Specify a value to store and use in the future."
+      (setf (find-namespace-class namespace-name) value))))
+
+(defun find-binding-class (namespace-name)
+  (restart-case
+      (or (gethash namespace-name *binding-classes*)
+          (error "Can't find binding class for namespace ~S." namespace-name))
+    (use-value (value)
+      :report "Specify a class to use this time."
+      value)
+    (store-value (value)
+      :report "Specify a value to store and use in the future."
+      (setf (find-binding-class namespace-name) value))))
+
+@ Now we come to the walker proper. Code walkers are represented as instances
+of the class |walker|. The walker protocol consists of a handful of generic
+functions, which we'll describe as we come to them; subclasses of |walker|
+may add methods to them to customize the behavior of the walk.
+
+@l
+(defclass walker () ())
+
 @<Walker generic functions@>
 
 @ We'll wrap |macroexpand-1| so that walker sub-classes get a chance to
@@ -5581,14 +5708,6 @@ whole thing and print them all out.
     (locator-definition-p (first (find-index-entries index heading))))
   t)
 
-@ The global variable |*index-lexical-variables*| controls whether or
-not the indexer will create entries for lexical variables. Its value
-is {\it not\/} re-initialized on each run.
-
-@<Global variables@>=
-(defvar *index-lexical-variables* nil
-  "If this flag is non-nil, the indexer will index lexical variables.")
-
 @ Now we come to the interface between the indexer and the indexing walker
 we'll define below. The idea is that the walker picks up information about
 symbols and function names and in what section they're defined or used, and
@@ -5597,11 +5716,27 @@ passes it all down to |index| encoded in the |context| object.
 @l
 (defgeneric index (index name section context))
 
-(defmethod index ((index index) (name symbol) section context)
+(defmethod index ((index index) name section context)
   (add-index-entry index (make-heading name context) section nil))
 
-(defmethod index ((index index) (name symbol) section (context binding))
+(defmethod index ((index index) name section (context null))
+  (declare (ignore name section)))
+
+(defmethod index ((index index) name section (context binding))
   (add-index-entry index (make-heading name context) section t))
+
+@ The global variable |*index-lexical-variables*| controls whether or
+not the indexer will create entries for lexical variables. Its value
+is {\it not\/} re-initialized on each run.
+
+@<Global variables@>=
+(defvar *index-lexical-variables* nil
+  "If this flag is non-nil, the indexer will index lexical variables.")
+
+@ @l
+(defmethod index ((index index) name section (context lexical-variable-name))
+  (when *index-lexical-variables*
+    (call-next-method)))
 
 @1*Referring symbols. We'll perform the indexing by walking over the code
 of each section and noting each of the interesting symbols that we find
@@ -5850,16 +5985,13 @@ variable name.
 @l
 (defmethod walk-name ((walker indexing-walker) (name symbol) ;
                       (context variable-binding) env &key declare)
-  (declare (ignore env))
   (multiple-value-bind (name section) (symbol-provenance name)
-    (let ((special (loop for decl in declare
-                         thereis (and (eq (car decl) 'special)
-                                      (member name (cdr decl))))))
-      (when (and section (or special *index-lexical-variables*))
-        (index (walker-index walker) name section
-               (make-context-from-context context ;
-                                          (if special :special :lexical)
-                                          :local (local-binding-p context)))))
+    (when section
+      (index (walker-index walker) name section
+             (update-context name context
+                             (augment-environment env
+                                                  :variable (list name)
+                                                  :declare declare))))
     name))
 
 @ The other tricky case is the non-binding case; i.e., variable {\it use}.
@@ -5876,12 +6008,9 @@ to the indexer.
 (defmethod walk-name ((walker indexing-walker) (name symbol) ;
                       (context variable-name) env &key)
   (multiple-value-bind (name section) (symbol-provenance name)
-    (multiple-value-bind (type local) (variable-information name env)
-      (when (and section
-                 type
-                 (or (not (eql type :lexical)) *index-lexical-variables*))
-        (index (walker-index walker) name section
-               (make-context-from-context context type :local local))))
+    (when section
+      (index (walker-index walker) name section
+             (update-context name context env)))
     name))
 
 @ Walking a function name has the slight complication that it might be either
@@ -5895,14 +6024,8 @@ in either case.
                       (context operator) env &key)
   (multiple-value-bind (name section) (symbol-provenance name)
     (when section
-      (multiple-value-bind (type local) (function-information name env)
-        (index (walker-index walker) name section
-               (make-context-from-context context
-                                          (if (and (not local)
-                                                   (generic-function-p name))
-                                              :generic-function
-                                              type)
-                                          :local local))))
+      (index (walker-index walker) name section
+             (update-context name context env)))
     name))
 
 (defmethod walk-name ((walker indexing-walker) (name cons) ;
@@ -5912,15 +6035,8 @@ in either case.
      (multiple-value-bind (symbol section) (symbol-provenance (cadr name))
        (let ((function-name `(setf ,symbol)))
          (when section
-           (multiple-value-bind (type local)
-               (function-information function-name env)
-             (if (and (not local) (generic-function-p function-name))
-                 (index (walker-index walker) symbol section
-                        (make-context-from-context context
-                                                   :generic-setf-function))
-                 (index (walker-index walker) symbol section
-                        (make-context-from-context context :setf-function ;
-                          :local (if type local (local-binding-p context)))))))
+           (index (walker-index walker) symbol section
+                  (update-context function-name context env)))
          function-name)))
     (t (warn "Invalid function name ~S." name)
        name)))
@@ -6091,10 +6207,9 @@ macro to pull off method qualifiers from a |defgeneric| form or a method
 description. Syntactically, the qualifiers are any non-list objects
 preceding the specialized \L-list.
 
-@<Define |pop-qualifiers| macro@>=
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defmacro pop-qualifiers (place)
-    `(loop until (listp (car ,place)) collect (pop ,place))))
+@l
+(defmacro pop-qualifiers (place)
+  `(loop until (listp (car ,place)) collect (pop ,place)))
 
 @ For |defgeneric| forms, we're interested in the name of the generic
 function being defined, the method combination type, and any methods that
