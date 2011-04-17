@@ -5219,26 +5219,29 @@ the walker classes defined in this program.
 
 (defmethod walk-atomic-form :before ;
     ((walker tracing-walker) form context env &key toplevel)
-  (format t "; walking~:[~; toplevel~] atomic form ~S ~S~@[ (~(~A~))~]~%"
-          toplevel form context
-          (and (symbolp form)
-               (eq context ':evaluated)
-               (variable-information form env))))
+  (declare (ignore env))
+  (format *trace-output*
+          "~&~@<; ~@;walking~:[~; toplevel~] atomic form ~S ~S~:>~%"
+          toplevel form context))
 
 (defmethod walk-compound-form :before ;
     ((walker tracing-walker) operator form env &key toplevel)
   (declare (ignore operator env))
-  (format t "~@<; ~@;walking~:[~; toplevel~] compound form ~W~:>~%"
+  (format *trace-output*
+          "~&~@<; ~@;walking~:[~; toplevel~] compound form ~W~:>~%"
           toplevel form))
 
 (defmethod walk-name :before ;
     ((walker tracing-walker) name context env)
-  (format t "; walking name ~S ~S~%" name context))
+  (declare (ignore env))
+  (format *trace-output*
+          "~&~@<; ~@;walking name ~S ~S~:>~%" name context))
 
 (defmethod walk-bindings :before ;
     ((walker tracing-walker) names context env &key declare)
-  (declare (ignore declare))
-  (format t "; walking bindings ~S ~S~%" names context))
+  (declare (ignore env declare))
+  (format *trace-output*
+          "~&~@<; ~@;walking bindings ~S ~S~:>~%" names context))
 
 @*Indexing. Having constructed our code walker, we can now use it to
 produce an index of the symbols in a web. By default, we'll say a symbol
