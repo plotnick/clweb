@@ -4030,7 +4030,14 @@ which we'll retrieve using |find-namespace-class|.
         context)))
 
 @ For function names, we need to check if the function is a generic function,
-then what type it has in the environment.
+then what type it has in the environment. If the name is being bound, it won't
+necessarily be in the environment yet, so we'll just return the given context.
+
+However, just because we don't find the name in the environment doesn't 
+mean it isn't there: neither SBCL, Allegro, nor~CCL correctly support
+looking up a function name of the form `(|setf| \<symbol>)' in an arbitrary
+lexical environment. We therefore special-case the non-atomic-function-name
+case, which really shouldn't be necessary.
 
 @l
 (defmethod update-context (name (context operator) env)
@@ -4039,10 +4046,13 @@ then what type it has in the environment.
         (make-context (etypecase name
                         (symbol 'generic-function-name)
                         (setf-function 'generic-setf-function-name)))
-        (make-context (find-namespace-class (etypecase name
-                                              (symbol (or type :function))
-                                              (setf-function :setf-function)))
-                      :local (or local (local-binding-p context))))))
+        (if (or type (not (symbolp name)))
+            (make-context (find-namespace-class
+                           (etypecase name
+                             (symbol type)
+                             (setf-function :setf-function)))
+                          :local (or local (local-binding-p context)))
+            context))))
 
 @ Now we have to define the function that handles the mapping between namespace
 names and classes. It's perfectly straightforward, and only looks imposing
@@ -5871,7 +5881,7 @@ useful on its own, especially for interactive testing.
 @l
 (defclass tracing-indexing-walker (tracing-walker indexing-walker) ())
 
-(defun walk-sections (walker sections env &key (verify-walk t) toplevel)
+(defun walk-sections (walker sections env &key verify-walk toplevel)
   (with-temporary-sections sections
     (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
           (mangled-code (tangle-code-for-indexing *sections*)))
@@ -5885,22 +5895,39 @@ useful on its own, especially for interactive testing.
                          "Walked form does not match original.")
             collect walked-form))))
 
+(defun test-indexing-walk (sections expected-entries env &key ;
+                           (verify-walk t) toplevel ;
+                           index-lexicals trace print)
+  (let* ((walker (make-instance (if trace
+                                    'tracing-indexing-walker
+                                    'indexing-walker)))
+         (*index-lexical-variables* index-lexicals)
+         (walked-sections (walk-sections walker sections env ;
+                                         :verify-walk verify-walk ;
+                                         :toplevel toplevel)))
+    (when print (pprint walked-sections))
+    (let ((entries (all-index-entries (walker-index walker))))
+      (when print (pprint entries))
+      (tree-equal entries expected-entries :test #'equal))))
+
+(defmacro with-unique-indexing-names (names &body body)
+  `(let* ((temp-package (make-package "INDEX-TEMP"))
+          ,@(loop for name in names ;
+                  collect `(,name (intern ,(string name) temp-package))))
+     (unwind-protect
+          (progn
+            (index-package temp-package)
+            ,@body)
+       (delete-package temp-package))))
+
 (defmacro define-indexing-test (&environment env name-and-options sections ;
                                 &rest expected-entries)
-  (destructuring-bind (name &key ;
-                       (verify-walk t) toplevel index-lexicals trace print)
+  (destructuring-bind (name &rest options &key aux &allow-other-keys) ;
       (ensure-list name-and-options)
+    (remf options :aux)
     `(deftest (index ,name)
-       (let ((walker (make-instance (if ,trace
-                                        'tracing-indexing-walker
-                                        'indexing-walker)))
-             (*index-lexical-variables* ,index-lexicals))
-         (walk-sections walker ',sections ,env ; 
-                        :verify-walk ,verify-walk ;
-                        :toplevel ,toplevel)
-         (let ((entries (all-index-entries (walker-index walker))))
-           ,@(when print '((print entries)))
-           (tree-equal entries ',expected-entries :test #'equal)))
+       (with-unique-indexing-names ,aux
+         (test-indexing-walk ,sections ',expected-entries ,env ,@options))
        t)))
 
 @ We have to override the walker's macro expansion function, since the
@@ -5948,7 +5975,9 @@ by the default method.
       (symbol-provenance (destructure-name name namespace))
     (let ((name (construct-name symbol name namespace)))
       (when section
-        (index index symbol section (update-context name namespace env) def))
+        (index index symbol section
+               (if def namespace (update-context name namespace env))
+               def))
       name)))
 
 (defmethod walk-name ((walker indexing-walker) name namespace env)
@@ -6014,13 +6043,13 @@ by the default method.
 
 @t@l
 (define-indexing-test (lexical-variable :index-lexicals t)
-  ((:section :code ((let ((x nil) (y nil) (z nil))))))
+  '((:section :code ((let ((x nil) (y nil) (z nil))))))
   ("X lexical variable" ((:def 0)))
   ("Y lexical variable" ((:def 0)))
   ("Z lexical variable" ((:def 0))))
 
 (define-indexing-test (symbol-macrolet :verify-walk nil)
-  ((:section :code ((symbol-macrolet ((foo :bar)) foo))))
+  '((:section :code ((symbol-macrolet ((foo :bar)) foo))))
   ("FOO local symbol macro" ((:def 0))))
 
 @t Note that this test assumes that the walker's global environment is the
@@ -6032,9 +6061,9 @@ same as the environment in which these tests are defined.
 (defconstant the-ultimate-answer 42)
 
 (define-indexing-test (variables :verify-walk nil)
-  ((:section :code (*super*))
-   (:section :code (bait))
-   (:section :code (the-ultimate-answer)))
+  '((:section :code (*super*))
+    (:section :code (bait))
+    (:section :code (the-ultimate-answer)))
   ("*SUPER* special variable" (0))
   ("BAIT symbol macro" (1))
   ("THE-ULTIMATE-ANSWER constant" (2)))
@@ -6045,18 +6074,18 @@ that the walker sees definitions in the current global environment.
 @l
 (defun square (x) (* x x))
 (define-indexing-test function
-  ((:section :code ((square 1))))
+  '((:section :code ((square 1))))
   ("SQUARE function" (0)))
 
 (defmacro frob-foo (foo) `(1+ (* ,foo 42)))
 (define-indexing-test (macro :verify-walk nil)
-  ((:section :code ((frob-foo 6))))
+  '((:section :code ((frob-foo 6))))
   ("FROB-FOO macro" (0)))
 
 @t @l
 (define-indexing-test function-name
-  ((:section :code ((flet ((foo (x) x)))))
-   (:section :code ((labels (((setf foo) (y x) y))))))
+  '((:section :code ((flet ((foo (x) x)))))
+    (:section :code ((labels (((setf foo) (y x) y))))))
   ("FOO local function" ((:def 0)))
   ("FOO local setf function" ((:def 1))))
 
@@ -6082,18 +6111,20 @@ the walk with the macro expansions so that we can pick up the definitions.
 
 @t@l
 (define-indexing-test (defun :verify-walk nil)
-  ((:section :code ((defun foo (x) x))))
+  '((:section :code ((defun foo (x) x))))
   ("FOO function" ((:def 0))))
 
-(define-indexing-test (define-compiler-macro :verify-walk nil :toplevel t)
-  ((:section :code ((define-compiler-macro compile-foo (&whole x) x))))
+(define-indexing-test (define-compiler-macro :verify-walk nil :toplevel t
+                                             :aux (compile-foo))
+  `((:section :code ((define-compiler-macro ,compile-foo (&whole x) x))))
   ("COMPILE-FOO compiler macro" ((:def 0))))
 
-(define-indexing-test (defmacro :verify-walk nil :toplevel t)
-  ((:section :code ((eval-when (:compile-toplevel)
-                      (defun twiddle (x) (* x 42)))))
-   (:section :code ((defmacro twiddle-foo (x) (twiddle x))))
-   (:section :code ((twiddle-foo 123))))
+(define-indexing-test (defmacro :verify-walk nil :toplevel t
+                                :aux (twiddle twiddle-foo))
+  `((:section :code ((eval-when (:compile-toplevel)
+                       (defun ,twiddle (x) (* x 42)))))
+    (:section :code ((defmacro ,twiddle-foo (x) (,twiddle x))))
+    (:section :code ((,twiddle-foo 123))))
   ("TWIDDLE function" (1 (:def 0)))
   ("TWIDDLE-FOO macro" (2 (:def 1))))
 
@@ -6111,9 +6142,10 @@ with |walk-atomic-form| as opposed to going through |walk-function-name|.
       ,@(walk-list walker (cddr form) env))))
 
 @t@l
-(define-indexing-test (symbol-macro :verify-walk nil :toplevel t)
-  ((:section :code ((define-symbol-macro foo-bar-baz (:bar :baz))))
-   (:section :code (foo-bar-baz)))
+(define-indexing-test (symbol-macro :verify-walk nil :toplevel t
+                                    :aux (foo-bar-baz))
+  `((:section :code ((define-symbol-macro ,foo-bar-baz (:bar :baz))))
+    (:section :code (,foo-bar-baz)))
   ("FOO-BAR-BAZ symbol macro" (1 (:def 0))))
 
 @ Structure definitions also get indexed, although we won't bother to
@@ -6133,8 +6165,8 @@ often pick up at least the constructor definitions that way.
 
 @t@l
 (define-indexing-test (defstruct :verify-walk nil)
-  ((:section :code ((defstruct foo)))
-   (:section :code ((defstruct (bar (:type list)) a b c))))
+  '((:section :code ((defstruct foo)))
+    (:section :code ((defstruct (bar (:type list)) a b c))))
   ("BAR structure" ((:def 1)))
   ("FOO structure" ((:def 0))))
 
@@ -6155,9 +6187,10 @@ expand, though, in order to get the |special| declarations.
   (define-indexing-defvar-walker defparameter))
 
 @t@l
-(define-indexing-test (defvar :verify-walk nil :toplevel t)
-  ((:section :code ((defvar *super* 450)))
-   (:section :code ((defparameter *duper* (1+ *super*)))))
+(define-indexing-test (defvar :verify-walk nil :toplevel t
+                              :aux (*super* *duper*))
+  `((:section :code ((defvar ,*super* 450)))
+    (:section :code ((defparameter ,*duper* (1+ ,*super*)))))
   ("*DUPER* special variable" ((:def 1)))
   ("*SUPER* special variable" (1 (:def 0))))
 
@@ -6175,8 +6208,9 @@ the walker for Allegro, but it's basically the same as above.
          env args))
 
 @t@l
-(define-indexing-test (defconstant :verify-walk nil :toplevel t)
-  ((:section :code ((defconstant el-gordo most-positive-fixnum))))
+(define-indexing-test (defconstant :verify-walk nil :toplevel t
+                                   :aux (el-gordo))
+  `((:section :code ((defconstant ,el-gordo most-positive-fixnum))))
   ("EL-GORDO constant" ((:def 0))))
 
 @ Now we'll turn to the various {\sc clos} forms. We'll start with a little
@@ -6200,7 +6234,7 @@ that information ourselves.
     `(,operator
       ,(note-generic-function
         (index-name (walker-index walker) function-name ;
-                    (make-context
+                    (make-context ;
                      (etypecase function-name
                        (symbol 'generic-function-name)
                        (setf-function 'generic-setf-function-name))) ;
@@ -6219,18 +6253,18 @@ that information ourselves.
   :generic-setf-function)
 
 @t@l
-(define-indexing-test defgeneric
-  ((:section :code ((defgeneric generic-foo (x y)
-                      (:documentation "foo")
-                      (:method-combination progn)
-                      (:method progn ((x t) y) x)
-                      (:method :around (x (y (eql 't))) y))))
-   (:section :code ((generic-foo 2 3)))
-   (:section :code ((defgeneric (setf generic-foo) (new x y)))))
-  ("GENERIC-FOO around method" ((:def 0)))
-  ("GENERIC-FOO generic function" (1 (:def 0)))
-  ("GENERIC-FOO generic setf function" ((:def 2)))
-  ("GENERIC-FOO progn method" ((:def 0))))
+(define-indexing-test (defgeneric :aux (foo))
+  `((:section :code ((defgeneric ,foo (x y)
+                       (:documentation "foo")
+                       (:method-combination progn)
+                       (:method progn ((x t) y) x)
+                       (:method :around (x (y (eql 't))) y))))
+    (:section :code ((,foo 2 3)))
+    (:section :code ((defgeneric (setf ,foo) (new x y)))))
+  ("FOO around method" ((:def 0)))
+  ("FOO generic function" (1 (:def 0)))
+  ("FOO generic setf function" ((:def 2)))
+  ("FOO progn method" ((:def 0))))
 
 @ To note that a function is a generic function, we'll stick a property on
 the function name's plist. (If it's a |setf| function, we'll use the cadr
@@ -6322,8 +6356,8 @@ a method description.
 
 @t@l
 (define-indexing-test defmethod
-  ((:section :code ((defmethod add (x y) (+ x y))))
-   (:section :code ((defmethod add :before (x y)))))
+  '((:section :code ((defmethod add (x y) (+ x y))))
+    (:section :code ((defmethod add :before (x y)))))
   ("ADD before method" ((:def 1)))
   ("ADD primary method" ((:def 0))))
 
@@ -6352,11 +6386,12 @@ class names, super-classes, and~accessor methods.
   (define-defclass-walker define-condition condition-class-name))
 
 @t@l
-(define-indexing-test (defclass :verify-walk nil)
-  ((:section :code ((defclass foo ()
-                      ((a :reader foo-a1 :reader foo-a2)))))
-   (:section :code ((define-condition bar ()
-                      ((b :accessor foo-b))))))
+(define-indexing-test (defclass :verify-walk nil
+                                :aux (foo bar a b foo-a1 foo-a2 foo-b))
+  `((:section :code ((defclass ,foo ()
+                       ((,a :reader ,foo-a1 :reader ,foo-a2)))))
+    (:section :code ((define-condition ,bar ()
+                       ((,b :accessor ,foo-b))))))
   ("A slot" ((:def 0)))
   ("B slot" ((:def 1)))
   ("BAR condition class" ((:def 1)))
@@ -6416,9 +6451,10 @@ method combination types. We'll skip the expansion.
   ,@(walk-list walker (cddr form) env))
 
 @t@l
-(define-indexing-test (define-method-combination :verify-walk nil)
-  ((:section :code ((define-method-combination foo)))
-   (:section :code ((defgeneric generic-foo () (:method-combination foo)))))
+(define-indexing-test (define-method-combination :verify-walk nil
+                                                 :aux (foo generic-foo))
+  `((:section :code ((define-method-combination ,foo)))
+    (:section :code ((defgeneric ,generic-foo () (:method-combination ,foo)))))
   ("FOO method combination" (1 (:def 0)))
   ("GENERIC-FOO generic function" ((:def 1))))
 
@@ -6712,8 +6748,8 @@ want in this case.
 @l
 #-(and)
 (define-indexing-test macro-character
-  ((:section :code ((set-macro-character #\! #'read-bang)))
-   (:section :code ((set-dispatch-macro-character #\@ #\! #'read-at-bang))))
+  '((:section :code ((set-macro-character #\! #'read-bang)))
+    (:section :code ((set-dispatch-macro-character #\@ #\! #'read-at-bang))))
   ("!" ((:def 0)))
   ("@ !" ((:def 1))))
 
