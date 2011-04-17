@@ -4280,6 +4280,7 @@ environment.
 @l
 (defmethod walk-bindings ((walker walker) names (namespace namespace)
                           env &key declare)
+  (declare (ignore declare))
   (values (mapcar (lambda (name) (walk-name walker name namespace env)) names)
           env))
 
@@ -4350,6 +4351,7 @@ is given. It returns |t|.
 (define-special-form-walker ensure-toplevel ((walker test-walker) form env ;
                                              &key toplevel)
   (destructuring-bind (operator &optional (ensure-toplevel t)) form
+    (declare (ignore operator))
     (assert (if ensure-toplevel toplevel (not toplevel))
             (form ensure-toplevel toplevel)
             "~:[At~;Not at~] top level." ensure-toplevel)
@@ -4825,6 +4827,7 @@ the parameters found therein.
 @ @<Extract the required...@>=
 (flet ((walk-var (spec &aux (context (make-context 'variable-name :local t)))
          (flet ((walk-binding (x &aux name)
+                  (declare (ignorable name)) ; Allegro thinks this is ignored
                   (multiple-value-setq (name env)
                     (walk-binding walker x context env :declare decls))))
            (etypecase spec
@@ -5727,6 +5730,7 @@ is {\it not\/} re-initialized on each run.
 @ @l
 (defmethod index ((index index) name section (context lexical-variable-name) ;
                   &optional def)
+  (declare (ignore name section def))
   (when *index-lexical-variables*
     (call-next-method)))
 
@@ -5887,7 +5891,7 @@ useful on its own, especially for interactive testing.
           (mangled-code (tangle-code-for-indexing *sections*)))
       (loop for form in tangled-code
             and mangled-form in mangled-code
-            as walked-form = (walk-form walker mangled-form nil ;
+            as walked-form = (walk-form walker mangled-form env ;
                                         :toplevel toplevel)
             when verify-walk
               do (assert (tree-equal walked-form form)
