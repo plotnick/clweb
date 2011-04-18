@@ -4708,7 +4708,7 @@ but we'll leave any |&environment| variable to be picked up later.
 so we just push it onto the new \L-list and prepare for the next parameter.
 
 @<Process |arg| as an environment parameter@>=
-(push (walk-var (pop lambda-list)) new-lambda-list)
+(push (walk-var arg) new-lambda-list)
 (when (consp lambda-list)
   (update-state (car lambda-list)))
 
