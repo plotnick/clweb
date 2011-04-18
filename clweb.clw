@@ -5817,6 +5817,16 @@ form without having to apply a predicate first.
   (symbol-provenance :foo)
   :foo)
 
+@ To replace all of the referring symbols in a form, we'll use the following
+simple function.
+
+@l
+(defun unsubstitute-symbols (x)
+  (typecase x
+    (symbol (symbol-provenance x))
+    (atom x)
+    (t (maptree #'unsubstitute-symbols x))))
+
 @ To get referring symbols in the tangled code, we'll use an |:around|
 method on |section-code| that conditions on a special variable,
 |*indexing*|, that we'll bind to true while we're tangling for the
@@ -6113,12 +6123,8 @@ that the walker sees definitions in the current global environment.
 (defmethod walk-compound-form ;
     ((walker indexing-walker) (operator (eql 'quote)) form env &key)
   (declare (ignore env))
-  `(quote
-    ,(typecase (cadr form)
-       (symbol (symbol-provenance (cadr form)))
-       (cons (maptree (lambda (x) (if (symbolp x) (symbol-provenance x) x))
-                      (cadr form)))
-       (t (cadr form)))))
+  `(,(car form)
+    ,(unsubstitute-symbols (cadr form))))
 
 @t@l
 (define-indexing-test quoted-form
