@@ -3945,10 +3945,12 @@ name.
 @l
 (defmacro defnamespace (class-name (&optional super) namespace-name &optional ;
                         slot-specs)
-  (setf (find-namespace-class namespace-name) class-name)
-  `(defclass ,class-name ,(if super `(,super) '(namespace))
-     ((name :initform ',namespace-name :allocation :class)
-      ,@slot-specs)))
+  `(progn
+     (defclass ,class-name ,(if super `(,super) '(namespace))
+       ((name :initform ',namespace-name :allocation :class)
+        ,@slot-specs))
+     (setf (find-namespace-class ',namespace-name)
+           (find-class ',class-name))))
 
 @<Define namespace classes@>
 
@@ -4046,15 +4048,13 @@ case, which really shouldn't be necessary.
 
 @ Now we have to define the function that handles the mapping between namespace
 names and classes. It's perfectly straightforward, and only looks imposing
-because we've added a bit of error checking and recovery. The |setf| function
-needs to be defined at compile-time because it's used in the |defnamespace|
-macro.
+because we've added a bit of error checking and recovery.
 
 @<Define |find-namespace-class|...@>=
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defvar *namespace-classes* (make-hash-table :test 'eq))
-  (defun (setf find-namespace-class) (class namespace-name)
-    (setf (gethash namespace-name *namespace-classes*) class)))
+(defvar *namespace-classes* (make-hash-table :test 'eq))
+
+(defun (setf find-namespace-class) (class namespace-name)
+  (setf (gethash namespace-name *namespace-classes*) class))
 
 (defun find-namespace-class (namespace-name)
   (restart-case
