@@ -3921,16 +3921,6 @@ makes sense for those namespaces.
    (local :reader local-binding-p :initarg :local :type boolean))
   (:default-initargs :local nil))
 
-(defclass binding ()
-  ((local :reader local-binding-p :initarg :local :type boolean)))
-(defclass lexical-binding (binding)
-  ()
-  (:default-initargs :local t))
-(defclass global-binding (lexical-binding)
-  ((local :type null))
-  (:default-initargs :local nil))
-(defclass dynamic-binding (binding) ())
-
 @t@l
 (defmethod print-object ((x namespace) stream)
   (print-unreadable-object (x stream :type t :identity t)
