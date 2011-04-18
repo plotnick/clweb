@@ -155,15 +155,29 @@ useful for functions that accept a list desginator.
 (defun ensure-list (object)
   (if (listp object) object (list object)))
 
+@ This auxiliary function---shamelessly stolen from \cltl, Appendix~C.---is
+like |mapcar| but has two extra purposes: (1)~it handles dotted lists; (2)~it
+tries to make the result share with the argument |x| as much as possible.
+
+@l
+(defun maptree (fn x)
+  (if (atom x)
+      (funcall fn x)
+      (let ((a (funcall fn (car x)))
+            (d (maptree fn (cdr x))))
+        (if (and (eql a (car x)) (eql d (cdr x)))
+            x
+            (cons a d)))))
+
 @ And here's one taken from {\sc pcl}: |mapappend| is like |mapcar| except
 that the results are appended together.
 
 @l
-(defun mapappend (function &rest args)
+(defun mapappend (fn &rest args)
   (if (some #'null args)
       ()
-      (append (apply function (mapcar #'car args))
-              (apply #'mapappend function (mapcar #'cdr args)))))
+      (append (apply fn (mapcar #'car args))
+              (apply #'mapappend fn (mapcar #'cdr args)))))
 
 @ Sometimes, when we're accumulating text, we won't want to bother with
 empty strings. In such cases we'll use the following macro, which is like
@@ -6091,6 +6105,25 @@ that the walker sees definitions in the current global environment.
     (:section :code ((labels (((setf foo) (y x) y))))))
   ("FOO local function" ((:def 0)))
   ("FOO local setf function" ((:def 1))))
+
+@ It's important that we replace even quoted referring symbols.
+@^referring symbols@>
+
+@l
+(defmethod walk-compound-form ;
+    ((walker indexing-walker) (operator (eql 'quote)) form env &key)
+  (declare (ignore env))
+  `(quote
+    ,(typecase (cadr form)
+       (symbol (symbol-provenance (cadr form)))
+       (cons (maptree (lambda (x) (if (symbolp x) (symbol-provenance x) x))
+                      (cadr form)))
+       (t (cadr form)))))
+
+@t@l
+(define-indexing-test quoted-form
+  '((:section :code ((quote foo)))
+    (:section :code ((quote (foo bar))))))
 
 @ We'll treat |defun|, |defmacro|, and~|define-compiler-macro| as special
 forms, since otherwise they'll get macro-expanded before we get a chance
