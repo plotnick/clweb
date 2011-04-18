@@ -6379,7 +6379,7 @@ class names, super-classes, and~accessor methods.
                         ,(index-name (walker-index walker) name namespace env t)
                         ,(mapcar (lambda (super) ;
                                    (index-name (walker-index walker) super ;
-                                               namespace env t))
+                                               namespace env nil))
                                  supers)
                         ,(mapcar (lambda (spec) ;
                                    (walk-slot-specifier walker spec env)) ;
