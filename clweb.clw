@@ -4670,13 +4670,13 @@ object containing bindings for all of the parameters found therein.
                              env
                              :declare decls)))
            (update-state (keyword)
-             (setq state (ecase keyword
-                           ((nil) state)
+             (setq state (case keyword
                            (&optional :optvars)
                            ((&rest &body) :restvar)
                            (&key :keyvars)
                            (&aux :auxvars)
-                           (&environment :envvar))))
+                           (&environment :envvar)
+                           (t state))))
            (maybe-destructure (var/pattern)
              (if (consp var/pattern)
                  (multiple-value-setq (var/pattern env)
@@ -4751,28 +4751,24 @@ form and the pattern (if any) need to be walked in an environment
            new-lambda-list))))
 
 @ @<Process |arg| as a keyword parameter@>=
-(cond ((eql arg '&allow-other-keys)
-       (push (pop lambda-list) new-lambda-list)
-       (update-state (car lambda-list)))
-      (t
-       (etypecase arg
-         (symbol @<Process the symbol in |arg| as a parameter@>)
-         (cons
-          (destructuring-bind (var/kv &optional init-form supplied-p-parameter) arg
-            (when init-form
-              (setq init-form (walk-form walker init-form env)))
-            (cond ((consp var/kv)
-                   (destructuring-bind (keyword-name var/pattern) var/kv
-                     (setq var/pattern (maybe-destructure var/pattern))
-                     (setq var/kv (list (walk-atomic-form walker keyword-name ;
-                                                          nil env)
-                                        var/pattern))))
-                  (t (setq var/kv (walk-var var/kv))))
-            (push (nconc (list var/kv)
-                         (and init-form (list init-form))
-                         (and supplied-p-parameter ;
-                              (list (walk-var supplied-p-parameter))))
-                  new-lambda-list))))))
+(etypecase arg
+  (symbol @<Process the symbol in |arg| as a parameter@>)
+  (cons
+   (destructuring-bind (var/kv &optional init-form supplied-p-parameter) arg
+     (when init-form
+       (setq init-form (walk-form walker init-form env)))
+     (cond ((consp var/kv)
+            (destructuring-bind (keyword-name var/pattern) var/kv
+              (setq var/pattern (maybe-destructure var/pattern))
+              (setq var/kv (list (walk-atomic-form walker keyword-name ;
+                                                   nil env)
+                                 var/pattern))))
+           (t (setq var/kv (walk-var var/kv))))
+     (push (nconc (list var/kv)
+                  (and init-form (list init-form))
+                  (and supplied-p-parameter ;
+                       (list (walk-var supplied-p-parameter))))
+           new-lambda-list))))
 
 @ @<Process |arg| as an auxiliary variable@>=
 (etypecase arg
@@ -4910,18 +4906,20 @@ otherwise, it signals an error.
            &optional (o (+ (check-binding o :variable nil)
                            (check-binding x :variable :special)
                            (check-binding y :variable :lexical)))
+           &rest args
            &key ((secret k) 1 k-s-p)
                 (k2 (check-binding k-s-p :variable :lexical))
-                k3
-           &rest args &aux w (z (if k-s-p o x)))
+                k3 &allow-other-keys
+           &aux w (z (if k-s-p o x)))
     (declare (special x))
     (check-binding x :variable :special)
     (check-binding (y z o k k-s-p k2 k3 args w z) :variable :lexical)
     (check-binding secret :variable nil))
   (lambda (x y
            &optional (o (+ o x y))
-           &key ((secret k) 1 k-s-p) (k2 k-s-p) k3
-           &rest args &aux w (z (if k-s-p o x)))
+           &rest args
+           &key ((secret k) 1 k-s-p) (k2 k-s-p) k3 &allow-other-keys
+           &aux w (z (if k-s-p o x)))
     (declare (special x))
     x (y z o k k-s-p k2 k3 args w z) secret))
 
