@@ -3978,7 +3978,7 @@ references.
 (defnamespace function-name (operator) :function)
 (defnamespace setf-function-name (function-name) :setf-function)
 (defnamespace macro-name (operator) :macro)
-(defnamespace macro-definition (operator) :macro)
+(defnamespace macro-definition () :macro)
 (defnamespace compiler-macro-name (operator) :compiler-macro)
 (defnamespace special-operator (operator) :special-form)
 
@@ -5526,6 +5526,9 @@ functions. We'll append the suffix ``variable'' to both.
 (defmethod heading-name :prefix ((namespace symbol-macro-name))
   (and (local-binding-p namespace) "local"))
 
+(defmethod heading-name :prefix ((namespace macro-definition))
+  (and (local-binding-p namespace) "local"))
+
 @t@l
 (deftest function-heading-name
   (values (heading-name (make-context 'function-name))
@@ -6016,7 +6019,8 @@ by the default method.
 @ @l
 (deftype setf-function () '(cons (eql setf) (cons symbol null)))
 
-(defmethod destructure-name (name (namespace namespace))
+(defmethod destructure-name (name namespace)
+  (declare (ignore namespace))
   name)
 
 (defmethod destructure-name (name (namespace function-name))
@@ -6031,8 +6035,8 @@ by the default method.
   (car def))
 
 @ @l
-(defmethod construct-name (symbol name (namespace namespace))
-  (declare (ignore name))
+(defmethod construct-name (symbol name namespace)
+  (declare (ignore name namespace))
   symbol)
 
 (defmethod construct-name (symbol name (namespace function-name))
@@ -6052,6 +6056,10 @@ by the default method.
   ("X lexical variable" ((:def 0)))
   ("Y lexical variable" ((:def 0)))
   ("Z lexical variable" ((:def 0))))
+
+(define-indexing-test (macrolet :verify-walk nil)
+  '((:section :code ((macrolet ((frob (x) `(* ,x 42))) (frob 6)))))
+  ("FROB local macro" ((:def 0))))
 
 (define-indexing-test (symbol-macrolet :verify-walk nil)
   '((:section :code ((symbol-macrolet ((foo :bar)) foo))))

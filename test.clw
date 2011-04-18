@@ -149,4 +149,11 @@ newlines and such are ignored:
 
 (define-bear-class grizzly)
 
+@ @l
+(macrolet ((gently-frob (x) `(1+ ,x)))
+  @<A lightly frobbed prime number@>)
+
+@ @<A lightly...@>=
+(gently-frob 27)
+
 @*Index.
