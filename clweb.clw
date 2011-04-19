@@ -1825,7 +1825,7 @@ syntax, as recommended (but not required) by section~2.4.6.1 of the
 
 (set-tangle-dispatch 'comma-form
   (lambda (stream obj) ;
-    (format stream "~@[~C~],~W" (comma-modifier (car obj)) (cadr obj))))
+    (format stream ",~@[~C~]~W" (comma-modifier (car obj)) (cadr obj))))
 
 @ Many pretty-printing routines aren't very careful about atomic {\it vs.\/}
 non-atomic forms, which can cause them to print comma forms as raw lists.
