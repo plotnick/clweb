@@ -3614,8 +3614,11 @@ pretty printer uses, but made concrete here. A logical block defines a
 left edge for a list of forms, some of which may be nested logical blocks.
 
 @l
-(defstruct (logical-block (:constructor make-logical-block (list)))
-  list)
+(defclass logical-block ()
+  ((list :reader logical-block-list :initarg :list)))
+
+(defun make-logical-block (list)
+  (make-instance 'logical-block :list list))
 
 @ The analysis of the indentation is performed by a recursive |labels|
 routine, to which we will come in a moment. That routine operates on an
