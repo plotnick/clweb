@@ -3242,8 +3242,8 @@ currently weaving the tests.
                        weaving-tests verbose print external-format)
   (flet ((weave (object stream)
            (write object
-                  :stream stream ;
-                  :case :downcase :escape nil :level nil
+                  :stream stream :readably t
+                  :case :downcase
                   :pretty t :pprint-dispatch *weave-pprint-dispatch* ;
                   :right-margin 1000)))
     (macrolet ((with-output-file ((stream filespec) &body body)
