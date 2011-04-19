@@ -1818,24 +1818,24 @@ syntax, as recommended (but not required) by section~2.4.6.1 of the
 
 @l
 (set-tangle-dispatch 'backquote-form
-  (lambda (stream obj)
+  (lambda (stream obj) ;
     (format stream "`~W" (cadr obj))))
 
 (set-tangle-dispatch 'splicing-comma-form
-  (lambda (stream obj)
+  (lambda (stream obj) ;
     (format stream ",~C~W" (comma-modifier (car obj)) (cadr obj)))
   1)
 
 (set-tangle-dispatch 'comma-form
-  (lambda (stream obj)
+  (lambda (stream obj) ;
     (format stream ",~W" (cadr obj))))
 
 @ Many pretty-printing routines aren't very careful about atomic {\it vs.\/}
 non-atomic forms, which can cause them to print comma forms as raw lists.
-That's extremely bad, because it means that our uninterned comma-denoting
-symbols would wind up in the tangled output. This isn't just a problem for
-\CLWEB: try evaluating |(pprint '`(let ,bindings))| at your {\sc repl}
-and see what happens.
+That's extremely bad, because it means that our comma-denoting objects
+would wind up in the tangled output. This isn't just a problem for \CLWEB:
+try evaluating |(pprint '`(let ,bindings))| at your {\sc repl} and see what
+happens.
 
 The work-around is to override the offending entries. These routines are
 probably incomplete, but it's a start. The format strings are adapted from
@@ -1846,8 +1846,7 @@ treatment, so we may as well do that here, too.
 (defun careful-pprint-fill (stream list &rest args)
   (declare (ignore args))
   (typecase list
-    ((or backquote-form comma-form splicing-comma-form)
-     (pprint list stream))
+    ((or backquote-form comma-form splicing-comma-form) (pprint list stream))
     (t (pprint-fill stream list t))))
 
 (defun pprint-defun-like (stream list &rest args)
@@ -1870,7 +1869,7 @@ treatment, so we may as well do that here, too.
           list))
 
 (deftype defun-like () '(cons (member defun defmacro deftype progv
-                                      defparameter defvar defconstant
+                                      defparameter defvar defconstant ;
                                       define-setf-expander)))
 (set-tangle-dispatch 'defun-like #'pprint-defun-like)
 (set-weave-dispatch 'defun-like #'pprint-defun-like)
