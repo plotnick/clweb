@@ -6476,8 +6476,6 @@ class names, super-classes, and~accessor methods.
                        ((,a :reader ,foo-a1 :reader ,foo-a2)))))
     (:section :code ((define-condition ,bar ()
                        ((,b :accessor ,foo-b))))))
-  ("A slot" ((:def 0)))
-  ("B slot" ((:def 1)))
   ("BAR condition class" ((:def 1)))
   ("FOO class" ((:def 0)))
   ("FOO-A1 reader method" ((:def 0)))
