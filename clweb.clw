@@ -5481,18 +5481,12 @@ program.
   (print-unreadable-object (heading stream :type t :identity nil)
     (format stream "\"~A\"" (heading-name heading))))
 
-@ We'll define a set of heading classes to be used as sub-headings that
-represent the type of the object referred to by the primary heading. The
-complication here is that we want to make it simple to add {\it modifiers\/}
-like `local' or `generic' to a base type like `function', and to have those
-modifiers become part of the name in a predictable way. In particular, the
-order is important: we don't want to end up with a heading like `setf local
-function' when we mean `local setf function'.
-
-We'll build up a few pieces of machinery that let us define those classes
-and their fancy names in a nice, declarative way. The first is a custom
-method combination that joins together the results of each applicable
-method into one delimited string. We'll use this for |heading-name|.
+@ When we build entries for Lisp objects, we'll use the walker's namespace
+objects as sub-headings. In order to make creating nice names from those
+objects easier, we'll use a custom method combination that joins together
+the results of each applicable method into one delimited string. This turns
+out to be generally convenient for heading names of all kinds, so we'll use
+it for |heading-name|.
 
 @<Define |heading-name|...@>=
 (defun join-strings (strings &optional (delimiter #\Space) &aux
@@ -5544,10 +5538,8 @@ method into one delimited string. We'll use this for |heading-name|.
   "big, fat, juicy, steak, yum!"
   "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan")
 
-@ We'll use the namespace objects passed down from the walker as type
-headings---i.e., headings that describe the type of the object named
-by the primary heading. Every namespace has a name associated with it,
-and we'll derive our heading name from that.
+@ Every namespace has a name associated with it, and we'll derive our
+primary heading name from that.
 
 @l
 (defmethod heading-name ((namespace namespace))
