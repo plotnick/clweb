@@ -1652,27 +1652,33 @@ code and the pretty-printing routines.
 
 @l
 (defvar *backquote* (make-symbol "BACKQUOTE"))
-(defvar *comma* (make-symbol "COMMA"))
-(defvar *comma-atsign* (make-symbol "COMMA-ATSIGN"))
-(defvar *comma-dot* (make-symbol "COMMA-DOT"))
-(defvar *bq-tokens* (list *backquote* *comma* *comma-atsign* *comma-dot*))
-
 (defun backquotep (object) (eq object *backquote*))
-(defun commap (object) (eq object *comma*))
-(defun comma-atsign-p (object) (eq object *comma-atsign*))
-(defun comma-dot-p (object) (eq object *comma-dot*))
+(deftype backquote-form () '(cons (satisfies backquotep)))
 
-(deftype backquote () '(cons (satisfies backquotep)))
-(deftype comma () '(cons (satisfies commap)))
-(deftype comma-atsign () '(cons (satisfies comma-atsign-p)))
-(deftype comma-dot () '(cons (satisfies comma-dot-p)))
+(defclass comma () ())
+(defclass splicing-comma (comma)
+  ((modifier :reader comma-modifier :initarg :modifier :type character)))
 
-@ @l
-(defun comma-form (comma)
-  (unless (null (cddr comma))
-    (cerror "Ignore the extra forms."
-            "Tried to unquote more than one form with comma."))
-  (cadr comma))
+(defun make-comma (&optional modifier)
+  (if modifier
+      (make-instance 'splicing-comma :modifier modifier)
+      (make-instance 'comma)))
+
+(deftype comma-form () '(cons comma))
+(deftype splicing-comma-form () '(cons splicing-comma))
+
+@t These are just for debugging. It's important for safety that commas be
+printed using the unreadable object syntax.
+
+@l
+(defmethod print-object ((object comma) stream)
+  (print-unreadable-object (object stream)
+    (write-char #\, stream)))
+
+(defmethod print-object ((object splicing-comma) stream)
+  (print-unreadable-object (object stream)
+    (write-char #\, stream)
+    (write-char (comma-modifier object) stream)))
 
 @ The reader macro functions for backquote and comma are straightforward.
 
@@ -1687,11 +1693,9 @@ code and the pretty-printing routines.
     (lambda (stream char)
       (declare (ignore char))
       (case (peek-char nil stream t nil t)
-        (#\@ (read-char stream t nil t)
-             (list *comma-atsign* (read stream t nil t)))
-        (#\. (read-char stream t nil t)
-             (list *comma-dot* (read stream t nil t)))
-        (otherwise (list *comma* (read stream t nil t)))))
+        ((#\@ #\.) (list (make-comma (read-char stream t nil t))
+                         (read stream t nil t)))
+        (otherwise (list (make-comma) (read stream t nil t)))))
     nil (readtable-for-mode mode)))
 
 @ |#:backquote| is an ordinary macro (not a read-macro) that processes the
@@ -1709,10 +1713,10 @@ not for uninterned symbols.
   (typecase x
     (vector `(apply #'vector ,(bq-process (coerce x 'list))))
     (atom `(quote ,x))
-    (backquote (bq-process (bq-process (cadr x))))
-    (comma (comma-form x))
-    (comma-atsign (error ",@~S after `" (comma-form x)))
-    (comma-dot (error ",.~S after `" (comma-form x)))
+    (backquote-form (bq-process (bq-process (cadr x))))
+    (splicing-comma-form (error ",~C~S after `" ;
+                                (comma-modifier (car x)) (cadr x)))
+    (comma-form (cadr x))
     (t @<Process the list |x| for backquotes and commas@>)))
 
 @ We do one simplification here which, although not strictly in accordance
@@ -1731,9 +1735,11 @@ overly simplistic.
     ((atom p)
      (cons 'append (nreconc q (and p (list (list 'quote p))))))
   (typecase p
-    (comma (return (cons 'append (nreconc q (list (comma-form p))))))
-    (comma-atsign (error "Dotted ,@~S" (comma-form p)))
-    (comma-dot (error "Dotted ,.~S" (comma-form p)))))
+    (splicing-comma-form
+     (error "Dotted ,~C~S" (comma-modifier (car p)) (cadr p)))
+    (comma-form
+     (unless (null (cddr p)) (error "Malformed ,~S" p))
+     (return (cons 'append (nreconc q (list (cadr p))))))))
 
 @ This implements the bracket operator of the formal rules.
 
@@ -1741,9 +1747,8 @@ overly simplistic.
 (defun bracket (x)
   (typecase x
     (atom `(list ,(bq-process x)))
-    (comma `(list ,(comma-form x)))
-    (comma-atsign (comma-form x))
-    (comma-dot (comma-form x))
+    (splicing-comma-form (cadr x))
+    (comma-form `(list ,(cadr x)))
     (t `(list ,(bq-process x)))))
 
 @t The first two tests come from page~528 of~\cltl; the third comes from
@@ -1793,25 +1798,18 @@ Appendix~C.
   #(1 2 3))
 
 @t Test the interaction between backquote, comma, and named sections.
+If a named section with more than one form (like `\<quux>') follows a
+comma, all but the first are silently ignored.
 
 @l
 (deftest (bq named-section)
   (with-sample-named-sections
     (values (eval (tangle (read-form-from-string "`(, @<foo@>)")))
-            (eval (tangle (read-form-from-string "`(,@ @<foo@>)")))))
+            (eval (tangle (read-form-from-string "`(,@ @<foo@>)")))
+            (eval (tangle (read-form-from-string "`(,@ @<quux@>)")))))
   (:foo)
-  :foo)
-
-(deftest (bq too-many-forms)
-  (let ((*named-sections* *sample-named-sections*)
-        (handled nil))
-    (handler-bind ((error (lambda (condition)
-                            (setq handled t)
-                            (continue condition))))
-      (values (eval (tangle (read-form-from-string "`(,@ @<quux@>)")))
-              handled)))
-  :quux
-  t)
+  :foo
+  :quux)
 
 @ During tangling, we print backquotes and commas using the backquote
 syntax, as recommended (but not required) by section~2.4.6.1 of the
@@ -1819,21 +1817,18 @@ syntax, as recommended (but not required) by section~2.4.6.1 of the
 @^\ansi\ Common Lisp@>
 
 @l
-(set-tangle-dispatch 'backquote
+(set-tangle-dispatch 'backquote-form
   (lambda (stream obj)
     (format stream "`~W" (cadr obj))))
 
-(set-tangle-dispatch 'comma
+(set-tangle-dispatch 'splicing-comma-form
   (lambda (stream obj)
-    (format stream ",~W" (comma-form obj))))
+    (format stream ",~C~W" (comma-modifier (car obj)) (cadr obj)))
+  1)
 
-(set-tangle-dispatch 'comma-atsign
+(set-tangle-dispatch 'comma-form
   (lambda (stream obj)
-    (format stream ",@~W" (comma-form obj))))
-
-(set-tangle-dispatch 'comma-dot
-  (lambda (stream obj)
-    (format stream ",.~W" (comma-form obj))))
+    (format stream ",~W" (cadr obj))))
 
 @ Many pretty-printing routines aren't very careful about atomic {\it vs.\/}
 non-atomic forms, which can cause them to print comma forms as raw lists.
@@ -1850,9 +1845,10 @@ so we may as well do that here, too.
 @l
 (defun careful-pprint-fill (stream list &rest args)
   (declare (ignore args))
-  (if (and (consp list) (member (car list) *bq-tokens*))
-      (write list :stream stream)
-      (pprint-fill stream list t)))
+  (typecase list
+    ((or backquote-form comma-form splicing-comma-form)
+     (write list :stream stream))
+    (t (pprint-fill stream list t))))
 
 (defun pprint-defun-like (stream list &rest args)
   (declare (ignore args))
@@ -3060,7 +3056,7 @@ of the tests file by supplying |:tests-file nil|.
                      input-file)
              (let ((*evaluating* nil)
                    (*print-pprint-dispatch* *tangle-pprint-dispatch*)
-                   (*print-level* nil))
+                   (*print-readably* t))
                @<Output a form that sets the source pathname@>
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
@@ -3795,21 +3791,17 @@ which see.
             (read-TeX-from-string (comment-text obj)))))
 
 @ @l
-(set-weave-dispatch 'backquote
+(set-weave-dispatch 'backquote-form
   (lambda (stream obj)
     (format stream "\\`~W" (cadr obj))))
 
-(set-weave-dispatch 'comma
+(set-weave-dispatch 'splicing-comma-form
   (lambda (stream obj)
-    (format stream "\\CO{}~W" (comma-form obj))))
+    (format stream "\\CO{@}~W" (comma-modifier (car obj)) (cadr obj))))
 
-(set-weave-dispatch 'comma-atsign
+(set-weave-dispatch 'comma-form
   (lambda (stream obj)
-    (format stream "\\CO{@}~W" (comma-form obj))))
-
-(set-weave-dispatch 'comma-dot
-  (lambda (stream obj)
-    (format stream "\\CO{.}~W" (comma-form obj))))
+    (format stream "\\CO{}~W" (cadr obj))))
 
 @ @l
 (set-weave-dispatch 'function-marker
