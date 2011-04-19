@@ -1834,20 +1834,20 @@ syntax, as recommended (but not required) by section~2.4.6.1 of the
 non-atomic forms, which can cause them to print comma forms as raw lists.
 That's extremely bad, because it means that our uninterned comma-denoting
 symbols would wind up in the tangled output. This isn't just a problem for
-\CLWEB: try evaluating |(pprint '`(let ,bindings body))| at your {\sc repl}
+\CLWEB: try evaluating |(pprint '`(let ,bindings))| at your {\sc repl}
 and see what happens.
 
-The work-around is to override the offending entries. This list is probably
-incomplete, but it's a start. The format strings are adapted from those
-found in SBCL's \.{pprint.lisp}. The weaver needs exactly the same treatment,
-so we may as well do that here, too.
+The work-around is to override the offending entries. These routines are
+probably incomplete, but it's a start. The format strings are adapted from
+those found in SBCL's \.{pprint.lisp}. The weaver needs exactly the same
+treatment, so we may as well do that here, too.
 
 @l
 (defun careful-pprint-fill (stream list &rest args)
   (declare (ignore args))
   (typecase list
     ((or backquote-form comma-form splicing-comma-form)
-     (write list :stream stream))
+     (pprint list stream))
     (t (pprint-fill stream list t))))
 
 (defun pprint-defun-like (stream list &rest args)
@@ -1859,13 +1859,14 @@ so we may as well do that here, too.
 (defun pprint-let (stream list &rest args)
   (declare (ignore args))
   (format stream
-          "~:<~^~W~^ ~@_~/clweb::careful-pprint-fill/~1I~:@_~@{~W~^ ~_~}~:>"
+          "~:<~^~W~^ ~@_~/clweb::careful-pprint-fill/~^~1I ~:_~@{~W~^ ~_~}~:>"
           list))
 
 (defun pprint-flet (stream list &rest args)
   (declare (ignore args))
   (format stream
-          "~:<~^~W~^ ~@_~:<~@{~:<~^~W~^~3I ~:_~/clweb::careful-pprint-fill/~1I~:@_~@{~W~^ ~_~}~:>~^ ~_~}~:>~1I~@:_~@{~W~^ ~_~}~:>"
+          "~:<~^~W~^ ~@_~:<~@{~:<~^~W~^~3I ~:_~/clweb::careful-pprint-fill/~
+           ~1I ~:_~@{~W~^ ~_~}~:>~^ ~_~}~:>~^~1I ~:_~@{~W~^ ~_~}~:>"
           list))
 
 (deftype defun-like () '(cons (member defun defmacro deftype progv
