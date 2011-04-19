@@ -5782,14 +5782,18 @@ is {\it not\/} re-initialized on each run.
   (when *index-lexical-variables*
     (call-next-method)))
 
-@ We don't currently bother indexing block or tag names.
+@ There are a few kinds of names that we walk but don't currently bother
+indexing.
 
 @l
-(defmethod index ((index index) name section (context block-name) &optional def)
-  (declare (ignore name section def)))
+(defmacro dont-index (namespace)
+  `(defmethod index ((index index) name section (context ,namespace) ;
+                     &optional def)
+     (declare (ignore name section def))))
 
-(defmethod index ((index index) name section (context tag-name) &optional def)
-  (declare (ignore name section def)))
+(dont-index block-name)
+(dont-index tag-name)
+(dont-index slot-name)
 
 @1*Referring symbols. We'll perform the indexing by walking over the code
 of each section and noting each of the interesting symbols that we find
