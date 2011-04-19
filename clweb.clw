@@ -1287,9 +1287,11 @@ stored in the |value| slot, but often is.
 @ We'll define specialized pretty-printing routines for some of the
 objects we read for use by the tangler. Since they depend heavily on
 the specific representations, they're best defined alongside the readers.
+A few of these will also be used by the weaver, so we'll define the
+accessor for that dispatch table, too.
 
 @l
-@<Define the function |set-tangle-dispatch|@>
+@<Define the pprint dispatch table setters@>
 
 @ Here's a simple pretty-printing routine that suffices for many marker
 types: it simply prints the marker's value if it is bound. Markers that
@@ -1650,36 +1652,27 @@ code and the pretty-printing routines.
 
 @l
 (defvar *backquote* (make-symbol "BACKQUOTE"))
+(defvar *comma* (make-symbol "COMMA"))
+(defvar *comma-atsign* (make-symbol "COMMA-ATSIGN"))
+(defvar *comma-dot* (make-symbol "COMMA-DOT"))
+(defvar *bq-tokens* (list *backquote* *comma* *comma-atsign* *comma-dot*))
+
 (defun backquotep (object) (eq object *backquote*))
+(defun commap (object) (eq object *comma*))
+(defun comma-atsign-p (object) (eq object *comma-atsign*))
+(defun comma-dot-p (object) (eq object *comma-dot*))
+
 (deftype backquote () '(cons (satisfies backquotep)))
+(deftype comma () '(cons (satisfies commap)))
+(deftype comma-atsign () '(cons (satisfies comma-atsign-p)))
+(deftype comma-dot () '(cons (satisfies comma-dot-p)))
 
-(defclass comma ()
-  ((form :initarg :form)))
-(defclass splicing-comma (comma)
-  ((modifier :reader comma-modifier :initarg :modifier)))
-
-(defun commap (obj) (typep obj 'comma))
-
-@ To process a comma, we need to tangle the form that followed it. If that
-form is a named section reference, we take the car of the tangled form,
-on the assumption that you can't meaningfully unquote more than one form.
-This violation of the general principle that named section expansion has
-splicing semantics is a consequence of our using the Lisp reader to process
-both web syntax and Lisp.
-
-@l
-(defgeneric comma-form (comma))
-(defmethod comma-form ((comma comma))
-  (let* ((form (slot-value comma 'form))
-         (tangled-form (tangle form)))
-    (typecase form
-      (named-section
-       (when (rest tangled-form)
-         (cerror "Ignore the extra forms."
-                 "Tried to unquote more than one form from section @<~A@>."
-                 (section-name form)))
-       (first tangled-form))
-      (t tangled-form))))
+@ @l
+(defun comma-form (comma)
+  (unless (null (cddr comma))
+    (cerror "Ignore the extra forms."
+            "Tried to unquote more than one form with comma."))
+  (cadr comma))
 
 @ The reader macro functions for backquote and comma are straightforward.
 
@@ -1694,10 +1687,11 @@ both web syntax and Lisp.
     (lambda (stream char)
       (declare (ignore char))
       (case (peek-char nil stream t nil t)
-        ((#\@ #\.) (make-instance 'splicing-comma
-                                  :modifier (read-char stream t nil t)
-                                  :form (read stream t nil t)))
-        (otherwise (make-instance 'comma :form (read stream t nil t)))))
+        (#\@ (read-char stream t nil t)
+             (list *comma-atsign* (read stream t nil t)))
+        (#\. (read-char stream t nil t)
+             (list *comma-dot* (read stream t nil t)))
+        (otherwise (list *comma* (read stream t nil t)))))
     nil (readtable-for-mode mode)))
 
 @ |#:backquote| is an ordinary macro (not a read-macro) that processes the
@@ -1714,10 +1708,11 @@ not for uninterned symbols.
 (defun bq-process (x &aux (x (tangle x)))
   (typecase x
     (vector `(apply #'vector ,(bq-process (coerce x 'list))))
-    (splicing-comma (error ",~C~S after `" (comma-modifier x) (comma-form x)))
-    (comma (comma-form x))
     (atom `(quote ,x))
     (backquote (bq-process (bq-process (cadr x))))
+    (comma (comma-form x))
+    (comma-atsign (error ",@~S after `" (comma-form x)))
+    (comma-dot (error ",.~S after `" (comma-form x)))
     (t @<Process the list |x| for backquotes and commas@>)))
 
 @ We do one simplification here which, although not strictly in accordance
@@ -1733,19 +1728,22 @@ overly simplistic.
 @<Process the list |x|...@>=
 (do ((p x (cdr p))
      (q '() (cons (bracket (car p)) q)))
-    ((and (atom p) (not (commap p)))
+    ((atom p)
      (cons 'append (nreconc q (and p (list (list 'quote p))))))
   (typecase p
-    (splicing-comma (error "Dotted ,~C~S" (comma-modifier p) (comma-form p)))
-    (comma (return (cons 'append (nreconc q (list (comma-form p))))))))
+    (comma (return (cons 'append (nreconc q (list (comma-form p))))))
+    (comma-atsign (error "Dotted ,@~S" (comma-form p)))
+    (comma-dot (error "Dotted ,.~S" (comma-form p)))))
 
 @ This implements the bracket operator of the formal rules.
 
 @l
 (defun bracket (x)
   (typecase x
-    (splicing-comma (comma-form x))
+    (atom `(list ,(bq-process x)))
     (comma `(list ,(comma-form x)))
+    (comma-atsign (comma-form x))
+    (comma-dot (comma-form x))
     (t `(list ,(bq-process x)))))
 
 @t The first two tests come from page~528 of~\cltl; the third comes from
@@ -1825,14 +1823,68 @@ syntax, as recommended (but not required) by section~2.4.6.1 of the
   (lambda (stream obj)
     (format stream "`~W" (cadr obj))))
 
-(set-tangle-dispatch 'splicing-comma
-  (lambda (stream obj)
-    (format stream ",~C~W" (comma-modifier obj) (comma-form obj)))
-  1)
-
 (set-tangle-dispatch 'comma
   (lambda (stream obj)
     (format stream ",~W" (comma-form obj))))
+
+(set-tangle-dispatch 'comma-atsign
+  (lambda (stream obj)
+    (format stream ",@~W" (comma-form obj))))
+
+(set-tangle-dispatch 'comma-dot
+  (lambda (stream obj)
+    (format stream ",.~W" (comma-form obj))))
+
+@ Many pretty-printing routines aren't very careful about atomic {\it vs.\/}
+non-atomic forms, which can cause them to print comma forms as raw lists.
+That's extremely bad, because it means that our uninterned comma-denoting
+symbols would wind up in the tangled output. This isn't just a problem for
+\CLWEB: try evaluating |(pprint '`(let ,bindings body))| at your {\sc repl}
+and see what happens.
+
+The work-around is to override the offending entries. This list is probably
+incomplete, but it's a start. The format strings are adapted from those
+found in SBCL's \.{pprint.lisp}. The weaver needs exactly the same treatment,
+so we may as well do that here, too.
+
+@l
+(defun careful-pprint-fill (stream list &rest args)
+  (declare (ignore args))
+  (if (and (consp list) (member (car list) *bq-tokens*))
+      (write list :stream stream)
+      (pprint-fill stream list t)))
+
+(defun pprint-defun-like (stream list &rest args)
+  (declare (ignore args))
+  (format stream
+          "~:<~^~W~^ ~@_~:I~W~^ ~:_~/clweb::careful-pprint-fill/~1I~@{ ~_~W~}~:>"
+          list))
+
+(defun pprint-let (stream list &rest args)
+  (declare (ignore args))
+  (format stream
+          "~:<~^~W~^ ~@_~/clweb::careful-pprint-fill/~1I~:@_~@{~W~^ ~_~}~:>"
+          list))
+
+(defun pprint-flet (stream list &rest args)
+  (declare (ignore args))
+  (format stream
+          "~:<~^~W~^ ~@_~:<~@{~:<~^~W~^~3I ~:_~/clweb::careful-pprint-fill/~1I~:@_~@{~W~^ ~_~}~:>~^ ~_~}~:>~1I~@:_~@{~W~^ ~_~}~:>"
+          list))
+
+(deftype defun-like () '(cons (member defun defmacro deftype progv
+                                      defparameter defvar defconstant
+                                      define-setf-expander)))
+(set-tangle-dispatch 'defun-like #'pprint-defun-like)
+(set-weave-dispatch 'defun-like #'pprint-defun-like)
+
+(deftype let-like () '(cons (member let let* handler-bind)))
+(set-tangle-dispatch 'let-like #'pprint-let)
+(set-weave-dispatch 'let-like #'pprint-let)
+
+(deftype flet-like () '(cons (member flet labels macrolet symbol-macrolet)))
+(set-tangle-dispatch 'flet-like #'pprint-flet)
+(set-weave-dispatch 'flet-like #'pprint-flet)
 
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
@@ -2960,7 +3012,7 @@ the default table.
 @<Global variables@>=
 (defparameter *tangle-pprint-dispatch* (copy-pprint-dispatch nil))
 
-@ @<Define the function |set-tangle-dispatch|@>=
+@ @<Define the pprint dispatch table setters@>=
 (defun set-tangle-dispatch (type-specifier function &optional (priority 0))
   (set-pprint-dispatch type-specifier function priority ;
                        *tangle-pprint-dispatch*))
@@ -3264,7 +3316,7 @@ that we'll install in that table.
 @<Global variables@>=
 (defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
 
-@ @l
+@ @<Define the pprint dispatch table setters@>=
 (defun set-weave-dispatch (type-specifier function &optional (priority 0))
   (set-pprint-dispatch type-specifier function priority ;
                        *weave-pprint-dispatch*))
@@ -3747,17 +3799,17 @@ which see.
   (lambda (stream obj)
     (format stream "\\`~W" (cadr obj))))
 
-@ Note that |comma-form| method tangles the form, whence the raw slot access.
-
-@l
-(set-weave-dispatch 'splicing-comma
-  (lambda (stream obj)
-    (format stream "\\CO{~C}~W" (comma-modifier obj) (slot-value obj 'form)))
-  1)
-
 (set-weave-dispatch 'comma
   (lambda (stream obj)
-    (format stream "\\CO{}~W" (slot-value obj 'form))))
+    (format stream "\\CO{}~W" (comma-form obj))))
+
+(set-weave-dispatch 'comma-atsign
+  (lambda (stream obj)
+    (format stream "\\CO{@}~W" (comma-form obj))))
+
+(set-weave-dispatch 'comma-dot
+  (lambda (stream obj)
+    (format stream "\\CO{.}~W" (comma-form obj))))
 
 @ @l
 (set-weave-dispatch 'function-marker
