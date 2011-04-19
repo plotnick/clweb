@@ -5974,12 +5974,10 @@ useful on its own, especially for interactive testing.
 
 (defmacro with-unique-indexing-names (names &body body)
   `(let* ((temp-package (make-package "INDEX-TEMP"))
+          (*index-packages* (cons temp-package *index-packages*))
           ,@(loop for name in names ;
                   collect `(,name (intern ,(string name) temp-package))))
-     (unwind-protect
-          (progn
-            (index-package temp-package)
-            ,@body)
+     (unwind-protect (progn ,@body)
        (delete-package temp-package))))
 
 (defmacro define-indexing-test (&environment env name-and-options sections ;
