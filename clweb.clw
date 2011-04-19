@@ -1659,6 +1659,8 @@ code and the pretty-printing routines.
 (defclass splicing-comma (comma)
   ((modifier :reader comma-modifier :initarg :modifier :type character)))
 
+(defmethod comma-modifier ((comma comma)) nil)
+
 (defun make-comma (&optional modifier)
   (if modifier
       (make-instance 'splicing-comma :modifier modifier)
@@ -1821,14 +1823,9 @@ syntax, as recommended (but not required) by section~2.4.6.1 of the
   (lambda (stream obj) ;
     (format stream "`~W" (cadr obj))))
 
-(set-tangle-dispatch 'splicing-comma-form
-  (lambda (stream obj) ;
-    (format stream ",~C~W" (comma-modifier (car obj)) (cadr obj)))
-  1)
-
 (set-tangle-dispatch 'comma-form
   (lambda (stream obj) ;
-    (format stream ",~W" (cadr obj))))
+    (format stream "~@[~C~],~W" (comma-modifier (car obj)) (cadr obj))))
 
 @ Many pretty-printing routines aren't very careful about atomic {\it vs.\/}
 non-atomic forms, which can cause them to print comma forms as raw lists.
@@ -3798,13 +3795,9 @@ which see.
   (lambda (stream obj)
     (format stream "\\`~W" (cadr obj))))
 
-(set-weave-dispatch 'splicing-comma-form
-  (lambda (stream obj)
-    (format stream "\\CO{@}~W" (comma-modifier (car obj)) (cadr obj))))
-
 (set-weave-dispatch 'comma-form
   (lambda (stream obj)
-    (format stream "\\CO{}~W" (cadr obj))))
+    (format stream "\\CO{~@[~C~]}~W" (comma-modifier (car obj)) (cadr obj))))
 
 @ @l
 (set-weave-dispatch 'function-marker
