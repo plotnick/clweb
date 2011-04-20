@@ -4195,7 +4195,8 @@ the games we play later with referring symbols in the indexer.
 |walk-as-special-form-p| returns true of that form. Besides the walker
 instance, the form being walked, and~the current environment, we'll supply
 the operator of the compound form as a separate argument so that we can
-use |eql|~specializers. The |operator| should be |eql| to~|(car form)|.
+use |eql|~specializers. The |operator| should generally be |eql|
+to~|(car form)|.
 
 @l
 (defmethod walk-as-special-form-p (walker operator form env)
@@ -6027,6 +6028,22 @@ by the default method.
       (index (walker-index walker) symbol section context))
     symbol))
 
+@ To provide a hook for indexing arbitrary function calls, we'll swap out
+referring symbols that occur as the operator in a compound form. This lets
+us write |eql|-specialized methods on the |operator| argument while still
+preserving the provenance via the |form|.
+
+If the operator is a referring symbol, we have to do a full call to pick up
+any newly-applicable methods. Otherwise, can just use |call-next-method|.
+
+@l
+(defmethod walk-compound-form :around ;
+    ((walker indexing-walker) (operator symbol) form env &rest args)
+  (multiple-value-bind (symbol section) (symbol-provenance operator)
+    (if section
+        (apply #'walk-compound-form walker symbol form env args)
+        (call-next-method))))
+
 @ When we walk a name that is or contains a referring symbol, we'll swap
 out the symbol and index the name. This method handles the mechanics by
 using two auxiliary routines, |destructure-name| and |construct-name|.
@@ -6703,12 +6720,17 @@ the extra arguments.
 
 @1*Coda: extending the indexer. Here's a self-contained example of how one
 might extend the indexer to recognize and record specific kinds of forms.
-In this program,we define reader macro functions for most of the standard
-macro characters,so it might be nice to have dedicated index entries for
-those definitions.
+In this program, we define reader macro functions for most of the standard
+macro characters. It might be nice to have dedicated index entries for
+those definitions that show which macro character is defined where.
 
-To begin, we'll define a heading class for macro characters, a subclass for
-dispatch macro characters, and a constructor function for both.
+@ To begin, we'll define a heading class for macro characters, a subclass
+for dispatch macro characters, and a constructor function for both. This
+example is slightly atypical in this regard: most index extensions would
+simply use a new namespace class and use that as their heading, but we have
+some specialized sorting requirements that are easiest to fulfill in this
+way. It's also a bit of a semantic stretch to call macro characters a
+`namespace'.
 
 @l
 (defclass macro-char-heading (heading)
@@ -6746,7 +6768,8 @@ in with the others in the normal lexicographic ordering.
   (declare (ignore h2))
   t)
 (defmethod entry-heading-lessp (h1 (h2 macro-char-heading))
-  (declare (ignore h1)))
+  (declare (ignore h1))
+  nil)
 (defmethod entry-heading-lessp ((h1 macro-char-heading) ;
                                 (h2 dispatch-macro-char-heading))
   t)
@@ -6763,10 +6786,18 @@ in with the others in the normal lexicographic ordering.
                 (macro-sub-char h2)
                 (char-lessp (macro-sub-char h1) (macro-sub-char h2))))))
 
+@ We also need an equality predicate. We'll say that no macro character
+heading is equal to anything other than another macro character heading,
+and that two such headings are equal if their primary and secondary
+characters are the same (ignoring differences of case).
+
+@l
 (defmethod entry-heading-equalp ((h1 macro-char-heading) h2)
-  (declare (ignore h2)))
+  (declare (ignore h2))
+  nil)
 (defmethod entry-heading-equalp (h1 (h2 macro-char-heading))
-  (declare (ignore h1)))
+  (declare (ignore h1))
+  nil)
 (defmethod entry-heading-equalp ((h1 macro-char-heading) ;
                                  (h2 macro-char-heading))
   (and (char-equal (macro-char h1) (macro-char h2))
@@ -6804,8 +6835,9 @@ in with the others in the normal lexicographic ordering.
   t)
 
 @ Next, we'll tell the indexer that the symbols |set-macro-character| and
-|set-dispatch-macro-character| are `interesting'. (In general, this is
-dangerous for symbols in the Common Lisp package, so be careful.)
+|set-dispatch-macro-character| are `interesting' and that they should be
+replaced with referring symbols. (In general, this is dangerous for symbols
+in the Common Lisp package, so be careful.)
 
 @l
 (defmethod interesting-symbol-p ((object (eql 'set-macro-character))) ;
@@ -6813,36 +6845,39 @@ dangerous for symbols in the Common Lisp package, so be careful.)
 (defmethod interesting-symbol-p ((object (eql 'set-dispatch-macro-character))) ;
   t)
 
-@ And finally, we'll add some methods to |index-funcall| specialized on
-those function names. Note that by overriding the default method, we
-prevent the functions themselves from being indexed, which is what we
-want in this case.
+@ And finally, we'll add some methods to |walk-compound-form| specialized
+on those function names. We're relying here on the around~method specialized
+on |indexing-walker| that swaps out referring symbols for the |operator|
+argument but leaves them as the car of the |form|. Also notice that by
+overriding the default method and not calling |index-name|, we can prevent
+the functions themselves from being indexed, which is what we want in this
+case.
 
 @l
-(defmethod index-funcall ;
-    ((index index) (function-name (eql 'set-macro-character)) form env section)
-  (declare (ignore env))
-  (when (characterp (second form))
-    (add-index-entry index
-                     (make-macro-char-heading (second form))
-                     section t)))
+(defmethod walk-compound-form ;
+    ((walker indexing-walker) (operator (eql 'set-macro-character))
+     form env &key)
+  (multiple-value-bind (symbol section) (symbol-provenance (car form))
+    (when (and section (characterp (second form)))
+      (add-index-entry (walker-index walker)
+                       (make-macro-char-heading (second form))
+                       section t))
+    `(,symbol ,@(walk-list walker (cdr form) env))))
 
-(defmethod index-funcall ;
-    ((index index) (function-name (eql 'set-dispatch-macro-character)) ;
-     form env section)
-  (declare (ignore env))
-  (when (characterp (second form))
-    (add-index-entry index
-                     (make-macro-char-heading (second form) (third form))
-                     section t)))
+(defmethod walk-compound-form ;
+    ((walker indexing-walker) (operator (eql 'set-dispatch-macro-character))
+     form env &key)
+  (multiple-value-bind (symbol section) (symbol-provenance (car form))
+    (when (and section (characterp (second form)))
+      (add-index-entry (walker-index walker)
+                       (make-macro-char-heading (second form) (third form))
+                       section t))
+    `(,symbol ,@(walk-list walker (cdr form) env))))
 
-@t FIXME: re-enable once indexing API has stabilized.
-
-@l
-#-(and)
+@t@l
 (define-indexing-test macro-character
-  '((:section :code ((set-macro-character #\! #'read-bang)))
-    (:section :code ((set-dispatch-macro-character #\@ #\! #'read-at-bang))))
+  '((:section :code ((set-macro-character #\! '#:read-bang)))
+    (:section :code ((set-dispatch-macro-character #\@ #\! '#:read-at-bang))))
   ("!" ((:def 0)))
   ("@ !" ((:def 1))))
 
