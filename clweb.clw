@@ -5924,25 +5924,19 @@ locations)|, where each location is either a section number or a list
      (index-entries index))
     (nreverse entries)))
 
-@t To test our indexing walker, we'll use the following macro.
-It takes a name and options, a list of section specifiers acceptable
-to |with-temporary-sections| and zero or more expected index entry
-specifiers that should match the output of |all-index-entries|.
+@t To test our indexing walker, we'll almost always define tests using the
+macro |define-indexing-test|. That macro relies on a few layers of helper
+functions and macros, so we'll work our way up from the lowest level.
 
-The |name-and-options| argument may be either an atom providing a name
-for the test or a list of the form `(\<name> \<options>)', where \<options>
-is a plist of keyword arguments. If the option |:verify-walk| is true (the
-default), the test will include an assertion the walked forms match the
-originals. During the walk, |*index-lexical-variables*| will be bound to
-the value of the |:index-lexicals| option (false by default).
-
-The helper function |walk-sections| does the actual walking and is
-useful on its own, especially for interactive testing.
+The function |walk-sections| takes a walker, a list of section specifiers,
+and an environment, and walks the code in the given sections as the indexer
+does. It accepts two keyword arguments as options: if |:verify-walk| is true,
+it will assert that the walked forms are |tree-equal| to the originals, and
+the |:toplevel| argument is passed down to |walk-form|. It returns a list of
+walked forms.
 
 @l
-(defclass tracing-indexing-walker (tracing-walker indexing-walker) ())
-
-(defun walk-sections (walker sections env &key verify-walk toplevel)
+(defun walk-sections (walker sections env &key (verify-walk t) toplevel)
   (with-temporary-sections sections
     (let ((tangled-code (tangle (unnamed-section-code-parts *sections*)))
           (mangled-code (tangle-code-for-indexing *sections*)))
@@ -5956,9 +5950,24 @@ useful on its own, especially for interactive testing.
                          "Walked form does not match original.")
             collect walked-form))))
 
-(defun test-indexing-walk (sections expected-entries env &key ;
-                           (verify-walk t) toplevel ;
-                           index-lexicals trace print)
+@t The next level up is |test-indexing-walk|. This function is essentially
+just a wrapper for |walk-sections|: it creates an indexing walker instance,
+walks the given sections using |walk-sections|, and then compares the index
+entries created by the walk with a list of expected entries. It returns a
+boolean representing the result of that comparison.
+
+Along with the keyword argument accepted by |walk-sections|, it takes
+three others: |:index-lexicals| provides the value to which
+|*index-lexical-variables*| will be bound during the walk; |:trace|
+controls whether the walk should be traced or not; and~|:print| sets the
+verbosity level: if it's true, the walked forms and the actual index
+entries will be printed to standard output.
+
+@l
+(defclass tracing-indexing-walker (tracing-walker indexing-walker) ())
+
+(defun test-indexing-walk (sections expected-entries env &key
+                           (verify-walk t) toplevel index-lexicals trace print)
   (let* ((walker (make-instance (if trace
                                     'tracing-indexing-walker
                                     'indexing-walker)))
@@ -5971,6 +5980,32 @@ useful on its own, especially for interactive testing.
       (when print (pprint entries))
       (tree-equal entries expected-entries :test #'equal))))
 
+@t Finally we come to |define-indexing-test|. It takes two required
+arguments: a name-and-options list and a list of section specifiers.
+Any remaining arguments are treated as expected index entries, and
+are gathered together and passed down to |test-indexing-walk|.
+
+The name of the test will be `(|index| \<name>)', where \<name> comes from
+the |name-and-options| argument. It behaves like the first argument to
+|defstruct|: if it's an atom, it's just a name, but if it's a list, the car
+of the list is used as the name and the cdr is interpreted as a plist of
+keyword options. Only one of those options, |:aux|, is interpreted directly
+by |define-indexing-test|; the rest are passed down to the helper functions
+|test-indexing-walk| and |walk-sections|.
+
+The |:aux| option, if provided, should be an unquoted list of symbols.
+Each of those symbols will be used as the name of a variable bound in
+the body of the test to a symbol with the same name interned in a temporary
+package. That package will be added to the |*index-packages*| list, and
+so each of those symbols will be `interesting' to the indexer. The idea
+is that many tests will need to attach global information or bindings to
+symbols, but we don't want that information to outlive the tests. These
+auxiliary names provide a simple method of achieving that goal: if a
+backquoted form is used for the section specifiers, unquoted references
+to those names will be replaced with symbols that are interesting but only
+exist for the dynamic extent of the walk.
+
+@l
 (defmacro with-unique-indexing-names (names &body body)
   `(let* ((temp-package (make-package "INDEX-TEMP"))
           (*index-packages* (cons temp-package *index-packages*))
