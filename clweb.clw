@@ -4086,6 +4086,8 @@ lexical environment. We therefore special-case the non-atomic-function-name
 case, which really shouldn't be necessary.
 
 @l
+(deftype setf-function () '(cons (eql setf) (cons symbol null)))
+
 (defmethod update-context (name (context operator) env)
   (multiple-value-bind (type local) (function-information name env)
     (if (and (not local) (generic-function-p name))
@@ -4299,12 +4301,12 @@ names, \etc.---we'll walk it using this function. The |context| argument is
 an object that describes the namespace in which the name occurs.
 
 @ @<Walker generic functions@>=
-(defgeneric walk-name (walker name context env))
+(defgeneric walk-name (walker name context env &key))
 
 @ The default method just returns the name being walked.
 
 @l
-(defmethod walk-name ((walker walker) name context env)
+(defmethod walk-name ((walker walker) name context env &key)
   (declare (ignore context env))
   name)
 
@@ -5274,10 +5276,10 @@ the walker classes defined in this program.
           toplevel form))
 
 (defmethod walk-name :before ;
-    ((walker tracing-walker) name context env)
+    ((walker tracing-walker) name context env &rest args)
   (declare (ignore env))
   (format *trace-output*
-          "~&~@<; ~@;walking name ~S ~S~:>~%" name context))
+          "~&~@<; ~@;walking name ~S ~S~@[~S~]~:>~%" name context args))
 
 (defmethod walk-bindings :before ;
     ((walker tracing-walker) names context env &key declare)
@@ -6017,7 +6019,7 @@ we'll index and then return the referents of. Everything else gets handled
 by the default method.
 
 @l
-(defmethod walk-atomic-form ((walker indexing-walker) (form symbol)
+(defmethod walk-atomic-form ((walker indexing-walker) (form symbol) ;
                              context env &rest args)
   (declare (ignore env))
   (multiple-value-bind (symbol section) (symbol-provenance form)
@@ -6025,48 +6027,65 @@ by the default method.
       (index (walker-index walker) symbol section context))
     symbol))
 
-@ @l
-(defun index-name (index name namespace env &optional def)
-  (multiple-value-bind (symbol section)
+@ When we walk a name that is or contains a referring symbol, we'll swap
+out the symbol and index the name. This method handles the mechanics by
+using two auxiliary routines, |destructure-name| and |construct-name|.
+The idea is that a name might be as simple as a symbol, or a list like
+`(|setf| \<name>)', or, as in the case of a macro definition, even include
+a definition. |destructure-name| takes apart such names based on the
+namespace and returns the symbol we'll use in the index if it's a referring
+symbol; |construct-name| goes the other way.
+
+@l
+(defgeneric destructure-name (name namespace))
+(defgeneric construct-name (symbol name namespace))
+
+(defmethod walk-name ((walker indexing-walker) name namespace env &key def)
+  (multiple-value-bind (symbol section) ;
       (symbol-provenance (destructure-name name namespace))
     (let ((name (construct-name symbol name namespace)))
       (when section
-        (index index symbol section
+        (index (walker-index walker) symbol section
                (if def namespace (update-context name namespace env))
                def))
       name)))
 
-(defmethod walk-name ((walker indexing-walker) name namespace env)
-  (index-name (walker-index walker) name namespace env))
+@ We'll use the same auxiliary routines for walking bindings. It's slightly
+complicated because we have to be able to handle multiple bindings
+simultaneously, and we need to wait for the indexing until we have the
+augmented environment. So we hold onto the referred-to symbols and their
+provenances while we call up to the next method to perform the actual
+bindings, and then index them one at a time.
 
+@l
 (defmethod walk-bindings ((walker indexing-walker) names namespace env &key ;
                           declare)
   (let ((symbols '())
         (sections '()))
     (dolist (name names (progn (setf symbols (nreverse symbols))
                                (setf sections (nreverse sections))))
-      (multiple-value-bind (symbol section)
+      (multiple-value-bind (symbol section) ;
           (symbol-provenance (destructure-name name namespace))
         (push symbol symbols)
         (push section sections)))
     (multiple-value-bind (names env)
         (call-next-method walker
-                          (mapcar (lambda (symbol name)
+                          (mapcar (lambda (symbol name) ;
                                     (construct-name symbol name namespace))
                                   symbols names)
                           namespace env
                           :declare declare)
-      (loop for symbol in symbols
-            and section in sections
-            and name in names
-            when section do (index (walker-index walker) symbol section
-                                   (update-context name namespace env)
-                                   t))
+      (loop for symbol in symbols and section in sections and name in names
+            when section
+              do (index (walker-index walker) symbol section ;
+                        (update-context name namespace env) ;
+                        t))
       (values names env))))
 
-@ @l
-(deftype setf-function () '(cons (eql setf) (cons symbol null)))
+@ Here are the methods for destructuring names. The default method is the
+common case, where no destructuring is actually necessary.
 
+@l
 (defmethod destructure-name (name namespace)
   (declare (ignore namespace))
   name)
@@ -6082,7 +6101,9 @@ by the default method.
 (defmethod destructure-name (def (namespace symbol-macro-definition))
   (car def))
 
-@ @l
+@ And here's how we put names back together based on their original form.
+
+@l
 (defmethod construct-name (symbol name namespace)
   (declare (ignore name namespace))
   symbol)
@@ -6150,7 +6171,9 @@ that the walker sees definitions in the current global environment.
   ("FOO local function" ((:def 0)))
   ("FOO local setf function" ((:def 1))))
 
-@ It's important that we replace even quoted referring symbols.
+@ Now we come to the form-specific walkers. We'll start with the special
+operator |quote|: it's important that we replace even quoted referring
+symbols.
 @^referring symbols@>
 
 @l
@@ -6175,8 +6198,7 @@ the walk with the macro expansions so that we can pick up the definitions.
              `(define-special-form-walker ,operator ;
                   ((walker indexing-walker) form env &key)
                 (let* ((context (make-context ',context))
-                       (name (index-name (walker-index walker) (cadr form)
-                                         context env t)))
+                       (name (walk-name walker (cadr form) context env :def t)))
                   (throw 'continue-walk
                     `(,(car form)
                       ,@(walk-lambda-expression walker (cons name (cddr form)) ;
@@ -6213,8 +6235,8 @@ with |walk-atomic-form| as opposed to going through |walk-function-name|.
     ((walker indexing-walker) form env &key)
   (throw 'continue-walk
     `(,(car form)
-      ,(index-name (walker-index walker) (cadr form)
-                   (make-context 'symbol-macro-name) env t)
+      ,(walk-name walker (cadr form) (make-context 'symbol-macro-name) ;
+                  env :def t)
       ,@(walk-list walker (cddr form) env))))
 
 @t@l
@@ -6233,7 +6255,7 @@ often pick up at least the constructor definitions that way.
   (let ((name (typecase (cadr form)
                 (symbol (cadr form))
                 (cons (caadr form)))))
-    (index-name (walker-index walker) name (make-context 'structure-name) env t)
+    (walk-name walker name (make-context 'structure-name) env :def t)
     (throw 'continue-walk form)))
 
 @ @<Define namespace...@>=
@@ -6256,8 +6278,9 @@ expand, though, in order to get the |special| declarations.
                   ((walker indexing-walker) form env &key)
                 (throw 'continue-walk
                   `(,(car form)
-                    ,(index-name (walker-index walker) (cadr form)
-                                 (make-context 'special-variable-name) env t)
+                    ,(walk-name walker (cadr form) ;
+                                (make-context 'special-variable-name) ;
+                                env :def t)
                     ,@(cddr form))))))
   (define-indexing-defvar-walker defvar)
   (define-indexing-defvar-walker defparameter))
@@ -6278,8 +6301,8 @@ the walker for Allegro, but it's basically the same as above.
 (define-special-form-walker defconstant ;
     ((walker indexing-walker) form env &rest args)
   (apply #'call-next-method walker 'defconstant
-         `(defconstant ,(index-name (walker-index walker) (cadr form) ;
-                                    (make-context 'constant-name) env t)
+         `(defconstant ,(walk-name walker (cadr form) ;
+                                   (make-context 'constant-name) env :def t)
             ,@(walk-list walker (cddr form) env))
          env args))
 
@@ -6309,12 +6332,12 @@ that information ourselves.
   (destructuring-bind (operator function-name lambda-list &rest options) form
     `(,operator
       ,(note-generic-function
-        (index-name (walker-index walker) function-name ;
-                    (make-context ;
-                     (etypecase function-name
-                       (symbol 'generic-function-name)
-                       (setf-function 'generic-setf-function-name))) ;
-                    env t))
+        (walk-name walker function-name
+                   (make-context ;
+                    (etypecase function-name
+                      (symbol 'generic-function-name)
+                      (setf-function 'generic-setf-function-name)))
+                    env :def t))
       ,(walk-lambda-list walker lambda-list nil env)
       ,@(loop for form in options
               collect (case (car form)
@@ -6395,9 +6418,9 @@ specialized \L-list and body forms here.
                            (pop-qualifiers form)))
        (lambda-list (pop form))
        (body form))
-  (index-name (walker-index walker) function-name
-              (make-context 'method-name :qualifiers qualifiers)
-              env t)
+  (walk-name walker function-name
+             (make-context 'method-name :qualifiers qualifiers)
+             env :def t)
   (walk-method-definition walker operator nil qualifiers lambda-list body env))
 
 @ @<Define namespace...@>=
@@ -6424,10 +6447,10 @@ a method description.
      (lambda-list (pop form))
      (body form))
   (walk-method-definition walker operator
-                          (index-name (walker-index walker) function-name
-                                      (make-context 'method-name ;
-                                                    :qualifiers qualifiers)
-                                      env t)
+                          (walk-name walker function-name
+                                     (make-context 'method-name ;
+                                                   :qualifiers qualifiers)
+                                     env :def t)
                           qualifiers lambda-list body env))
 
 @t@l
@@ -6449,10 +6472,9 @@ class names, super-classes, and~accessor methods.
                         (operator name supers slot-specs &rest options) form
                     (throw 'continue-walk
                       `(,operator
-                        ,(index-name (walker-index walker) name namespace env t)
+                        ,(walk-name walker name namespace env :def t)
                         ,(mapcar (lambda (super) ;
-                                   (index-name (walker-index walker) super ;
-                                               namespace env nil))
+                                   (walk-name walker super namespace env))
                                  supers)
                         ,(mapcar (lambda (spec) ;
                                    (walk-slot-specifier walker spec env)) ;
@@ -6481,20 +6503,17 @@ options.
 @l
 (defun walk-slot-specifier (walker spec env)
   (etypecase spec
-    (symbol (index-name (walker-index walker) spec ;
-                        (make-context 'slot-name) ;
-                        env t))
+    (symbol (walk-name walker spec (make-context 'slot-name) env))
     (cons (destructuring-bind (name &rest options) spec
-            `(,(index-name (walker-index walker) name
-                           (make-context 'slot-name) env t)
+            `(,(walk-name walker name (make-context 'slot-name) env :def t)
               ,@(loop for (opt-name opt-value) on options by #'cddr
                       if (member opt-name '(:reader :writer :accessor))
                         collect `(,opt-name
-                                  ,(index-name (walker-index walker) opt-value
-                                               (make-context 'method-name ;
-                                                             :qualifiers ;
-                                                             (list opt-name))
-                                               env t))
+                                  ,(walk-name walker opt-value
+                                              (make-context 'method-name ;
+                                                            :qualifiers ;
+                                                            (list opt-name))
+                                              env :def t))
                       else
                         collect `(,opt-name ,opt-value)))))))
 
@@ -6508,8 +6527,8 @@ method combination types. We'll skip the expansion.
 (define-special-form-walker define-method-combination ;
     ((walker indexing-walker) form env &key)
   `(,(car form)
-    ,(index-name (walker-index walker) (cadr form) ;
-                 (make-context 'method-combination-name) env t)
+    ,(walk-name walker (cadr form) (make-context 'method-combination-name) ;
+                env :def t)
     ,@(walk-list walker (cddr form) env)))
 
 @ @<Define namespace...@>=
