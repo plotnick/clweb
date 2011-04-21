@@ -6578,14 +6578,14 @@ options.
             `(,(walk-name walker name (make-context 'slot-name) env :def t)
               ,@(loop for (opt-name opt-value) on options by #'cddr
                       if (member opt-name '(:reader :writer :accessor))
-                        collect `(,opt-name
+                        append `(,opt-name
                                   ,(walk-name walker opt-value
                                               (make-context 'method-name ;
                                                             :qualifiers ;
                                                             (list opt-name))
                                               env :def t))
                       else
-                        collect `(,opt-name ,opt-value)))))))
+                        append `(,opt-name ,opt-value)))))))
 
 @ @<Define namespace...@>=
 (defnamespace slot-name () :slot)
