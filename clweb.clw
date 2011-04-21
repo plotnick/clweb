@@ -4562,6 +4562,7 @@ load time, or~both.''
 @ The |function| special form takes either a valid function name or a
 \L~expression. Under SBCL, this is extended to also include their non-standard
 |named-lambda| special forms, which we'll come to shortly.
+@^SBCL@>
 
 @l
 #+sbcl
@@ -4928,6 +4929,7 @@ a portable macro definition. (This is just rude; Allegro also has a
 |named-function| special operator, but they provide a macro definition
 that expands into a regular |lambda|.) The syntax is
 `(|named-lambda| \<name> \<lambda-list> body)'.
+@^SBCL@>
 
 @l
 #+sbcl
