@@ -6012,14 +6012,14 @@ exist for the dynamic extent of the walk.
      (unwind-protect (progn ,@body)
        (delete-package temp-package))))
 
-(defmacro define-indexing-test (&environment env name-and-options sections ;
+(defmacro define-indexing-test (name-and-options sections ;
                                 &rest expected-entries)
   (destructuring-bind (name &rest options &key aux &allow-other-keys) ;
       (ensure-list name-and-options)
     (remf options :aux)
     `(deftest (index ,name)
        (with-unique-indexing-names ,aux
-         (test-indexing-walk ,sections ',expected-entries ,env ,@options))
+         (test-indexing-walk ,sections ',expected-entries nil ,@options))
        t)))
 
 @ We have to override the walker's macro expansion function, since the
