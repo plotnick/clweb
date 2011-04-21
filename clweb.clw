@@ -4560,13 +4560,19 @@ load time, or~both.''
   #.(* 2 pi))
 
 @ The |function| special form takes either a valid function name or a
-\L~expression.
+\L~expression. Under SBCL, this is extended to also include their non-standard
+|named-lambda| special forms, which we'll come to shortly.
 
 @l
+#+sbcl
+(deftype named-lambda-expression () '(cons (eql sb-int:named-lambda)))
+
 (define-special-form-walker function ((walker walker) form env &key)
   `(,(car form)
     ,(typecase (cadr form)
        (lambda-expression (walk-lambda-expression walker (cadr form) nil env))
+       #+sbcl
+       (named-lambda-expression (walk-form walker (cadr form) env))
        (t (walk-name walker (cadr form) (make-context 'function-name) env)))))
 
 @t@l
@@ -4915,6 +4921,18 @@ the bindings in |flet|, |macrolet|, and~|labels| special forms.
 @l
 (define-special-form-walker lambda ((walker walker) form env &key)
   (walk-lambda-expression walker form nil env))
+
+@ SBCL has the unpleasant habit of using non-standard |named-lambda|
+special forms in the expansions of its defining macros without providing
+a portable macro definition. (This is just rude; Allegro also has a
+|named-function| special operator, but they provide a macro definition
+that expands into a regular |lambda|.) The syntax is
+`(|named-lambda| \<name> \<lambda-list> body)'.
+
+@l
+#+sbcl
+(define-special-form-walker sb-int:named-lambda ((walker walker) form env &key)
+  (walk-lambda-expression walker `(lambda ,(caddr form) ,@(cdddr form)) nil env))
 
 @t To test the walker on binding forms, including \L~expressions, we'll
 define a new special form for our test walker, |check-binding|, which
