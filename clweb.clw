@@ -4150,7 +4150,7 @@ it may throw a form to the tag |continue-walk|, and the walk will continue
 with macro expansion of that form.
 
 @l
-(defmethod walk-form ((walker walker) form &optional env &key toplevel &aux
+(defmethod walk-form ((walker walker) form &optional env toplevel &aux
                       (env (ensure-portable-walking-environment env)))
   (let ((expanded t))
     (loop
@@ -4159,7 +4159,7 @@ with macro expansion of that form.
         (macroexpand-for-walk walker form env)))))
 
 @ @<Walker generic functions@>=
-(defgeneric walk-form (walker form &optional env &key toplevel))
+(defgeneric walk-form (walker form &optional env toplevel))
 
 @ When we hit an atom that is not a symbol macro, a compound form whose
 car is not a macro, or~a special form, we return the walked form and break
@@ -4168,7 +4168,7 @@ out of the macro-expansion loop.
 @<Walk |form|@>=
 (cond ((atom form) @<Walk the atom |form|@>)
       ((not (symbolp (car form)))
-       (return (walk-list walker form env :toplevel toplevel)))
+       (return (walk-list walker form env toplevel)))
       ((or (not expanded)
            (walk-as-special-form-p walker (car form) form env))
        (return (walk-compound-form walker (car form) form env ;
@@ -4211,9 +4211,9 @@ each element of the supplied list and returns a new list of the results
 of those walks.
 
 @l
-(defun walk-list (walker list env &rest args)
+(defun walk-list (walker list env &optional toplevel)
   (do ((form list (cdr form))
-       (newform () (cons (apply #'walk-form walker (car form) env args)
+       (newform () (cons (walk-form walker (car form) env toplevel)
                          newform)))
       ((atom form) (nreconc newform form))))
 
@@ -4409,7 +4409,7 @@ is given. It returns |t|.
   (let ((walker (make-instance 'test-walker))
         (env (ensure-portable-walking-environment nil)))
     (macrolet ((walk (form toplevel)
-                 `(walk-form walker ',form env :toplevel ,toplevel)))
+                 `(walk-form walker ',form env ,toplevel)))
       (values (walk (ensure-toplevel) t)
               (walk (ensure-toplevel nil) nil)
               (not (null (walk (let () (ensure-toplevel nil)) t)))
@@ -4435,8 +4435,7 @@ is evaluated.
     (with-unique-names (walker walked-form)
       `(deftest (walk ,name)
          (let* ((,walker (make-instance 'test-walker))
-                (,walked-form (walk-form ,walker ',form nil ;
-                                         :toplevel ,toplevel)))
+                (,walked-form (walk-form ,walker ',form nil ,toplevel)))
            ,(if (or result (null resultp))
                 `(tree-equal ,walked-form ',(or result form))
                 t))
@@ -4447,7 +4446,7 @@ is evaluated.
 @l
 (define-special-form-walker progn ((walker walker) form env &key toplevel)
   `(,(car form)
-    ,@(walk-list walker (cdr form) env :toplevel toplevel)))
+    ,@(walk-list walker (cdr form) env toplevel)))
 
 @t@l
 (define-walker-test progn
@@ -4510,7 +4509,7 @@ evaluate top level forms that appear in an |eval-when| with situation
   `(,(car form)
     ,(cadr form)
     ,@(loop for form in (cddr form)
-            as walked-form = (walk-form walker form env :toplevel toplevel)
+            as walked-form = (walk-form walker form env toplevel)
             when eval do (eval walked-form)
             collect walked-form)))
 
@@ -4525,7 +4524,7 @@ evaluate top level forms that appear in an |eval-when| with situation
          (walker (make-instance 'test-walker))
          (form '(eval-when (:compile-toplevel)
                   (princ :foo))))
-    (and (tree-equal (walk-form walker form nil :toplevel t) form)
+    (and (tree-equal (walk-form walker form nil t) form)
          (get-output-stream-string string-output-stream)))
   "FOO")
 
@@ -4554,7 +4553,7 @@ load time, or~both.''
 (deftest (walk defconstant)
   (let ((name (make-symbol "TWO-PI"))
         (walker (make-instance 'walker)))
-    (and (walk-form walker `(defconstant ,name (* 2 pi)) nil :toplevel t)
+    (and (walk-form walker `(defconstant ,name (* 2 pi)) nil t)
          (symbol-value name)))
   #.(* 2 pi))
 
@@ -4944,8 +4943,8 @@ otherwise, it signals an error.
            for symbol in symbols
            do (check-binding symbol namespace type local))
      (if (listp symbols)
-         (walk-list walker symbols env :toplevel toplevel)
-         (walk-form walker symbols env :toplevel toplevel)))))
+         (walk-list walker symbols env toplevel)
+         (walk-form walker symbols env toplevel)))))
 
 @t@l
 (define-walker-test ordinary-lambda-list
@@ -5073,7 +5072,7 @@ using |parse-macro| and |enclose| before we add them to the environment.
         `(,(car form)
           ,defs
           ,@(if decls `((declare ,@decls)))
-          ,@(walk-list walker forms env :toplevel toplevel))))))
+          ,@(walk-list walker forms env toplevel))))))
 
 @ Walking |symbol-macrolet| is simpler, since the definitions are given in
 the bindings themselves. The body forms of a top level |macrolet| form are
@@ -5102,7 +5101,7 @@ also considered top level.
         `(,(car form)
           ,defs
           ,@(if decls `((declare ,@decls)))
-          ,@(walk-list walker forms env :toplevel toplevel))))))
+          ,@(walk-list walker forms env toplevel))))))
 
 @t@l
 (define-walker-test let
@@ -5203,9 +5202,9 @@ body forms.
       (parse-body (cdr form) :walker walker :env env)
     `(,(car form)
       ,@(if decls `((declare ,@decls)))
-      ,@(walk-list walker forms
-                   (augment-environment env :declare decls)
-                   :toplevel toplevel))))
+      ,@(walk-list walker forms ;
+                   (augment-environment env :declare decls) ;
+                   toplevel))))
 
 @t@l
 (define-walker-test (locally :toplevel t)
@@ -5252,7 +5251,7 @@ the global environment.
                           `(progn
                              (define-symbol-macro ,name (ensure-toplevel))
                              (check-binding ,name :variable :symbol-macro nil))
-                          nil :toplevel t))))
+                          nil t))))
   t)
 
 @t Here's a simple walker mix-in class that allows easy tracing of a walk.
@@ -5942,8 +5941,7 @@ walked forms.
           (mangled-code (tangle-code-for-indexing *sections*)))
       (loop for form in tangled-code
             and mangled-form in mangled-code
-            as walked-form = (walk-form walker mangled-form env ;
-                                        :toplevel toplevel)
+            as walked-form = (walk-form walker mangled-form env toplevel)
             when verify-walk
               do (assert (tree-equal walked-form form)
                          (walked-form mangled-form form)
@@ -6614,7 +6612,7 @@ of all of the interesting symbols so encountered.
   (let ((*evaluating* t))
     (index-package *package*)
     (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
-      (walk-form walker form nil :toplevel t))))
+      (walk-form walker form nil t))))
 
 @1*Writing the index. All that remains now is to write the index entries
 out to the index file. We'll be extra fancy and try to coalesce adjacent
