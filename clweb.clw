@@ -6054,7 +6054,7 @@ by the default method.
 
 @l
 (defmethod walk-atomic-form ((walker indexing-walker) (form symbol) ;
-                             context env &rest args)
+                             context env &key)
   (declare (ignore env))
   (multiple-value-bind (symbol section) (symbol-provenance form)
     (when section
