@@ -4474,13 +4474,23 @@ is evaluated.
   (block :foo (return-from :foo 4)))
 
 @ The special form |the| takes a type specifier and a form. We won't even
-bother walking the type specifier.
+bother walking the type specifier. SBCL has a similar but non-standard
+|truly-the| special form that it unfortunately doesn't provide a macro
+definition for; we'll support that, too.
+@^SBCL@>
 
 @l
-(define-special-form-walker the ((walker walker) form env &key)
+(defun walk-the (walker form env)
   `(,(car form)
     ,(cadr form)
-    ,@(walk-list walker (cddr form) env)))
+    ,(walk-form walker (caddr form) env)))
+
+(define-special-form-walker the ((walker walker) form env &key)
+  (walk-the walker form env))
+
+#+sbcl
+(define-special-form-walker sb-ext:truly-the ((walker walker) form env &key)
+  (walk-the walker form env))
 
 @t@l
 (define-walker-test the
