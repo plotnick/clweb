@@ -4082,14 +4082,16 @@ necessarily be in the environment yet, so we'll just return the given context.
 However, just because we don't find the name in the environment doesn't 
 mean it isn't there: neither SBCL, Allegro, nor~CCL correctly support
 looking up a function name of the form `(|setf| \<symbol>)' in an arbitrary
-lexical environment. We therefore special-case the non-atomic-function-name
+lexical environment. (In fact, SBCL signals an error---whence the
+|ignore-errors|.) We therefore special-case the non-atomic-function-name
 case, which really shouldn't be necessary.
 
 @l
 (deftype setf-function () '(cons (eql setf) (cons symbol null)))
 
 (defmethod update-context (name (context operator) env)
-  (multiple-value-bind (type local) (function-information name env)
+  (multiple-value-bind (type local) ;
+      (ignore-errors (function-information name env))
     (cond ((and (not local) (generic-function-p name))
            (make-context (etypecase name
                            (symbol 'generic-function-name)
