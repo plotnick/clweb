@@ -4090,17 +4090,17 @@ case, which really shouldn't be necessary.
 
 (defmethod update-context (name (context operator) env)
   (multiple-value-bind (type local) (function-information name env)
-    (if (and (not local) (generic-function-p name))
-        (make-context (etypecase name
-                        (symbol 'generic-function-name)
-                        (setf-function 'generic-setf-function-name)))
-        (if (or type (not (symbolp name)))
-            (make-context (find-namespace-class
-                           (etypecase name
-                             (symbol type)
-                             (setf-function :setf-function)))
-                          :local (or local (local-binding-p context)))
-            context))))
+    (cond ((and (not local) (generic-function-p name))
+           (make-context (etypecase name
+                           (symbol 'generic-function-name)
+                           (setf-function 'generic-setf-function-name))))
+          ((or type (not (symbolp name)))
+           (make-context (find-namespace-class
+                          (etypecase name
+                            (symbol type)
+                            (setf-function :setf-function)))
+                         :local (or local (local-binding-p context))))
+          (t context))))
 
 @ Now we have to define the function that handles the mapping between namespace
 names and classes. It's perfectly straightforward, and only looks imposing
