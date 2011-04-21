@@ -5225,7 +5225,7 @@ special form.
   `(,(car form)
     ,@(let ((decls (walk-declaration-specifiers walker (cdr form) env)))
         (when toplevel
-          (augment-environment nil :declare decls))
+          (mapcar #'proclaim decls))
         decls)))
 
 @t@l
