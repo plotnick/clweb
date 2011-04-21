@@ -6276,18 +6276,21 @@ to walk the function name. But that's all we'll do here: we need to continue
 the walk with the macro expansions so that we can pick up the definitions.
 
 @l
-(macrolet ((define-defun-like-walker (operator context)
-             `(define-special-form-walker ,operator ;
-                  ((walker indexing-walker) form env &key)
-                (let* ((context (make-context ',context))
-                       (name (walk-name walker (cadr form) context env :def t)))
-                  (throw 'continue-walk
-                    `(,(car form)
-                      ,@(walk-lambda-expression walker (cons name (cddr form)) ;
-                                                context env)))))))
-  (define-defun-like-walker defun function-name)
-  (define-defun-like-walker defmacro macro-name)
-  (define-defun-like-walker define-compiler-macro compiler-macro-name))
+(defun walk-defun (walker form context env)
+  (let ((name (walk-name walker (cadr form) context env :def t)))
+    (throw 'continue-walk
+      `(,(car form)
+        ,@(walk-lambda-expression walker (cons name (cddr form)) context env)))))
+
+(define-special-form-walker defun ((walker indexing-walker) form env &key)
+  (walk-defun walker form (make-context 'function-name) env))
+
+(define-special-form-walker defmacro ((walker indexing-walker) form env &key)
+  (walk-defun walker form (make-context 'macro-name) env))
+
+(define-special-form-walker define-compiler-macro ;
+    ((walker indexing-walker) form env &key)
+  (walk-defun walker form (make-context 'compiler-macro-name) env))
 
 @t@l
 (define-indexing-test (defun :verify-walk nil)
@@ -6355,17 +6358,19 @@ in order to pick up the definitions of the names. We still have to let them
 expand, though, in order to get the |special| declarations.
 
 @l
-(macrolet ((define-indexing-defvar-walker (operator)
-             `(define-special-form-walker ,operator ;
-                  ((walker indexing-walker) form env &key)
-                (throw 'continue-walk
-                  `(,(car form)
-                    ,(walk-name walker (cadr form) ;
-                                (make-context 'special-variable-name) ;
-                                env :def t)
-                    ,@(cddr form))))))
-  (define-indexing-defvar-walker defvar)
-  (define-indexing-defvar-walker defparameter))
+(defun walk-defvar (walker form env)
+  (throw 'continue-walk
+    `(,(car form)
+      ,(walk-name walker (cadr form) ;
+                  (make-context 'special-variable-name) ;
+                  env :def t)
+      ,@(cddr form))))
+
+(define-special-form-walker defvar ((walker indexing-walker) form env &key)
+  (walk-defvar walker form env))
+
+(define-special-form-walker defparameter ((walker indexing-walker) form env &key)
+  (walk-defvar walker form env))
 
 @t@l
 (define-indexing-test (defvar :verify-walk nil :toplevel t
@@ -6546,24 +6551,23 @@ a method description.
 class names, super-classes, and~accessor methods.
 
 @l
-(macrolet ((define-defclass-walker (operator namespace)
-             `(define-special-form-walker ,operator ;
-                  ((walker indexing-walker) form env &key)
-                (let ((namespace (make-context ',namespace)))
-                  (destructuring-bind ;
-                        (operator name supers slot-specs &rest options) form
-                    (throw 'continue-walk
-                      `(,operator
-                        ,(walk-name walker name namespace env :def t)
-                        ,(mapcar (lambda (super) ;
-                                   (walk-name walker super namespace env))
-                                 supers)
-                        ,(mapcar (lambda (spec) ;
-                                   (walk-slot-specifier walker spec env)) ;
-                                 slot-specs)
-                        ,@(walk-list walker options env))))))))
-  (define-defclass-walker defclass class-name%)
-  (define-defclass-walker define-condition condition-class-name))
+(defun walk-defclass (walker form context env)
+  (destructuring-bind (operator name supers slot-specs &rest options) form
+    (throw 'continue-walk
+      `(,operator
+        ,(walk-name walker name context env :def t)
+        ,(mapcar (lambda (super) (walk-name walker super context env))
+                 supers)
+        ,(mapcar (lambda (spec) (walk-slot-specifier walker spec env))
+                 slot-specs)
+        ,@(walk-list walker options env)))))
+
+(define-special-form-walker defclass ((walker indexing-walker) form env &key)
+  (walk-defclass walker form (make-context 'class-name%) env))
+
+(define-special-form-walker define-condition ;
+    ((walker indexing-walker) form env &key)
+  (walk-defclass walker form (make-context 'condition-class-name) env))
 
 @t@l
 (define-indexing-test (defclass :verify-walk nil
