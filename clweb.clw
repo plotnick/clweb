@@ -6428,7 +6428,7 @@ function object instead.
     (setf-function (setf (get (cadr function-name) 'generic-setf-function) t)))
   function-name)
 
-(defmethod generic-function-p (function-name)
+(defun generic-function-p (function-name)
   (if (fboundp function-name)
       (typep (fdefinition function-name) 'generic-function)
       (typecase function-name
