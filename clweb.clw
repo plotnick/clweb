@@ -4038,7 +4038,7 @@ references.
 (defnamespace macro-name (operator) :macro)
 (defnamespace macro-definition () :macro)
 (defnamespace compiler-macro-name (operator) :compiler-macro)
-(defnamespace special-operator (operator) :special-form)
+(defnamespace special-operator (operator) :special-operator)
 
 (defnamespace block-name () :block)
 (defnamespace tag-name () :tag)
@@ -4123,6 +4123,12 @@ case, which really shouldn't be necessary.
          'generic-setf-function-name)
   t)
 
+(deftest (update-context macro)
+  (let ((context (update-context 'setf (make-context 'operator) nil)))
+    (and (typep context 'macro-definition)
+         (not (local-binding-p context))))
+  t)
+
 (deftest (update-context local-macro)
   (let ((context (update-context 'foo
                                  (make-context 'operator)
@@ -4135,6 +4141,12 @@ case, which really shouldn't be necessary.
          (local-binding-p context)))
   t)
 
+(deftest (update-context function)
+  (let ((context (update-context 'identity (make-context 'operator) nil)))
+    (and (typep context 'function-name)
+         (not (local-binding-p context))))
+  t)
+
 (deftest (update-context local-function)
   (let ((context (update-context 'foo
                                  (make-context 'operator)
@@ -4143,6 +4155,12 @@ case, which really shouldn't be necessary.
                                   :function '(foo)))))
    (and (typep context 'function-name)
         (local-binding-p context)))
+  t)
+
+(deftest (update-context special-operator)
+  (let ((context (update-context 'if (make-context 'operator) nil)))
+    (and (typep context 'special-operator)
+         (not (local-binding-p context))))
   t)
 
 @ Now we have to define the function that handles the mapping between namespace
