@@ -4278,12 +4278,16 @@ it treats its car as a function name and walks its cdr.
 
 @t@l
 (deftest (walk-compound-form lambda)
-  (walk-compound-form (make-instance 'walker) '#1=(lambda (x) x) '(#1# 0)
-                      (ensure-portable-walking-environment nil))
+  (let ((operator '(lambda (x) x)))
+    (walk-compound-form (make-instance 'walker) operator `(,operator 0)
+                        (ensure-portable-walking-environment nil)))
   ((lambda (x) x) 0))
 
 (deftest (walk-compound-form invalid)
-  (handler-case (walk-compound-form (make-instance 'walker) '#1=(x) '(#1#) nil)
+  (handler-case
+      (let ((operator '(x)))
+        (walk-compound-form (make-instance 'walker) operator `(,operator 0)
+                            (ensure-portable-walking-environment nil)))
     (error () nil))
   nil)
 
