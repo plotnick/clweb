@@ -1846,11 +1846,19 @@ treatment, so we may as well do that here, too.
     ((or backquote-form comma-form splicing-comma-form) (pprint list stream))
     (t (pprint-fill stream list t))))
 
-(defun pprint-defun-like (stream list &rest args)
+(defun pprint-defun (stream list &rest args)
   (declare (ignore args))
   (format stream
           "~:<~^~W~^ ~@_~:I~W~^ ~:_~/clweb::careful-pprint-fill/~1I~@{ ~_~W~}~:>"
           list))
+
+(defun pprint-defmethod (stream list &rest args)
+  (declare (ignore args))
+  (if (consp (third list))
+      (pprint-defun stream list)
+      (format stream
+              "~:<~^~W~^ ~@_~:I~W~^ ~W~^ ~:_~/clweb::careful-pprint-fill/~1I~@{ ~_~W~}~:>"
+              list)))
 
 (defun pprint-let (stream list &rest args)
   (declare (ignore args))
@@ -1868,8 +1876,12 @@ treatment, so we may as well do that here, too.
 (deftype defun-like () '(cons (member defun defmacro deftype progv
                                       defparameter defvar defconstant ;
                                       define-setf-expander)))
-(set-tangle-dispatch 'defun-like #'pprint-defun-like)
-(set-weave-dispatch 'defun-like #'pprint-defun-like)
+(set-tangle-dispatch 'defun-like #'pprint-defun)
+(set-weave-dispatch 'defun-like #'pprint-defun)
+
+(deftype defmethod-form () '(cons (eql defmethod)))
+(set-tangle-dispatch 'defmethod-form  #'pprint-defmethod)
+(set-weave-dispatch 'defmethod-form #'pprint-defmethod)
 
 (deftype let-like () '(cons (member let let* handler-bind)))
 (set-tangle-dispatch 'let-like #'pprint-let)
