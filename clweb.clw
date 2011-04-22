@@ -5761,18 +5761,13 @@ to be a fairly traditional manner and call them entries, too.
               (locator-definition-p locator)
               (section-number (location locator))))))
 
-@ The entry trees get stored in |index| objects, for which we define a few
-protocol functions: |make-index| creates a new index; |add-index-entry|
-adds an entry to it, and |find-index-entries| returns the list of locators
-with the given heading.
+@ We'll store the entry trees in |index| objects.
 
 @l
 (defclass index ()
   ((entries :accessor index-entries :initform nil)))
 
 (defun make-index () (make-instance 'index))
-(defgeneric add-index-entry (index heading locator &optional def))
-(defgeneric find-index-entries (index heading))
 
 @ We'll keep a global index around so that we can add `manual' entries (i.e.,
 entries not automatically generated via the code walk) during reading.
@@ -5783,7 +5778,7 @@ entries not automatically generated via the code walk) during reading.
 @ @<Initialize global variables@>=
 (setq *index* (make-index))
 
-@ This method adds an index entry for |heading| with location |section|.
+@ This function adds an index entry for |heading| with location |section|.
 A new locator is constructed only when necessary, and duplicate locators are
 automatically suppressed. Definitional locators are also made to supersede
 ordinary ones.
@@ -5791,10 +5786,8 @@ ordinary ones.
 @l
 (define-modify-macro orf (&rest args) or)
 
-(defmethod add-index-entry ((index index) heading (section section) &optional ;
-                            def)
-  (flet ((make-locator ()
-           (make-locator :section section :def def)))
+(defun add-index-entry (index heading section &optional def)
+  (flet ((make-locator () (make-locator :section section :def def)))
     (if (null (index-entries index))
         (setf (index-entries index)
               (make-instance 'index-entry ;
@@ -5807,13 +5800,8 @@ ordinary ones.
               (orf (locator-definition-p old-locator) def)
               (push (make-locator) (entry-locators entry)))))))
 
-@ And here's the main index entry retrieval method. In fact, this function
-isn't actually used in this program (although the test suite uses it),
-since all we do with the index is add entries to it and then traverse the
-whole thing and print them all out.
-
-@l
-(defmethod find-index-entries ((index index) heading)
+@t@l
+(defun find-index-entries (index heading)
   (let ((entries (index-entries index)))
     (when entries
       (multiple-value-bind (entry present-p) ;
@@ -5821,26 +5809,20 @@ whole thing and print them all out.
         (when present-p
           (entry-locators entry))))))
 
-@t@l
 (deftest (add-index-entry 1)
   (let ((index (make-index))
-        (heading 'foo)
-        (*sections* (make-array 3 :fill-pointer 0)))
-    (add-index-entry index heading (make-instance 'section))
-    (add-index-entry index heading (make-instance 'section))
-    (add-index-entry index heading (make-instance 'section))
-    (sort (mapcar #'section-number
-                  (mapcar #'location (find-index-entries index heading)))
-          #'<))
-  (0 1 2))
+        (heading 'foo))
+    (add-index-entry index heading 1)
+    (add-index-entry index heading 2)
+    (add-index-entry index heading 3)
+    (sort (mapcar #'location (find-index-entries index heading)) #'<))
+  (1 2 3))
 
 (deftest (add-index-entry 2)
   (let* ((index (make-index))
-         (heading 'foo)
-         (*sections* (make-array 1 :fill-pointer 0))
-         (section (make-instance 'section)))
-    (add-index-entry index heading section)
-    (add-index-entry index heading section t) ; def should replace use
+         (heading 'foo))
+    (add-index-entry index heading 1)
+    (add-index-entry index heading 1 t) ; def should replace use
     (locator-definition-p (first (find-index-entries index heading))))
   t)
 
