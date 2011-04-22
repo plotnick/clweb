@@ -4094,8 +4094,8 @@ necessarily be in the environment yet, so we'll just return the given context.
 However, just because we don't find the name in the environment doesn't 
 mean it isn't there: neither SBCL, Allegro, nor~CCL correctly support
 looking up a function name of the form `(|setf| \<symbol>)' in an arbitrary
-lexical environment. (In fact, SBCL signals an error---whence the
-|ignore-errors|.) We therefore special-case the non-atomic-function-name
+lexical environment. (In fact, SBCL signals an error---whence the careful
+error handling.) We therefore special-case the non-atomic-function-name
 case, which really shouldn't be necessary.
 
 @l
@@ -4103,7 +4103,8 @@ case, which really shouldn't be necessary.
 
 (defmethod update-context (name (context operator) env)
   (multiple-value-bind (type local) ;
-      (ignore-errors (function-information name env))
+      (handler-case (function-information name env)
+        (error () (values nil nil)))
     (cond ((and (not local) (generic-function-p name))
            (make-context (etypecase name
                            (symbol 'generic-function-name)
@@ -4115,6 +4116,34 @@ case, which really shouldn't be necessary.
                             (setf-function :setf-function)))
                          :local (or local (local-binding-p context))))
           (t context))))
+
+@t@l
+(deftest (update-context generic-setf)
+  (typep (update-context '(setf class-name) (make-context 'operator) nil)
+         'generic-setf-function-name)
+  t)
+
+(deftest (update-context local-macro)
+  (let ((context (update-context 'foo
+                                 (make-context 'operator)
+                                 (augment-environment
+                                  (ensure-portable-walking-environment nil)
+                                  :macro `((foo ,(lambda (form env)
+                                                   (declare (ignore env))
+                                                   form)))))))
+    (and (typep context 'macro-definition)
+         (local-binding-p context)))
+  t)
+
+(deftest (update-context local-function)
+  (let ((context (update-context 'foo
+                                 (make-context 'operator)
+                                 (augment-environment
+                                  (ensure-portable-walking-environment nil)
+                                  :function '(foo)))))
+   (and (typep context 'function-name)
+        (local-binding-p context)))
+  t)
 
 @ Now we have to define the function that handles the mapping between namespace
 names and classes. It's perfectly straightforward, and only looks imposing
