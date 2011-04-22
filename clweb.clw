@@ -6879,7 +6879,6 @@ characters are the same (ignoring differences of case).
 (deftest macro-char-heading-lessp
   (let* ((a (make-macro-char-heading #\a))
          (b (make-macro-char-heading #\b))
-         (c (make-macro-char-heading #\c))
          (ab (make-macro-char-heading #\a #\b))
          (ac (make-macro-char-heading #\a #\c)))
     (every #'identity
