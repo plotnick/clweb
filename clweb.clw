@@ -5948,6 +5948,11 @@ form without having to apply a predicate first.
   (symbol-provenance :foo)
   :foo)
 
+(deftest (symbol-provenance 3)
+  (let ((symbol (make-symbol "FOO")))
+    (eql (symbol-provenance symbol) symbol))
+  t)
+
 @ To replace all of the referring symbols in a form, we'll use the following
 simple function.
 
