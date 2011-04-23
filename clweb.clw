@@ -4794,7 +4794,23 @@ bindings.
 (defmethod walk-bindings ((walker walker) names (namespace variable-name) ;
                           env &key declare)
   (values names
-          (augment-environment env :variable names :declare declare)))
+          (augment-environment env
+                               :variable names
+                               :declare @<Find the declarations...@>)))
+
+@ SBCL's environment handling is extremely picky, and signals warnings
+about declarations for variables it doesn't know about. To shut it up,
+we'll supply only declarations that apply to the variable names currently
+being added to the environment.
+@^SBCL@>
+
+@<Find the declarations in |declare| that apply to the variables in |names|@>=
+(mapcan (lambda (decl)
+          (case (car decl)
+            ((ignore ignorable special)
+             (let ((vars (intersection (cdr decl) names)))
+               (when vars (list `(,(car decl) ,@vars)))))))
+        declare)
 
 @ The syntax of \L-lists is given in section~3.4 of the \ansi\ standard.
 We accept the syntax of macro \L-lists, since they are the most general,
@@ -5001,8 +5017,8 @@ the bindings in |flet|, |macrolet|, and~|labels| special forms.
                (lambda name)
                (t (walk-name walker (car form) context env))))
           ,lambda-list
-          ,@(if doc `(,doc))
-          ,@(if decls `((declare ,@decls)))
+          ,@(when doc `(,doc))
+          ,@(when decls `((declare ,@decls)))
           ,@(walk-list walker forms env))))))
 
 @ `|lambda|' is not a special operator in Common Lisp, but we'll treat
@@ -5114,17 +5130,29 @@ their body forms in an environment that contains all of the new bindings.
                          :declare decls)
         `(,(car form)
           ,(mapcar #'list vars init-forms)
-          ,@(if decls `((declare ,@decls)))
+          ,@(when decls `((declare ,@decls)))
           ,@(walk-list walker forms env))))))
 
+@t@l
+(define-walker-test let
+  (let ((x 1)
+        (y (check-binding x :variable nil)))
+    (declare (special x))
+    (check-binding x :variable :special)
+    (check-binding y :variable :lexical))
+  (let ((x 1) (y x)) (declare (special x)) x y))
+
 @ We need a |walk-bindings| method for local function bindings; this will
-be used for |labels| as well.
+be used for |labels| as well. Notice that we don't currently preserve any
+declarations that can affect function bindings, so we simply ignore any
+supplied declarations.
 
 @l
 (defmethod walk-bindings ((walker walker) names (namespace function-name)
                           env &key declare)
+  (declare (ignore declare))
   (values names
-          (augment-environment env :function names :declare declare)))
+          (augment-environment env :function names)))
 
 @ @l
 (define-special-form-walker flet ((walker walker) form env &key)
@@ -5133,8 +5161,6 @@ be used for |labels| as well.
     (let* ((bindings (cadr form))
            (context (make-context 'function-name :local t))
            (fns (mapcar (lambda (fn)
-                          ;; XXX: This will walk the function names, which
-                          ;; we don't really want.
                           (walk-lambda-expression walker fn context env))
                         bindings)))
       (multiple-value-bind (function-names env)
@@ -5143,10 +5169,34 @@ be used for |labels| as well.
                          context
                          env
                          :declare decls)
-       `(,(car form)
-         ,(mapcar #'cons function-names (mapcar #'cdr fns))
-         ,@(if decls `((declare ,@decls)))
-         ,@(walk-list walker forms env))))))
+        `(,(car form)
+          ,(mapcar #'cons function-names (mapcar #'cdr fns))
+          ,@(when decls `((declare ,@decls)))
+          ,@(walk-list walker forms (if decls
+                                        (augment-environment env :declare decls)
+                                        env)))))))
+
+@t As of SBCL version 1.0.47, we get a style warning about the `ignore'
+declaration for the function |bar|. This appears to be a bug in SBCL, not
+in our declaration or environment handling; simply evaluating the form
+|(augment-environment (augment-environment nil :function '(foo))
+                      :declare '((ignore (function foo))))|
+produces the same kind of warning.
+
+@l
+(define-walker-test flet
+  (flet ((foo (x) (check-binding x :variable :lexical))
+         (bar (y) y))
+    (declare (special x)
+             (ignore (function bar)))
+    (check-binding x :variable :special)
+    (check-binding foo :function :function))
+  (flet ((foo (x) x)
+         (bar (y) y))
+    (declare (special x)
+             (ignore (function bar)))
+    x
+    foo))
 
 @ The bindings established by |macrolet| and |symbol-macrolet| are
 different from those established by the other binding forms in that they
@@ -5182,8 +5232,17 @@ using |parse-macro| and |enclose| before we add them to the environment.
                          :declare decls)
         `(,(car form)
           ,defs
-          ,@(if decls `((declare ,@decls)))
+          ,@(when decls `((declare ,@decls)))
           ,@(walk-list walker forms env toplevel))))))
+
+@t@l
+(define-walker-test (macrolet :toplevel t)
+  (macrolet ((foo (x) `,(check-binding x :variable :lexical))
+             (bar (y) `,y))
+    (check-binding foo :function :macro)
+    (ensure-toplevel)
+    (foo :foo))
+  (macrolet ((foo (x) x) (bar (y) y)) foo t :foo))
 
 @ Walking |symbol-macrolet| is simpler, since the definitions are given in
 the bindings themselves. The body forms of a top level |macrolet| form are
@@ -5211,34 +5270,10 @@ also considered top level.
                          :declare decls)
         `(,(car form)
           ,defs
-          ,@(if decls `((declare ,@decls)))
+          ,@(when decls `((declare ,@decls)))
           ,@(walk-list walker forms env toplevel))))))
 
 @t@l
-(define-walker-test let
-  (let ((x 1)
-        (y (check-binding x :variable nil)))
-    (declare (special x))
-    (check-binding x :variable :special)
-    (check-binding y :variable :lexical))
-  (let ((x 1) (y x)) (declare (special x)) x y))
-
-(define-walker-test flet
-  (flet ((foo (x) (check-binding x :variable :lexical))
-         (bar (y) y))
-    (declare (special x))
-    (check-binding x :variable :special)
-    (check-binding foo :function :function))
-  (flet ((foo (x) x) (bar (y) y)) (declare (special x)) x foo))
-
-(define-walker-test (macrolet :toplevel t)
-  (macrolet ((foo (x) `,(check-binding x :variable :lexical))
-             (bar (y) `,y))
-    (check-binding foo :function :macro)
-    (ensure-toplevel)
-    (foo :foo))
-  (macrolet ((foo (x) x) (bar (y) y)) foo t :foo))
-
 (define-walker-test (symbol-macrolet :toplevel t)
   (symbol-macrolet ((foo :foo)
                     (bar :bar))
@@ -5262,7 +5297,7 @@ and |labels|, which does so before walking any of its bindings.
                        (walk-binding walker var context env :declare decls))
                      (list var init-form)))
                  (cadr form))
-        ,@(if decls `((declare ,@decls)))
+        ,@(when decls `((declare ,@decls)))
         ,@(walk-list walker forms env)))))
 
 @t@l
@@ -5287,11 +5322,12 @@ and |labels|, which does so before walking any of its bindings.
           (setq env new-env)))
       `(,(car form)
         ,(mapcar (lambda (p)
-                   ;; XXX: This also walks the function name.
                    (walk-lambda-expression walker p context env))
                  (mapcar #'cons function-names (mapcar #'cdr bindings)))
-        ,@(if decls `((declare ,@decls)))
-        ,@(walk-list walker forms env)))))
+        ,@(when decls `((declare ,@decls)))
+        ,@(walk-list walker forms (if decls
+                                      (augment-environment env :declare decls)
+                                      env))))))
 
 @t@l
 (define-walker-test labels
@@ -5312,7 +5348,7 @@ body forms.
   (multiple-value-bind (forms decls) ;
       (parse-body (cdr form) :walker walker :env env)
     `(,(car form)
-      ,@(if decls `((declare ,@decls)))
+      ,@(when decls `((declare ,@decls)))
       ,@(walk-list walker forms ;
                    (augment-environment env :declare decls) ;
                    toplevel))))
@@ -6565,8 +6601,8 @@ specialized \L-list and body forms here.
         ,@(when function-name `(,function-name))
         ,@qualifiers
         ,lambda-list
-        ,@(if doc `(,doc))
-        ,@(if decls `((declare ,@decls)))
+        ,@(when doc `(,doc))
+        ,@(when decls `((declare ,@decls)))
         ,@(walk-list walker body-forms env)))))
 
 @ @<Walk the method description in |form|@>=
