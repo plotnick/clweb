@@ -6423,11 +6423,11 @@ expand, though, in order to get the |special| declarations.
 
 @t@l
 (define-indexing-test (defvar :verify-walk nil :toplevel t
-                              :aux (*super* *duper*))
-  `((:section :code ((defvar ,*super* 450)))
-    (:section :code ((defparameter ,*duper* (1+ ,*super*)))))
-  ("*DUPER* special variable" ((:def 1)))
-  ("*SUPER* special variable" (1 (:def 0))))
+                              :aux (super duper))
+  `((:section :code ((defvar ,super 450)))
+    (:section :code ((defparameter ,duper (1+ ,super)))))
+  ("DUPER special variable" ((:def 1)))
+  ("SUPER special variable" (1 (:def 0))))
 
 @ We have to treat |defconstant| specially because of the work-around in
 the walker for Allegro, but it's basically the same as above.
