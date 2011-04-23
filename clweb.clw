@@ -4738,10 +4738,6 @@ machinery uses blatantly unsafe code, and depends on local declarations to
 lower the safety level.)
 @^Clozure Common Lisp@>
 
-{\bf Fixme:} I'm not completely happy with this code. In particular, we
-should handle |notinline| declarations, and the lazy way we handle |optimize|
-is just no good at all.
-
 @l
 (defun walk-declaration-specifiers (walker decls env)
   (loop for decl in decls
@@ -4750,7 +4746,11 @@ is just no good at all.
 (defmethod walk-declaration-specifier ((walker walker) decl-spec env)
   (destructuring-bind (identifier . data) decl-spec
     (case identifier
-      (special `(special ,@(walk-list walker data env)))
+      (special (flet ((walk-var (var)
+                          (walk-name walker var
+                                     (make-context 'special-variable-name)
+                                     env)))
+                 `(special ,@(mapcar #'walk-var data))))
       (optimize `(optimize ,@data)))))
 
 @t All we care about are `special' and `optimize' declarations.
@@ -6252,6 +6252,10 @@ common case, where no destructuring is actually necessary.
   ("X lexical variable" ((:def 0)))
   ("Y lexical variable" ((:def 0)))
   ("Z lexical variable" ((:def 0))))
+
+(define-indexing-test special-variable
+  '((:section :code ((locally (declare (special *x*)) *x*))))
+  ("*X* special variable" (0)))
 
 (define-indexing-test (macrolet :verify-walk nil)
   '((:section :code ((macrolet ((frob (x) `(* ,x 42))) (frob 6)))))
