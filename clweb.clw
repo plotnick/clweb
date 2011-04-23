@@ -4732,11 +4732,14 @@ treated as documentation strings.
 @ Because of the shorthand notation for type declarations, walking general
 declaration expressions is difficult. However, we don't care about type
 declarations, since they're not allowed to affect program semantics. We
-therefore just throw out everything except `special' and `optimize'
-declarations. (The latter are preserved only because CCL's macro-expansion
-machinery uses blatantly unsafe code, and depends on local declarations to
-lower the safety level.)
+therefore just throw out everything except `special', `optimize', `ignore',
+and~`ignorable' declarations. Optimize declarations are preserved only
+because CCL's macro-expansion machinery uses blatantly unsafe code, and
+depends on local declarations to lower the safety level. Ignore(able)
+declarations are preserved primarily to keep SBCL from complaining about
+unused variables in macro functions.
 @^Clozure Common Lisp@>
+@^SBCL@>
 
 @l
 (defun walk-declaration-specifiers (walker decls env)
@@ -4746,24 +4749,37 @@ lower the safety level.)
 (defmethod walk-declaration-specifier ((walker walker) decl-spec env)
   (destructuring-bind (identifier . data) decl-spec
     (case identifier
-      (special (flet ((walk-var (var)
-                          (walk-name walker var
-                                     (make-context 'special-variable-name)
-                                     env)))
-                 `(special ,@(mapcar #'walk-var data))))
+      (special @<Walk the `special' declarations...@>)
+      ((ignore ignorable) @<Walk the `ignore' or `ignorable' declarations...@>)
       (optimize `(optimize ,@data)))))
 
-@t All we care about are `special' and `optimize' declarations.
+@ @<Walk the `special' declarations in |data|@>=
+(flet ((walk-var (var)
+         (walk-name walker var (make-context 'special-variable-name) env)))
+  `(special ,@(mapcar #'walk-var data)))
 
-@l
+@ @<Walk the `ignore' or `ignorable' declarations in |data|@>=
+(flet ((walk-var/fn (name)
+         (etypecase name
+           (symbol (walk-name walker name (make-context 'variable-name) env))
+           ((cons (eql function)) `(function
+                                    ,(walk-name walker (cadr name) ;
+                                                (make-context 'function-name) ;
+                                                env))))))
+  `(,identifier ,@(mapcar #'walk-var/fn data)))
+
+@t @l
 (deftest walk-declaration-specifiers
   (equal (walk-declaration-specifiers (make-instance 'walker)
                                       '((type foo x)
                                         (special x y)
                                         (ignore z)
+                                        (ignorable (function f))
                                         (optimize (speed 3) (safety 0)))
                                       nil)
          '((special x y)
+           (ignore z)
+           (ignorable (function f))
            (optimize (speed 3) (safety 0))))
   t)
 
