@@ -4495,16 +4495,16 @@ is evaluated.
 
 @l
 (defmacro define-walker-test (name-and-options form &optional ;
-                              (result nil resultp))
+                              (result nil result-supplied))
   (destructuring-bind (name &key (toplevel nil)) (ensure-list name-and-options)
-    (with-unique-names (walker walked-form)
-      `(deftest (walk ,name)
-         (let* ((,walker (make-instance 'test-walker))
-                (,walked-form (walk-form ,walker ',form nil ,toplevel)))
-           ,(if (or result (null resultp))
-                `(tree-equal ,walked-form ',(or result form))
-                t))
-         t))))
+    `(deftest (walk ,name)
+       (let* ((form ',form)
+              (walker (make-instance 'test-walker))
+              (walked-form (walk-form walker form nil ,toplevel)))
+         ,(cond (result `(tree-equal walked-form ',result))
+                ((not result-supplied) '(tree-equal walked-form form))
+                (t t)))
+       t)))
 
 @ |progn| is special because it preserves top-levelness.
 
