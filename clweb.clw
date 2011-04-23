@@ -6201,7 +6201,7 @@ us write |eql|-specialized methods on the |operator| argument while still
 preserving the provenance via the |form|.
 
 If the operator is a referring symbol, we have to do a full call to pick up
-any newly-applicable methods. Otherwise, can just use |call-next-method|.
+any newly-applicable methods. Otherwise, we can just use |call-next-method|.
 
 @l
 (defmethod walk-compound-form :around ;
