@@ -1209,9 +1209,9 @@ consumed.
            (declare (ignorable ,object ,echoed))
            ,@body)))))
 
-@ We have to be very careful here about delimiters: for self-delimiting
+@ We have to be very careful here about delimiters. For self-delimiting
 forms like quoted strings, the final delimiter will be---and should
-be---the last character consumed, but if there's some other kind of
+be---the last character consumed. But if there's some other kind of
 delimiter---a closing parenthesis, say---then it should {\it not\/} be
 delivered as part of |echoed|. The problem is that such a delimiter may
 very well have been read and then unread, and the standard says that when
