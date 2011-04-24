@@ -1173,6 +1173,7 @@ will rewind to the state just after the previous one.
                   (prog1 (setq ,var (make-concatenated-stream ,in ,var))
                     (push ,var ,closing)
                     (push ,in ,closing)))))
+         (declare (ignorable (function ,rewind)))
          (unwind-protect (progn ,@body)
            (map nil #'close ,closing))))))
 
