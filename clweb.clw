@@ -3949,13 +3949,16 @@ Thanks, Franz!
 #+allegro
 (reorder-env-information function-information #'sys:function-information)
 
-@ Along with the environment, some of the walker methods will be given
-a `context' argument that gives some extra information about the form
-being walked. Those arguments will always be instances of |walk-context|,
-or |nil| if there is no relevant information to supply.
+@ Along with the environment, most of the walker functions take a `context'
+argument that gives some extra information about the form being walked.
+Those arguments will always be instances of |walk-context|, or |nil| if
+there is no relevant information to supply.
 
 @l
 (defclass walk-context () ())
+
+(defun make-context (context &rest args)
+  (apply #'make-instance context args))
 
 @ The most important kind of context we'll supply is the {\it namespace\/}
 of a name that's about to be walked. Namespaces are associated with
@@ -4049,14 +4052,6 @@ references.
 ;; use it for the name of a class.
 (defnamespace class-name% () :class)
 (defnamespace condition-class-name (class-name%) :condition-class)
-
-@ We'll always go through this constructor function to make context
-instances. The plan is to have a whole suite of compiler macros that
-use caches to avoid constructing new instances whenever possible.
-
-@l
-(defun make-context (context &rest args)
-  (apply #'make-instance context args))
 
 @ The reason the association between namespace names and environment types
 is important is that when we walk a name, we can sometimes only give a best
