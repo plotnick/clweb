@@ -5635,12 +5635,13 @@ it for |heading-name|.
 
 @<Define |heading-name|...@>=
 (defun join-strings (strings &optional (delimiter #\Space) &aux
-                     (strings (remove-if #'null (ensure-list strings)))
+                     (strings (ensure-list strings))
                      (delimiter (string delimiter)))
   (with-output-to-string (out)
     (loop for (string . more) on strings
-          do (write-string (string string) out)
-          when more do (write-string delimiter out))))
+          when string
+            do (write-string (string string) out)
+            and when more do (write-string delimiter out))))
 
 (define-method-combination join-strings (&optional (delimiter #\Space))
     ((prefix (:prefix))
