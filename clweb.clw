@@ -6146,7 +6146,9 @@ exist for the dynamic extent of the walk.
 (defmacro define-indexing-test (name-and-options sections ;
                                 &rest expected-entries)
   (destructuring-bind (name &rest options &key aux &allow-other-keys) ;
-      (ensure-list name-and-options)
+      (if (listp name-and-options)
+          (copy-list name-and-options) ; so we can use |remf| below
+          (list name-and-options))
     (remf options :aux)
     `(deftest (index ,name)
        (with-unique-indexing-names ,aux
