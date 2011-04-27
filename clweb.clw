@@ -4016,15 +4016,24 @@ accessor functions implement that mapping.
   (setf (gethash namespace-name *namespace-classes*) class))
 
 (defun find-namespace-class (namespace-name)
-  (restart-case
-      (or (gethash namespace-name *namespace-classes*)
-          (error "Can't find namespace class for namespace ~S." namespace-name))
-    (use-value (value)
-      :report "Specify a class to use this time."
-      value)
-    (store-value (value)
-      :report "Specify a value to store and use in the future."
-      (setf (find-namespace-class namespace-name) value))))
+  (flet ((read-namespace-class-name ()
+           (loop
+             (format *query-io* "Enter a namespace class name: ")
+             (let ((class (find-class (read *query-io*) nil)))
+               (when (and class (subtypep class 'namespace))
+                 (return (list class)))))))
+   (restart-case
+       (or (gethash namespace-name *namespace-classes*)
+           (error "Can't find namespace class for namespace ~S."
+                  namespace-name))
+     (use-value (value)
+       :report "Specify a class to use this time."
+       :interactive read-class-name
+       value)
+     (store-value (value)
+       :report "Specify a class to store and use in the future."
+       :interactive read-class-name
+       (setf (find-namespace-class namespace-name) value)))))
 
 @ We'll wrap up the namespace class definitions in a little defining
 macro that eliminates some syntactic redundancies and sets up the
