@@ -6147,7 +6147,7 @@ exist for the dynamic extent of the walk.
                                 &rest expected-entries)
   (destructuring-bind (name &rest options &key aux &allow-other-keys) ;
       (if (listp name-and-options)
-          (copy-list name-and-options) ; so we can use |remf| below
+          (copy-list name-and-options) ; so we can safely use |remf| below
           (list name-and-options))
     (remf options :aux)
     `(deftest (index ,name)
