@@ -4037,7 +4037,7 @@ accessor functions implement that mapping.
 
 @ We'll wrap up the namespace class definitions in a little defining
 macro that eliminates some syntactic redundancies and sets up the
-name~$\rightarrow$~namespace~class mapping.
+\hbox{namespace name $\rightarrow$ namespace class} mapping.
 
 @l
 (defmacro defnamespace (class-name (&optional super) namespace-name &optional ;
