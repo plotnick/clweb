@@ -3965,12 +3965,12 @@ there is no relevant information to supply.
 of a name that's about to be walked. Namespaces are associated with
 environments, but the \cltl\ environments {\sc api} does not provide
 functions for dealing directly with many of the kinds of namespaces
-that we'll define. However, the most important namespaces---variable names,
-function names, macros, \etc.---do have corresponding entries in the
-lexical environment objects that we'll pass around, and we'll make it
-easy to maintain this link.
+that we'll define. However, the most important namespaces---variable
+names, function names, macros, \etc.---do have corresponding entries
+in the lexical environment objects that we'll pass around, and we'll
+make it easy to maintain this link.
 
-But the real problem that these namespace objects solve is that we'll
+The main problem that these namespace objects solve is that we'll
 need to walk names of all kinds {\it before\/} we add them to or even
 look them up in the environment because of the referring symbols the
 indexing walker uses to track sections in tangled code. We'll therefore
@@ -3978,12 +3978,20 @@ use them to represent both a namespace that an evaluated name should
 already exist in, and the namespace in which a new binding is being
 established.
 
-The former will be represented by instances of the class |namespace|, and
-the latter by subclasses with the class |binding| mixed~in. Every entry in
-a namespace---i.e., every binding---can be either `local' or `global'. For
-some namespaces, only global names are supported (e.g., compiler macros can
-only be global), but the question ``is this binding local or global?'' still
-makes sense for those namespaces.
+Associated with every namespace is a name---not the name that's being
+walked, but an identifier for the namespace itself, like `variable' or
+`function'. Those names will be keyword symbols, and for namespaces that
+correspond directly to lexical environments, the name should match the
+symbol returned as the second value from the environment accessor for that
+namespace. For instance, |variable-information| returns |:lexical| as its
+second value if the given variable is a lexical variable in the current
+environment, and so our lexical variable namespace has |:lexical| as its
+name.
+
+Every entry in a namespace---i.e., every binding---can be either `local'
+or `global'. For some namespaces, only global names are supported (e.g.,
+compiler macros can only be global), but the question ``is this binding
+local or global?'' still makes sense for those namespaces.
 
 @l
 (defclass namespace (walk-context)
@@ -3997,20 +4005,30 @@ makes sense for those namespaces.
     (when (local-binding-p x)
       (prin1 :local stream))))
 
-@ Associated with every namespace is a name---not the name that's being
-walked, but an identifier for the namespace itself, like `variable' or
-`function'. Those names will be keyword symbols, and for namespaces that
-correspond directly to lexical environments, the name should match the
-symbol returned as the second value from the environment accessor for that
-namespace. For instance, |variable-information| returns |:lexical| as its
-second value if the given variable is a lexical variable in the current
-environment, and so our lexical variable namespace has |:lexical| as its
-name.
+@ During a walk, we'll sometimes need to go from a namespace name to the
+class we use to represent that namespace. The following hash table and
+accessor functions implement that mapping.
 
 @l
-@<Define |find-namespace-class|@>
+(defparameter *namespace-classes* (make-hash-table :test 'eq))
 
-@ We'll wrap up the namespace class definitions in some nice defining macros.
+(defun (setf find-namespace-class) (class namespace-name)
+  (setf (gethash namespace-name *namespace-classes*) class))
+
+(defun find-namespace-class (namespace-name)
+  (restart-case
+      (or (gethash namespace-name *namespace-classes*)
+          (error "Can't find namespace class for namespace ~S." namespace-name))
+    (use-value (value)
+      :report "Specify a class to use this time."
+      value)
+    (store-value (value)
+      :report "Specify a value to store and use in the future."
+      (setf (find-namespace-class namespace-name) value))))
+
+@ We'll wrap up the namespace class definitions in a little defining
+macro that eliminates some syntactic redundancies and sets up the
+name~$\rarrow$~namespace~class mapping.
 
 @l
 (defmacro defnamespace (class-name (&optional super) namespace-name &optional ;
@@ -4158,27 +4176,6 @@ case, which really shouldn't be necessary.
     (and (typep context 'special-operator)
          (not (local-binding-p context))))
   t)
-
-@ Now we have to define the function that handles the mapping between namespace
-names and classes. It's perfectly straightforward, and only looks imposing
-because we've added a bit of error checking and recovery.
-
-@<Define |find-namespace-class|...@>=
-(defvar *namespace-classes* (make-hash-table :test 'eq))
-
-(defun (setf find-namespace-class) (class namespace-name)
-  (setf (gethash namespace-name *namespace-classes*) class))
-
-(defun find-namespace-class (namespace-name)
-  (restart-case
-      (or (gethash namespace-name *namespace-classes*)
-          (error "Can't find namespace class for namespace ~S." namespace-name))
-    (use-value (value)
-      :report "Specify a class to use this time."
-      value)
-    (store-value (value)
-      :report "Specify a value to store and use in the future."
-      (setf (find-namespace-class namespace-name) value))))
 
 @ Now we come to the walker proper. Code walkers are represented as instances
 of the class |walker|. The walker protocol consists of a handful of generic
