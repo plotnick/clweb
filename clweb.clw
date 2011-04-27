@@ -5938,22 +5938,23 @@ The substitution is done blindly and without regard to the syntax or
 semantics of Common Lisp, since we can't walk pre-tangled code.
 
 @l
-(defun substitute-symbols (form section &aux symbols)
-  (labels ((get-symbols (form)
-             (cond ((interesting-symbol-p form)
-                    (pushnew form symbols))
-                   ((atom form) nil)
-                   (t (get-symbols (car form))
-                      (get-symbols (cdr form))))))
-    (get-symbols form)
-    (sublis (map 'list
-                 (lambda (sym)
-                   (let ((refsym (copy-symbol sym)))
-                     (setf (symbol-value refsym) sym)
-                     (setf (get refsym 'section) section)
-                     (cons sym refsym)))
-                 symbols)
-            form)))
+(defun substitute-symbols (form section)
+  (let (symbols)
+    (labels ((get-symbols (form)
+               (cond ((interesting-symbol-p form)
+                      (pushnew form symbols))
+                     ((atom form) nil)
+                     (t (get-symbols (car form))
+                        (get-symbols (cdr form))))))
+      (get-symbols form)
+      (sublis (map 'list
+                   (lambda (symbol)
+                     (let ((refsym (copy-symbol symbol)))
+                       (setf (symbol-value refsym) symbol)
+                       (setf (get refsym 'section) section)
+                       (cons symbol refsym)))
+                   symbols)
+              form))))
 
 @ This next function goes the other way: given a symbol, it determines
 whether it is a referring symbol, and if so, it returns the symbol referred
