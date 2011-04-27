@@ -4560,8 +4560,7 @@ definition for; we'll support that, too.
 @l
 (define-special-form-walker quote ((walker walker) form env &key)
   (declare (ignore env))
-  `(,(car form)
-    ,(cadr form)))
+  form)
 
 @t@l
 (define-walker-test quote-1 'foo)
