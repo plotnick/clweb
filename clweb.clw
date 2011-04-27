@@ -4022,22 +4022,22 @@ accessor functions implement that mapping.
              (let ((class (find-class (read *query-io*) nil)))
                (when (and class (subtypep class 'namespace))
                  (return (list class)))))))
-   (restart-case
-       (or (gethash namespace-name *namespace-classes*)
-           (error "Can't find namespace class for namespace ~S."
-                  namespace-name))
-     (use-value (value)
-       :report "Specify a class to use this time."
-       :interactive read-class-name
-       value)
-     (store-value (value)
-       :report "Specify a class to store and use in the future."
-       :interactive read-class-name
-       (setf (find-namespace-class namespace-name) value)))))
+    (restart-case
+        (or (gethash namespace-name *namespace-classes*)
+            (error "Can't find namespace class for namespace ~S." ;
+                   namespace-name))
+      (use-value (value)
+        :report "Specify a class to use this time."
+        :interactive read-class-name
+        value)
+      (store-value (value)
+        :report "Specify a class to store and use in the future."
+        :interactive read-class-name
+        (setf (find-namespace-class namespace-name) value)))))
 
 @ We'll wrap up the namespace class definitions in a little defining
 macro that eliminates some syntactic redundancies and sets up the
-name~$\rarrow$~namespace~class mapping.
+name~$\rightarrow$~namespace~class mapping.
 
 @l
 (defmacro defnamespace (class-name (&optional super) namespace-name &optional ;
