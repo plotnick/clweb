@@ -6423,8 +6423,7 @@ the walk with the macro expansions so that we can pick up the definitions.
   ("TWIDDLE-FOO macro" (2 (:def 1))))
 
 @ We'll do exactly the same thing for |define-symbol-macro|, and for
-exactly the same reason. The only difference is that we walk the name
-with |walk-atomic-form| as opposed to going through |walk-function-name|.
+exactly the same reason.
 
 @l
 (define-special-form-walker define-symbol-macro
