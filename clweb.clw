@@ -4069,7 +4069,7 @@ worry about forward references.
 (defnamespace setf-function-name (function-name) :setf-function)
 (defnamespace macro-name (operator) :macro)
 (defnamespace compiler-macro-name (operator) :compiler-macro)
-(defnamespace special-operator (operator) :special-operator)
+(defnamespace special-operator (operator) :special-form)
 
 (defnamespace block-name () :block)
 (defnamespace tag-name () :tag)
@@ -4091,6 +4091,15 @@ vastly simpler.
 @<Define namespace...@>=
 (defnamespace symbol-macro-definition (symbol-macro-name))
 (defnamespace macro-definition (macro-name))
+
+@ The people at Franz just can't seem to resist tweaking the environment
+{\sc API}: their version of |function-information| returns |:sepcial-operator|
+rather than |:special-form| when the function spec names a special operator.
+This may be more precise terminology, but it's an arbitrary and capricious
+change. Still, it's easy enough to provide an alias for our namespace class.
+
+@l
+(setf (find-namespace-class :special-operator) (find-class 'special-operator))
 
 @ The reason the association between namespace names and environment types
 is important is that when we walk a name, we can sometimes only give a best
