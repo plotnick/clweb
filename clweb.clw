@@ -4040,20 +4040,22 @@ macro that eliminates some syntactic redundancies and sets up the
 \hbox{namespace name $\rightarrow$ namespace class} mapping.
 
 @l
-(defmacro defnamespace (class-name (&optional super) namespace-name &optional ;
-                        slot-specs)
+(defmacro defnamespace (class-name (&optional super) &optional
+                        namespace-name other-slot-specs)
   `(progn
      (defclass ,class-name ,(if super `(,super) '(namespace))
-       ((name :initform ',namespace-name :allocation :class)
-        ,@slot-specs))
-     (setf (find-namespace-class ',namespace-name)
-           (find-class ',class-name))))
+       (,@(when namespace-name ;
+             `((name :initform ',namespace-name :allocation :class)))
+        ,@other-slot-specs))
+     ,@(when namespace-name
+         `((setf (find-namespace-class ',namespace-name)
+                 (find-class ',class-name))))))
 
 @<Define namespace classes@>
 
-@ And here are the definitions themselves. We've put them in a named section
-so that we can add to the list later and not have to worry about forward
-references.
+@ And here are the basic namespace definitions themselves. We've put them
+in a named section so that we can add to the list later and not have to
+worry about forward references.
 
 @<Define namespace classes@>=
 (defnamespace variable-name () :variable)
@@ -4061,13 +4063,11 @@ references.
 (defnamespace special-variable-name (variable-name) :special)
 (defnamespace constant-name () :constant)
 (defnamespace symbol-macro-name () :symbol-macro)
-(defnamespace symbol-macro-definition (symbol-macro-name) :symbol-macro)
 
 (defnamespace operator () :operator)
 (defnamespace function-name (operator) :function)
 (defnamespace setf-function-name (function-name) :setf-function)
 (defnamespace macro-name (operator) :macro)
-(defnamespace macro-definition () :macro)
 (defnamespace compiler-macro-name (operator) :compiler-macro)
 (defnamespace special-operator (operator) :special-operator)
 
@@ -4076,10 +4076,21 @@ references.
 (defnamespace catch-tag-name () :catch-tag)
 (defnamespace type-name () :type)
 
-;; |class-name| is a symbol in the \.{COMMON-LISP} package, so we can't
-;; use it for the name of a class.
+@ |class-name| is a symbol in the \.{COMMON-LISP} package, so we can't
+use it for the name of a class.
+
+@<Define namespace...@>=
 (defnamespace class-name% () :class)
 (defnamespace condition-class-name (class-name%) :condition-class)
+
+@ We'll use two additional namespaces for macros and symbol macros, because
+when we add those to the lexical environments, we'll need to supply the
+definitions as well. Using seperate namespace classes makes the bookkeeping
+vastly simpler.
+
+@<Define namespace...@>=
+(defnamespace symbol-macro-definition (symbol-macro-name))
+(defnamespace macro-definition (macro-name))
 
 @ The reason the association between namespace names and environment types
 is important is that when we walk a name, we can sometimes only give a best
@@ -4148,7 +4159,7 @@ case, which really shouldn't be necessary.
 
 (deftest (update-context macro)
   (let ((context (update-context 'setf (make-context 'operator) nil)))
-    (and (typep context 'macro-definition)
+    (and (typep context 'macro-name)
          (not (local-binding-p context))))
   t)
 
@@ -4160,7 +4171,7 @@ case, which really shouldn't be necessary.
                                   :macro `((foo ,(lambda (form env)
                                                    (declare (ignore env))
                                                    form)))))))
-    (and (typep context 'macro-definition)
+    (and (typep context 'macro-name)
          (local-binding-p context)))
   t)
 
@@ -4185,6 +4196,16 @@ case, which really shouldn't be necessary.
     (and (typep context 'special-operator)
          (not (local-binding-p context))))
   t)
+
+@ Macro definitions have to be handled separately, but they're much simpler
+than functions.
+
+@l
+(defmethod update-context (name (context macro-definition) env)
+  (multiple-value-bind (type local) (function-information (car name) env)
+    (if type
+        (make-context (find-namespace-class type) :local local)
+        context)))
 
 @ Now we come to the walker proper. Code walkers are represented as instances
 of the class |walker|. The walker protocol consists of a handful of generic
@@ -5713,9 +5734,6 @@ functions. We'll append the suffix ``variable'' to both.
 (defmethod heading-name :prefix ((namespace symbol-macro-name))
   (and (local-binding-p namespace) "local"))
 
-(defmethod heading-name :prefix ((namespace macro-definition))
-  (and (local-binding-p namespace) "local"))
-
 @t@l
 (deftest function-heading-name
   (values (heading-name (make-context 'function-name))
@@ -6272,7 +6290,9 @@ bindings, and then index them one at a time.
       (values names env))))
 
 @ Here are the methods for destructuring names. The default method is the
-common case, where no destructuring is actually necessary.
+common case, where no destructuring is actually necessary. Functions are
+either symbols or |setf| functions, and~macro and symbol macro definitions
+are represented using lists of the form `(\<name> \<definition>)'.
 
 @l
 (defmethod destructure-name (name namespace)
@@ -6381,23 +6401,18 @@ symbols.
   '((:section :code ((quote foo)))
     (:section :code ((quote (foo bar))))))
 
-@ We'll treat |defun|, |defmacro|, and~|define-compiler-macro| as special
-forms, since otherwise they'll get macro-expanded before we get a chance
-to walk the function name. But that's all we'll do here: we need to continue
-the walk with the macro expansions so that we can pick up the definitions.
+@ We'll treat |defun| and~|define-compiler-macro| as special forms, since
+otherwise they'll get macro-expanded before we get a chance to walk the
+name. In fact, we won't even bother with the macro expansions at all.
 
 @l
 (defun walk-defun (walker form context env)
   (let ((name (walk-name walker (cadr form) context env :def t)))
-    (throw 'continue-walk
-      `(,(car form)
-        ,@(walk-lambda-expression walker (cons name (cddr form)) context env)))))
+    `(,(car form)
+      ,@(walk-lambda-expression walker (cons name (cddr form)) context env))))
 
 (define-special-form-walker defun ((walker indexing-walker) form env &key)
   (walk-defun walker form (make-context 'function-name) env))
-
-(define-special-form-walker defmacro ((walker indexing-walker) form env &key)
-  (walk-defun walker form (make-context 'macro-name) env))
 
 (define-special-form-walker define-compiler-macro ;
     ((walker indexing-walker) form env &key)
@@ -6413,6 +6428,25 @@ the walk with the macro expansions so that we can pick up the definitions.
   `((:section :code ((define-compiler-macro ,compile-foo (&whole x) x))))
   ("COMPILE-FOO compiler macro" ((:def 0))))
 
+@ We'll handle |defmacro| and |define-symbol-macro| similarly, except that
+we do need them to be expanded so that we can pick up their definitions in
+the global environment.
+
+@l
+(define-special-form-walker defmacro ((walker indexing-walker) form env &key)
+  (throw 'continue-walk
+    (walk-defun walker form (make-context 'macro-name) env)))
+
+(define-special-form-walker define-symbol-macro ;
+    ((walker indexing-walker) form env &key)
+  (let* ((context (make-context 'symbol-macro-name))
+         (name (walk-name walker (cadr form) context env :def t)))
+    (throw 'continue-walk
+      `(,(car form)
+        ,name
+        ,(walk-form walker (caddr form) env)))))
+
+@t@l
 (define-indexing-test (defmacro :verify-walk nil :toplevel t
                                 :aux (twiddle twiddle-foo))
   `((:section :code ((eval-when (:compile-toplevel)
@@ -6422,19 +6456,6 @@ the walk with the macro expansions so that we can pick up the definitions.
   ("TWIDDLE function" (1 (:def 0)))
   ("TWIDDLE-FOO macro" (2 (:def 1))))
 
-@ We'll do exactly the same thing for |define-symbol-macro|, and for
-exactly the same reason.
-
-@l
-(define-special-form-walker define-symbol-macro
-    ((walker indexing-walker) form env &key)
-  (throw 'continue-walk
-    `(,(car form)
-      ,(walk-name walker (cadr form) (make-context 'symbol-macro-name) ;
-                  env :def t)
-      ,@(walk-list walker (cddr form) env))))
-
-@t@l
 (define-indexing-test (symbol-macro :verify-walk nil :toplevel t
                                     :aux (foo-bar-baz))
   `((:section :code ((define-symbol-macro ,foo-bar-baz (:bar :baz))))
