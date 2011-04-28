@@ -4125,12 +4125,13 @@ which we'll retrieve using |find-namespace-class|.
 then what type it has in the environment. If the name is being bound, it won't
 necessarily be in the environment yet, so we'll just return the given context.
 
-However, just because we don't find the name in the environment doesn't 
-mean it isn't there: neither SBCL, Allegro, nor~CCL correctly support
-looking up a function name of the form `(|setf| \<symbol>)' in an arbitrary
-lexical environment. (In fact, SBCL signals an error---whence the careful
-error handling.) We therefore special-case the non-atomic-function-name
-case, which really shouldn't be necessary.
+However, just because we don't find the name in the environment doesn't
+mean it isn't there: neither Allegro nor~CCL correctly support looking~up
+a function name of the form `(|setf|~\<symbol>)' in an arbitrary lexical
+environment, and SBCL versions prior to~1.0.47.30 signaled an error due
+to a type declaration bug (whence the careful error handling). We therefore
+special-case the non-atomic-function-name case, which really shouldn't be
+necessary.
 
 @l
 (deftype setf-function () '(cons (eql setf) (cons symbol null)))
@@ -4138,7 +4139,7 @@ case, which really shouldn't be necessary.
 (defmethod update-context (name (context operator) env)
   (multiple-value-bind (type local) ;
       (handler-case (function-information name env)
-        (error () (values nil nil)))
+        (type-error () (values nil nil)))
     (cond ((and (not local) (generic-function-p name))
            (make-context (etypecase name
                            (symbol 'generic-function-name)
