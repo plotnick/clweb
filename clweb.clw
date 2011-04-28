@@ -4028,11 +4028,11 @@ accessor functions implement that mapping.
                    namespace-name))
       (use-value (value)
         :report "Specify a class to use this time."
-        :interactive read-class-name
+        :interactive read-namespace-class-name
         value)
       (store-value (value)
         :report "Specify a class to store and use in the future."
-        :interactive read-class-name
+        :interactive read-namespace-class-name
         (setf (find-namespace-class namespace-name) value)))))
 
 @ We'll wrap up the namespace class definitions in a little defining
