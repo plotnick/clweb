@@ -4073,7 +4073,7 @@ worry about forward references.
 
 (defnamespace block-name () :block)
 (defnamespace tag-name () :tag)
-(defnamespace catch-tag-name () :catch-tag)
+(defnamespace catch-tag () :catch-tag)
 (defnamespace type-name () :type)
 
 @ |class-name| is a symbol in the \.{COMMON-LISP} package, so we can't
@@ -4595,19 +4595,28 @@ is evaluated.
 (define-walker-test tagbody/go
   (tagbody foo (go foo)))
 
-@ Ditto for catch tags.
+@ Ditto for catch tags. Catch tags are evaluated, though, and it's the
+result that is used as the name, so we'll use a |walk-name| method that
+actually walks the form. Since catch tags are dynamic, and thus not stored
+in the lexical environment, we won't use |walk-bindings|, but we will
+pass a keyword argument to |walk-name| so that specialized methods can
+discriminate between the establishment of a catch tag and a throw to one.
 
 @l
+(defmethod walk-name ((walker walker) name (context catch-tag) env &key catch)
+  (declare (ignore catch))
+  (walk-form walker name env))
+
 (define-special-form-walker catch ((walker walker) form env &key toplevel)
   (declare (ignore toplevel))
   `(,(car form)
-    ,(walk-name walker (cadr form) (make-context 'catch-tag-name) env)
+    ,(walk-name walker (cadr form) (make-context 'catch-tag) env :catch t)
     ,@(walk-list walker (cddr form) env)))
 
 (define-special-form-walker throw ((walker walker) form env &key toplevel)
   (declare (ignore toplevel))
   `(,(car form)
-    ,(walk-name walker (cadr form) (make-context 'catch-tag-name) env)
+    ,(walk-name walker (cadr form) (make-context 'catch-tag) env)
     ,(walk-form walker (caddr form) env)))
 
 @t@l
@@ -6423,6 +6432,30 @@ are represented using lists of the form `(\<name> \<definition>)'.
 (define-indexing-test (symbol-macrolet :verify-walk nil)
   '((:section :code ((symbol-macrolet ((foo :bar)) foo))))
   ("FOO local symbol macro" ((:def 0))))
+
+@ The one kind of name we'll walk differently is catch tags. Because they
+might be arbitrary forms, we can't reliably specify how to take them apart
+and put them back together. But that doesn't matter, because we only care
+about one specific kind of tag: quoted symbols.
+
+@l
+(deftype quoted-symbol () '(cons (eql quote) (cons symbol null)))
+
+(defmethod walk-name ((walker indexing-walker) tag (namespace catch-tag) env ;
+                      &key catch)
+  (typecase tag
+    (quoted-symbol
+     (multiple-value-bind (symbol section) (symbol-provenance (cadr tag))
+       (when section
+         (index (walker-index walker) symbol section namespace catch))
+       `(quote ,symbol)))
+    (t (walk-form walker tag env))))
+
+@t@l
+(define-indexing-test catch/throw
+  '((:section :code ((catch 'foo (throw 'bar :bar)))))
+  ("BAR catch tag" (0))
+  ("FOO catch tag" ((:def 0))))
 
 @t Note that this test assumes that the walker's global environment is the
 same as the environment in which these tests are defined.
