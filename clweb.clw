@@ -64,22 +64,23 @@ operations reflect the two uses of a literate program, and the two
 audiences by whom it must be read: the computer on the one hand, and the
 human programmers that must understand and maintain it on the other.
 
-Our tangler has two main interface functions: |tangle-file| and |load-web|.
-The first is analogous to |compile-file|: given a file containing \CLWEB\
-source, it produces an output file that can be subsequently loaded into a
-Lisp image with |load|. The function |load-web| is analogous to |load|,
-but also accepts \CLWEB\ source as input instead of ordinary Lisp source:
-it loads a web into the Lisp environment.
+Our tangler has two main interface functions: |clweb:tangle-file| and
+|clweb:load-web|. The first is analogous to |compile-file|: given a file
+containing \CLWEB\ source, it produces an output file that can be
+subsequently loaded into a Lisp image with |load|. The function
+|clweb:load-web| is analogous to |load|, but also accepts \CLWEB\ source
+as input instead of ordinary Lisp source: it loads a web into the Lisp
+environment.
 
-The weaver has a single entry point: |weave| takes a web as input and
+The weaver has a single entry point: |clweb:weave| takes a web as input and
 generates a file that can be fed to \TeX\ to generate a pretty-printed
 version of that web.
 
 @1*System construction. We'll start by setting up a package for the system.
 In addition to the top-level tangler and weaver functions mentioned above,
-there's also |load-sections-from-temp-file|, which is conceptually part of
-the tangler, but is a special-purpose routine designed to be used in
-conjunction with an editor such as Emacs to provide incremental
+there's also |clweb:load-sections-from-temp-file|, which is conceptually
+part of the tangler, but is a special-purpose routine designed to be used
+in conjunction with an editor such as Emacs to provide incremental
 redefinition of sections; the user will generally never need to call it
 directly. Then there are a few global variables that control various
 operations of the weaver. The remainder of the exported symbols are
