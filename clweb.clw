@@ -4635,15 +4635,13 @@ definition for; we'll support that, too.
     ,(cadr form)
     ,(walk-form walker (caddr form) env)))
 
-(define-special-form-walker the ((walker walker) form env &key toplevel)
-  (declare (ignore toplevel))
-  (walk-the walker form env))
-
-#+sbcl
-(define-special-form-walker sb-ext:truly-the ((walker walker) form env &key ;
-                                              toplevel)
-  (declare (ignore toplevel))
-  (walk-the walker form env))
+(macrolet ((define-the-walker (operator)
+             `(define-special-form-walker ,operator ;
+                  ((walker walker) form env &key toplevel)
+                (declare (ignore toplevel))
+                (walk-the walker form env))))
+  (define-the-walker the)
+  #+sbcl (define-the-walker sb-ext:truly-the))
 
 @t@l
 (define-walker-test the
@@ -4728,15 +4726,14 @@ load time, or~both.''
 @^SBCL@>
 
 @l
-#+sbcl
-(deftype named-lambda-expression () '(cons (eql sb-int:named-lambda)))
+(deftype named-lambda-expression () ;
+  '(cons (eql #+sbcl sb-int:named-lambda #-sbcl named-lambda)))
 
 (define-special-form-walker function ((walker walker) form env &key toplevel)
   (declare (ignore toplevel))
   `(,(car form)
     ,(typecase (cadr form)
        (lambda-expression (walk-lambda-expression walker (cadr form) nil env))
-       #+sbcl
        (named-lambda-expression (walk-form walker (cadr form) env))
        (t (walk-name walker (cadr form) (make-context 'function-name) env)))))
 
@@ -5120,20 +5117,20 @@ the bindings in |flet|, |macrolet|, and~|labels| special forms.
   (declare (ignore toplevel))
   (walk-lambda-expression walker form nil env))
 
-@ SBCL has the unpleasant habit of using non-standard |named-lambda|
-special forms in the expansions of its defining macros without providing
-a portable macro definition. (This is just rude; Allegro also has a
-|named-function| special operator, but they provide a macro definition
-that expands into a regular |lambda|.) The syntax is
+@ We'll also support a `named lambda'. Several Lisp implementations use
+such forms internally, but SBCL unfortunately does not provide a portable
+macro defintion. (This is just rude; Allegro has a similar |named-function|
+special operator, but they provide a macro definition that expands into
+a regular |lambda|.) The syntax is assumed to be
 `(|named-lambda| \<name> \<lambda-list> body)'.
 @^SBCL@>
 
 @l
-#+sbcl
-(define-special-form-walker sb-int:named-lambda ((walker walker) form env &key ;
-                                                 toplevel)
+(define-special-form-walker #+sbcl sb-int:named-lambda #-sbcl named-lambda
+    ((walker walker) form env &key toplevel)
   (declare (ignore toplevel))
-  (walk-lambda-expression walker `(lambda ,(caddr form) ,@(cdddr form)) nil env))
+  (walk-lambda-expression walker ;
+                          `(lambda ,(caddr form) ,@(cdddr form)) nil env))
 
 @t To test the walker on binding forms, including \L~expressions, we'll
 define a new special form for our test walker, |check-binding|, which
