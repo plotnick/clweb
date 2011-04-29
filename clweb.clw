@@ -4456,14 +4456,12 @@ macro'' (\ansi\ Common Lisp, section~3.1.2.1.2.2).
                   ((walker walker) (operator (eql ',operator)) form env)
                 (declare (ignore form env))
                 t)))
-  (walk-as-special-form catch)
   (walk-as-special-form if)
   (walk-as-special-form load-time-value)
   (walk-as-special-form multiple-value-call)
   (walk-as-special-form multiple-value-prog1)
   (walk-as-special-form progv)
   (walk-as-special-form setq)
-  (walk-as-special-form throw)
   (walk-as-special-form unwind-protect))
 
 @ The rest of the special form walkers we define will need methods
@@ -4576,7 +4574,7 @@ is evaluated.
 (define-walker-test block/return-from
   (block :foo (return-from :foo 4)))
 
-@ Tags do, too.
+@ |go| tags do, too.
 
 @l
 (define-special-form-walker tagbody ((walker walker) form env &key toplevel)
@@ -4594,8 +4592,27 @@ is evaluated.
     ,(walk-name walker (cadr form) (make-context 'tag-name) env)))
 
 @t@l
-(define-walker-test tagbody
+(define-walker-test tagbody/go
   (tagbody foo (go foo)))
+
+@ Ditto for catch tags.
+
+@l
+(define-special-form-walker catch ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
+  `(,(car form)
+    ,(walk-name walker (cadr form) (make-context 'catch-tag-name) env)
+    ,@(walk-list walker (cddr form) env)))
+
+(define-special-form-walker throw ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
+  `(,(car form)
+    ,(walk-name walker (cadr form) (make-context 'catch-tag-name) env)
+    ,(walk-form walker (caddr form) env)))
+
+@t@l
+(define-walker-test catch/throw
+  (catch 'foo (throw 'foo :foo)))
 
 @ The special form |the| takes a type specifier and a form. We won't even
 bother walking the type specifier. SBCL has a similar but non-standard
