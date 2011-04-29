@@ -1874,7 +1874,7 @@ treatment, so we may as well do that here, too.
            ~1I ~:_~@{~W~^ ~_~}~:>~^ ~_~}~:>~^~1I ~:_~@{~W~^ ~_~}~:>"
           list))
 
-(deftype defun-like () '(cons (member defun defmacro deftype progv
+(deftype defun-like () '(cons (member defun defmacro deftype progv lambda
                                       defparameter defvar defconstant ;
                                       define-setf-expander)))
 (set-tangle-dispatch 'defun-like #'pprint-defun)
