@@ -73,16 +73,6 @@ be all on one line.
 @ And one more, with a different name.
 @<Another unused section@>=t
 
-@ Here's a global symbol macro, just for the heck of it.
-
-@l
-(define-symbol-macro three-bears '(:fred :jerry :samuel))
-
-@ And here's a use of that symbol macro.
-
-@l
-(defun bears () three-bears)
-
 @*Markers. Here we test out some of the trickier markers.
 
 @l
@@ -138,3 +128,32 @@ newlines and such are ignored:
     (when (endp fast) (return n))
     (when (endp (cdr fast)) (return (+ n 1)))
     (when (and (eq fast slow) (> n 0)) (return nil))))
+
+@*Index tests.
+
+@ @l
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun count-em (list) (length list)))
+(define-symbol-macro three-bears '(:fred :jerry :samuel))
+(defmacro how-many-bears () (count-em three-bears))
+
+(defgeneric generic-foo (foo))
+
+(defclass bear () ())
+(defmacro define-bear-class (bear) `(defclass ,bear (bear) ()))
+
+@ @l
+(defun too-many-bears-p (n) (> n (how-many-bears)))
+
+(defun compute-foo-generically (foo) (generic-foo foo))
+
+(define-bear-class grizzly)
+
+@ @l
+(macrolet ((gently-frob (x) `(1+ ,x)))
+  @<A lightly frobbed prime number@>)
+
+@ @<A lightly...@>=
+(gently-frob 27)
+
+@*Index.
