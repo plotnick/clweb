@@ -4463,7 +4463,6 @@ macro'' (\ansi\ Common Lisp, section~3.1.2.1.2.2).
   (walk-as-special-form multiple-value-prog1)
   (walk-as-special-form progv)
   (walk-as-special-form setq)
-  (walk-as-special-form tagbody)
   (walk-as-special-form throw)
   (walk-as-special-form unwind-protect))
 
@@ -4558,7 +4557,9 @@ is evaluated.
   (progn (ensure-toplevel))
   (progn t))
 
-@ @l
+@ Block names have their own namespace class.
+
+@l
 (define-special-form-walker block ((walker walker) form env &key toplevel)
   (declare (ignore toplevel))
   `(,(car form)
@@ -4574,6 +4575,27 @@ is evaluated.
 @t@l
 (define-walker-test block/return-from
   (block :foo (return-from :foo 4)))
+
+@ Tags do, too.
+
+@l
+(define-special-form-walker tagbody ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
+  `(,(car form)
+    ,@(loop with tag-context = (make-context 'tag-name)
+            for tag/statement in (cdr form)
+            collect (typecase tag/statement
+                      (atom (walk-name walker tag/statement tag-context env))
+                      (cons (walk-form walker tag/statement env))))))
+
+(define-special-form-walker go ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
+  `(,(car form)
+    ,(walk-name walker (cadr form) (make-context 'tag-name) env)))
+
+@t@l
+(define-walker-test tagbody
+  (tagbody foo (go foo)))
 
 @ The special form |the| takes a type specifier and a form. We won't even
 bother walking the type specifier. SBCL has a similar but non-standard
