@@ -5954,7 +5954,8 @@ is {\it not\/} re-initialized on each run.
     (call-next-method)))
 
 @ We index special (sometimes) lexical variables, but we don't want to
-index undifferentiated variable references (e.g., declarations, \etc.).
+index undifferentiated variable names (e.g., as occur in declarations,
+\etc.).
 
 @l
 (defmethod index ((index index) name section (context variable-name) ;
