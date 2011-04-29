@@ -5953,8 +5953,17 @@ is {\it not\/} re-initialized on each run.
   (when *index-lexical-variables*
     (call-next-method)))
 
-@ There are a few kinds of names that we walk but don't currently bother
-indexing.
+@ We index special (sometimes) lexical variables, but we don't want to
+index undifferentiated variable references (e.g., declarations, \etc.).
+
+@l
+(defmethod index ((index index) name section (context variable-name) ;
+                  &optional def)
+  (unless (eq (class-of context) (find-class 'variable-name))
+    (call-next-method)))
+
+@ There are a few other kinds of names that we walk but don't currently
+bother indexing.
 
 @l
 (defmacro dont-index (namespace)
