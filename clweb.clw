@@ -4313,25 +4313,25 @@ of those walks.
 
 @ The functions |walk-atomic-form| and |walk-compound-form| are the real
 work-horses of the walker. Besides the walker instance, the form, and~the
-current environment, |walk-atomic-form| takes a keyword symbol denoting the
-context in which the atom occurs, and |walk-compound-form| takes an
-|operator| argument like |walk-as-special-form-p|. They both allow arbitrary
-keyword arguments, since that's how we'll pass information down through the
-walk to the indexer.
+current environment, |walk-atomic-form| takes a context instance, and
+|walk-compound-form| takes an |operator| argument like
+|walk-as-special-form-p|. They both take a |toplevel| keyword argument,
+which will be true if the form occurs at top level.
 
 @<Walker generic functions@>=
-(defgeneric walk-atomic-form (walker form context env &key &allow-other-keys))
-(defgeneric walk-compound-form (walker operator form env &key &allow-other-keys))
+(defgeneric walk-atomic-form (walker form context env &key toplevel))
+(defgeneric walk-compound-form (walker operator form env &key toplevel))
 
 @ The default method for |walk-atomic-form| simply returns the form.
 
 @l
-(defmethod walk-atomic-form ((walker walker) form context env &key)
-  (declare (ignore context env))
+(defmethod walk-atomic-form ((walker walker) form context env &key toplevel)
+  (declare (ignore context env toplevel))
   form)
 
-(defmethod walk-atomic-form ((walker walker) (form cons) context env &key)
-  (declare (ignore env))
+(defmethod walk-atomic-form ((walker walker) (form cons) context env &key ;
+                             toplevel)
+  (declare (ignore env toplevel))
   (error "Unexpected non-atomic form ~S (~S)" form context))
 
 @t@l
@@ -4348,7 +4348,9 @@ walk to the indexer.
 it treats its car as a function name and walks its cdr.
 
 @l
-(defmethod walk-compound-form ((walker walker) (operator symbol) form env &key)
+(defmethod walk-compound-form ((walker walker) (operator symbol) form env &key
+                               toplevel)
+  (declare (ignore toplevel))
   `(,(walk-name walker (car form) (make-context 'operator) env)
     ,@(walk-list walker (cdr form) env)))
 
@@ -4362,7 +4364,9 @@ it treats its car as a function name and walks its cdr.
 @l
 (deftype lambda-expression () '(cons (eql lambda) (cons list *)))
 
-(defmethod walk-compound-form ((walker walker) (operator cons) form env &key)
+(defmethod walk-compound-form ((walker walker) (operator cons) form env &key ;
+                               toplevel)
+  (declare (ignore toplevel))
   (etypecase operator
     (lambda-expression
      `(,(walk-lambda-expression walker operator nil env)
@@ -4555,12 +4559,14 @@ is evaluated.
   (progn t))
 
 @ @l
-(define-special-form-walker block ((walker walker) form env &key)
+(define-special-form-walker block ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   `(,(car form)
     ,(walk-binding walker (cadr form) (make-context 'block-name) env)
     ,@(walk-list walker (cddr form) env)))
 
-(define-special-form-walker return-from ((walker walker) form env &key)
+(define-special-form-walker return-from ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   `(,(car form)
     ,(walk-name walker (cadr form) (make-context 'block-name) env)
     ,(walk-form walker (caddr form) env)))
@@ -4581,11 +4587,14 @@ definition for; we'll support that, too.
     ,(cadr form)
     ,(walk-form walker (caddr form) env)))
 
-(define-special-form-walker the ((walker walker) form env &key)
+(define-special-form-walker the ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (walk-the walker form env))
 
 #+sbcl
-(define-special-form-walker sb-ext:truly-the ((walker walker) form env &key)
+(define-special-form-walker sb-ext:truly-the ((walker walker) form env &key ;
+                                              toplevel)
+  (declare (ignore toplevel))
   (walk-the walker form env))
 
 @t@l
@@ -4595,8 +4604,8 @@ definition for; we'll support that, too.
 @ The |quote| special operator just returns its argument.
 
 @l
-(define-special-form-walker quote ((walker walker) form env &key)
-  (declare (ignore env))
+(define-special-form-walker quote ((walker walker) form env &key toplevel)
+  (declare (ignore env toplevel))
   form)
 
 @t@l
@@ -4651,7 +4660,8 @@ evaluate the value-form [of a top level |defconstant| form] at compile time,
 load time, or~both.''
 
 @l
-(define-special-form-walker defconstant ((walker walker) form env &key)
+(define-special-form-walker defconstant ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (throw 'continue-walk
     `(eval-when (:compile-toplevel)
        ,(macroexpand-for-walk walker form env))))
@@ -4673,7 +4683,8 @@ load time, or~both.''
 #+sbcl
 (deftype named-lambda-expression () '(cons (eql sb-int:named-lambda)))
 
-(define-special-form-walker function ((walker walker) form env &key)
+(define-special-form-walker function ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   `(,(car form)
     ,(typecase (cadr form)
        (lambda-expression (walk-lambda-expression walker (cadr form) nil env))
@@ -5057,7 +5068,8 @@ the bindings in |flet|, |macrolet|, and~|labels| special forms.
 \L~expressions as special forms.
 
 @l
-(define-special-form-walker lambda ((walker walker) form env &key)
+(define-special-form-walker lambda ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (walk-lambda-expression walker form nil env))
 
 @ SBCL has the unpleasant habit of using non-standard |named-lambda|
@@ -5070,7 +5082,9 @@ that expands into a regular |lambda|.) The syntax is
 
 @l
 #+sbcl
-(define-special-form-walker sb-int:named-lambda ((walker walker) form env &key)
+(define-special-form-walker sb-int:named-lambda ((walker walker) form env &key ;
+                                                 toplevel)
+  (declare (ignore toplevel))
   (walk-lambda-expression walker `(lambda ,(caddr form) ,@(cdddr form)) nil env))
 
 @t To test the walker on binding forms, including \L~expressions, we'll
@@ -5148,7 +5162,8 @@ forms: they walk their bindings in an unaugmented environment, then execute
 their body forms in an environment that contains all of the new bindings.
 
 @l
-(define-special-form-walker let ((walker walker) form env &key)
+(define-special-form-walker let ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (multiple-value-bind (forms decls) ;
       (parse-body (cddr form) :walker walker :env env)
     (let* ((bindings (mapcar #'ensure-list (cadr form)))
@@ -5187,7 +5202,8 @@ supplied declarations.
           (augment-environment env :function names)))
 
 @ @l
-(define-special-form-walker flet ((walker walker) form env &key)
+(define-special-form-walker flet ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (multiple-value-bind (forms decls) ;
       (parse-body (cddr form) :walker walker :env env)
     (let* ((bindings (cadr form))
@@ -5317,7 +5333,8 @@ also considered top level.
 and |labels|, which does so before walking any of its bindings.
 
 @l
-(define-special-form-walker let* ((walker walker) form env &key)
+(define-special-form-walker let* ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (multiple-value-bind (forms decls) ;
       (parse-body (cddr form) :walker walker :env env)
     (let ((context (make-context 'variable-name :local t)))
@@ -5341,7 +5358,8 @@ and |labels|, which does so before walking any of its bindings.
   (let* ((x 1) (y x)) (declare (special x)) y))
 
 @ @l
-(define-special-form-walker labels ((walker walker) form env &key)
+(define-special-form-walker labels ((walker walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (multiple-value-bind (forms decls) ;
       (parse-body (cddr form) :walker walker :env env)
     (let* ((context (make-context 'function-name :local t))
@@ -6221,8 +6239,8 @@ by the default method.
 
 @l
 (defmethod walk-atomic-form ((walker indexing-walker) (form symbol) ;
-                             context env &key)
-  (declare (ignore env))
+                             context env &key toplevel)
+  (declare (ignore env toplevel))
   (multiple-value-bind (symbol section) (symbol-provenance form)
     (when section
       (index (walker-index walker) symbol section context))
@@ -6401,8 +6419,8 @@ symbols.
 
 @l
 (defmethod walk-compound-form ;
-    ((walker indexing-walker) (operator (eql 'quote)) form env &key)
-  (declare (ignore env))
+    ((walker indexing-walker) (operator (eql 'quote)) form env &key toplevel)
+  (declare (ignore env toplevel))
   `(,(car form)
     ,(unsubstitute-symbols (cadr form))))
 
@@ -6421,11 +6439,14 @@ name. In fact, we won't even bother with the macro expansions at all.
     `(,(car form)
       ,@(walk-lambda-expression walker (cons name (cddr form)) context env))))
 
-(define-special-form-walker defun ((walker indexing-walker) form env &key)
+(define-special-form-walker defun ((walker indexing-walker) form env &key ;
+                                   toplevel)
+  (declare (ignore toplevel))
   (walk-defun walker form (make-context 'function-name) env))
 
 (define-special-form-walker define-compiler-macro ;
-    ((walker indexing-walker) form env &key)
+    ((walker indexing-walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (walk-defun walker form (make-context 'compiler-macro-name) env))
 
 @t@l
@@ -6443,12 +6464,15 @@ we do need them to be expanded so that we can pick up their definitions in
 the global environment.
 
 @l
-(define-special-form-walker defmacro ((walker indexing-walker) form env &key)
+(define-special-form-walker defmacro ((walker indexing-walker) form env &key ;
+                                      toplevel)
+  (declare (ignore toplevel))
   (throw 'continue-walk
     (walk-defun walker form (make-context 'macro-name) env)))
 
 (define-special-form-walker define-symbol-macro ;
-    ((walker indexing-walker) form env &key)
+    ((walker indexing-walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (let* ((context (make-context 'symbol-macro-name))
          (name (walk-name walker (cadr form) context env :def t)))
     (throw 'continue-walk
@@ -6477,7 +6501,9 @@ grovel through all of the options. We'll let them expand, since we can
 often pick up at least the constructor definitions that way.
 
 @l
-(define-special-form-walker defstruct ((walker indexing-walker) form env &key)
+(define-special-form-walker defstruct ((walker indexing-walker) form env &key ;
+                                       toplevel)
+  (declare (ignore toplevel))
   (let ((name (typecase (cadr form)
                 (symbol (cadr form))
                 (cons (caadr form)))))
@@ -6507,10 +6533,14 @@ expand, though, in order to get the |special| declarations.
                   env :def t)
       ,@(cddr form))))
 
-(define-special-form-walker defvar ((walker indexing-walker) form env &key)
+(define-special-form-walker defvar ;
+    ((walker indexing-walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (walk-defvar walker form env))
 
-(define-special-form-walker defparameter ((walker indexing-walker) form env &key)
+(define-special-form-walker defparameter ;
+    ((walker indexing-walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (walk-defvar walker form env))
 
 @t@l
@@ -6556,7 +6586,9 @@ track of whether a function is generic or not, so we'll have to maintain
 that information ourselves.
 
 @l
-(define-special-form-walker defgeneric ((walker indexing-walker) form env &key)
+(define-special-form-walker defgeneric ((walker indexing-walker) form env &key ;
+                                        toplevel)
+  (declare (ignore toplevel))
   (destructuring-bind (operator function-name lambda-list &rest options) form
     `(,operator
       ,(note-generic-function
@@ -6667,13 +6699,14 @@ a method description.
 
 @l
 (define-special-form-walker defmethod
-    ((walker indexing-walker) form env &key &aux
+    ((walker indexing-walker) form env &key toplevel &aux
      (operator (pop form))
      (function-name (pop form)) ; don't walk yet: wait for the qualifiers
      (qualifiers (mapcar (lambda (q) (walk-atomic-form walker q nil env))
                          (pop-qualifiers form)))
      (lambda-list (pop form))
      (body form))
+  (declare (ignore toplevel))
   (walk-method-definition walker operator
                           (walk-name walker function-name
                                      (make-context 'method-name ;
@@ -6703,11 +6736,14 @@ class names, super-classes, and~accessor methods.
                  slot-specs)
         ,@(walk-list walker options env)))))
 
-(define-special-form-walker defclass ((walker indexing-walker) form env &key)
+(define-special-form-walker defclass ((walker indexing-walker) form env &key ;
+                                      toplevel)
+  (declare (ignore toplevel))
   (walk-defclass walker form (make-context 'class-name%) env))
 
 (define-special-form-walker define-condition ;
-    ((walker indexing-walker) form env &key)
+    ((walker indexing-walker) form env &key toplevel)
+  (declare (ignore toplevel))
   (walk-defclass walker form (make-context 'condition-class-name) env))
 
 @t@l
@@ -6752,7 +6788,8 @@ method combination types. We'll skip the expansion.
 
 @l
 (define-special-form-walker define-method-combination ;
-    ((walker indexing-walker) form env &key)
+    ((walker indexing-walker) form env &key toplevel)
+  (declare (ignore toplevel))
   `(,(car form)
     ,(walk-name walker (cadr form) (make-context 'method-combination-name) ;
                 env :def t)
@@ -7065,7 +7102,8 @@ case.
 @l
 (defmethod walk-compound-form ;
     ((walker indexing-walker) (operator (eql 'set-macro-character))
-     form env &key)
+     form env &key toplevel)
+  (declare (ignore toplevel))
   (multiple-value-bind (symbol section) (symbol-provenance (car form))
     (when (and section (characterp (second form)))
       (add-index-entry (walker-index walker)
@@ -7075,7 +7113,8 @@ case.
 
 (defmethod walk-compound-form ;
     ((walker indexing-walker) (operator (eql 'set-dispatch-macro-character))
-     form env &key)
+     form env &key toplevel)
+  (declare (ignore toplevel))
   (multiple-value-bind (symbol section) (symbol-provenance (car form))
     (when (and section (characterp (second form)))
       (add-index-entry (walker-index walker)
