@@ -4086,7 +4086,7 @@ use it for the name of a class.
 @ We'll use two additional namespaces for macros and symbol macros, because
 when we add those to the lexical environments, we'll need to supply the
 definitions as well. Using seperate namespace classes makes the bookkeeping
-vastly simpler.
+slightly simpler.
 
 @<Define namespace...@>=
 (defnamespace symbol-macro-definition (symbol-macro-name))
