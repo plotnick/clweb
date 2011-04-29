@@ -4092,8 +4092,8 @@ vastly simpler.
 (defnamespace symbol-macro-definition (symbol-macro-name))
 (defnamespace macro-definition (macro-name))
 
-@ The people at Franz just can't seem to resist tweaking the environment
-{\sc API}: their version of |function-information| returns |:sepcial-operator|
+@ The people at Franz just can't seem to resist tweaking the environments
+{\sc api}: their version of |function-information| returns |:sepcial-operator|
 rather than |:special-form| when the function spec names a special operator.
 This may be more precise terminology, but it's an arbitrary and capricious
 change. Still, it's easy enough to provide an alias for our namespace class.
