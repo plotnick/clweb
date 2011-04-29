@@ -5958,8 +5958,8 @@ index undifferentiated variable names (e.g., as occur in declarations,
 \etc.).
 
 @l
-(defmethod index ((index index) name section (context variable-name) ;
-                  &optional def)
+(defmethod index :around ;
+    ((index index) name section (context variable-name) &optional def)
   (unless (eq (class-of context) (find-class 'variable-name))
     (call-next-method)))
 
@@ -5968,8 +5968,8 @@ bother indexing.
 
 @l
 (defmacro dont-index (namespace)
-  `(defmethod index ((index index) name section (context ,namespace) ;
-                     &optional def)
+  `(defmethod index :around ;
+       ((index index) name section (context ,namespace) &optional def)
      (declare (ignore name section def))))
 
 (dont-index block-name)
