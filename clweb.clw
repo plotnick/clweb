@@ -6005,6 +6005,7 @@ index undifferentiated variable names (e.g., as occur in declarations,
 @l
 (defmethod index :around ;
     ((index index) name section (context variable-name) &optional def)
+  (declare (ignore def))
   (unless (eq (class-of context) (find-class 'variable-name))
     (call-next-method)))
 
