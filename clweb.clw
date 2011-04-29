@@ -5122,7 +5122,7 @@ such forms internally, but SBCL unfortunately does not provide a portable
 macro defintion. (This is just rude; Allegro has a similar |named-function|
 special operator, but they provide a macro definition that expands into
 a regular |lambda|.) The syntax is assumed to be
-`(|named-lambda| \<name> \<lambda-list> body)'.
+`(|named-lambda| \<name> \<lambda-list> \<body>)'.
 @^SBCL@>
 
 @l
