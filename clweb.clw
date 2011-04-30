@@ -4054,10 +4054,10 @@ macro that eliminates some syntactic redundancies and sets up the
 \hbox{namespace name $\rightarrow$ namespace class} mapping.
 
 @l
-(defmacro defnamespace (class-name (&optional super) &optional
+(defmacro defnamespace (class-name (&rest supers) &optional
                         namespace-name other-slot-specs)
   `(progn
-     (defclass ,class-name ,(if super `(,super) '(namespace))
+     (defclass ,class-name ,(or supers '(namespace))
        (,@(when namespace-name ;
              `((name :initform ',namespace-name :allocation :class)))
         ,@other-slot-specs))
@@ -6702,7 +6702,8 @@ that information ourselves.
 
 @ @<Define namespace...@>=
 (defnamespace generic-function-name (function-name) :generic-function)
-(defnamespace generic-setf-function-name (setf-function-name) ;
+(defnamespace generic-setf-function-name (generic-function-name ;
+                                          setf-function-name) ;
   :generic-setf-function)
 
 @t@l
@@ -6778,10 +6779,11 @@ specialized \L-list and body forms here.
   (walk-method-definition walker operator nil qualifiers lambda-list body env))
 
 @ @<Define namespace...@>=
-(defnamespace method-name () :method
+(defnamespace method-name (function-name) :method
   ((qualifiers :reader method-qualifier-names ;
                :initarg :qualifiers ;
                :initform nil)))
+(defnamespace setf-method-name (method-name setf-function-name) :setf-method)
 
 @t@l
 (defmethod print-object ((x method-name) stream)
@@ -6802,18 +6804,26 @@ a method description.
      (body form))
   (declare (ignore toplevel))
   (walk-method-definition walker operator
-                          (walk-name walker function-name
-                                     (make-context 'method-name ;
-                                                   :qualifiers qualifiers)
-                                     env :def t)
+                          (note-generic-function
+                           (walk-name walker function-name
+                                      (make-context ;
+                                       (etypecase function-name
+                                         (symbol 'method-name)
+                                         (setf-function 'setf-method-name))
+                                       :qualifiers qualifiers)
+                                      env :def t))
                           qualifiers lambda-list body env))
 
 @t@l
-(define-indexing-test defmethod
-  '((:section :code ((defmethod add (x y) (+ x y))))
-    (:section :code ((defmethod add :before (x y)))))
-  ("ADD before method" ((:def 1)))
-  ("ADD primary method" ((:def 0))))
+(define-indexing-test (defmethod :aux (foo))
+  `((:section :code ((defmethod ,foo (x y) (+ x y))))
+    (:section :code ((defmethod ,foo :before (x y))))
+    (:section :code ((defmethod (setf ,foo) (new-foo foo) new-foo)))
+    (:section :code ((funcall #'(setf ,foo) y x))))
+  ("FOO before method" ((:def 1)))
+  ("FOO generic setf function" (3))
+  ("FOO primary method" ((:def 0)))
+  ("FOO primary setf method" ((:def 2))))
 
 @ We'll walk |defclass| and |define-condition| forms in order to index the
 class names, super-classes, and~accessor methods.
