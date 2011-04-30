@@ -1655,41 +1655,73 @@ interest of simplicity: because we preserve backquotes during tangling, we
 can leave optimization to the Lisp implementation.
 @^\cltl@>
 
-@ We use conses to represent backquoted forms, but we use instances of
-a dedicated class to represent commas, which simplifies both the processing
-code and the pretty-printing routines.
+@ We use conses to represent backquoted forms (since, as we'll see,
+backquote is an ordinary macro), but we'll use atomic instances of a
+dedicated class to represent commas. The reason is that we depend on the
+pretty printer to correctly print backquoted forms, and even though most
+Lisp implementations support printing their own representations of
+backquote and comma, there's no reason to expect them to correctly support
+ours. (They don't even get their own representations right all of the time.)
+Moreover, providing a pretty printing method for conses that have some
+specialized comma representation as their car is not sufficient, because
+many implementation-provided pretty printing routines (e.g., for |defun|,
+|let|,~\etc.) blindly call down to something like |pprint-fill| without
+first distinguishing between atoms and lists. (Thanks to Duane Rettig of
+Franz,~Inc.\ for helping to track this down.) Using an atomic representation
+guarantees that our commas won't accidentally be printed as lists.
+
+It is still possible for this scheme to go wrong, though: if an
+implementation-supplied pretty printing routine expects a list in some
+context and gets an atom instead, it could signal an error. If this
+happens to you, please report it to the author.
 
 @l
 (defvar *backquote* (make-symbol "BACKQUOTE"))
 (defun backquotep (object) (eq object *backquote*))
 (deftype backquote-form () '(cons (satisfies backquotep)))
 
-(defclass comma () ())
+(defclass comma ()
+  ((form :initarg :form :initform nil)))
 (defclass splicing-comma (comma)
   ((modifier :reader comma-modifier :initarg :modifier :type character)))
 
 (defmethod comma-modifier ((comma comma)) nil)
 
-(defun make-comma (&optional modifier)
+(defun make-comma (modifier form)
   (if modifier
-      (make-instance 'splicing-comma :modifier modifier)
-      (make-instance 'comma)))
+      (make-instance 'splicing-comma :modifier modifier :form form)
+      (make-instance 'comma :form form)))
 
-(deftype comma-form () '(cons comma))
-(deftype splicing-comma-form () '(cons splicing-comma))
+(defun commap (obj) (typep obj 'comma))
 
-@t These are just for debugging. It's important for safety that commas be
+@ To process a comma, we need to tangle the form being unquoted. If that
+form is a named section reference, we take the car of the tangled form,
+on the assumption that you can't meaningfully unquote more than one form.
+We accept an optional argument to disable the tangling for the sake of
+the weaver, which wants the untangled form.
+
+@l
+(defgeneric comma-form (comma &key tangle))
+(defmethod comma-form ((comma comma) &key (tangle t))
+  (let ((form (slot-value comma 'form)))
+    (unless tangle (return-from comma-form form))
+    (let ((tangled-form (tangle form)))
+      (typecase form
+        (named-section
+         (when (rest tangled-form)
+           (cerror "Ignore the extra forms."
+                   "Tried to unquote more than one form from section @<~A@>."
+                   (section-name form)))
+         (first tangled-form))
+        (t tangled-form)))))
+
+@t This is just for debugging. It's important for safety that commas be
 printed using the unreadable object syntax.
 
 @l
 (defmethod print-object ((object comma) stream)
   (print-unreadable-object (object stream)
-    (write-char #\, stream)))
-
-(defmethod print-object ((object splicing-comma) stream)
-  (print-unreadable-object (object stream)
-    (write-char #\, stream)
-    (write-char (comma-modifier object) stream)))
+    (format stream ",~@[~C~]~S" (comma-modifier object) (comma-form object))))
 
 @ The reader macro functions for backquote and comma are straightforward.
 
@@ -1704,9 +1736,9 @@ printed using the unreadable object syntax.
     (lambda (stream char)
       (declare (ignore char))
       (case (peek-char nil stream t nil t)
-        ((#\@ #\.) (list (make-comma (read-char stream t nil t))
-                         (read stream t nil t)))
-        (otherwise (list (make-comma) (read stream t nil t)))))
+        ((#\@ #\.) (make-comma (read-char stream t nil t)
+                               (read stream t nil t)))
+        (otherwise (make-comma nil (read stream t nil t)))))
     nil (readtable-for-mode mode)))
 
 @ |#:backquote| is an ordinary macro (not a read-macro) that processes the
@@ -1723,11 +1755,10 @@ not for uninterned symbols.
 (defun bq-process (x &aux (x (tangle x)))
   (typecase x
     (vector `(apply #'vector ,(bq-process (coerce x 'list))))
+    (splicing-comma (error ",~C~S after `" (comma-modifier x) (comma-form x)))
+    (comma (comma-form x))
     (atom `(quote ,x))
     (backquote-form (bq-process (bq-process (cadr x))))
-    (splicing-comma-form (error ",~C~S after `" ;
-                                (comma-modifier (car x)) (cadr x)))
-    (comma-form (cadr x))
     (t @<Process the list |x| for backquotes and commas@>)))
 
 @ We do one simplification here which, although not strictly in accordance
@@ -1743,23 +1774,19 @@ overly simplistic.
 @<Process the list |x|...@>=
 (do ((p x (cdr p))
      (q '() (cons (bracket (car p)) q)))
-    ((atom p)
+    ((and (atom p) (not (commap p)))
      (cons 'append (nreconc q (and p (list (list 'quote p))))))
   (typecase p
-    (splicing-comma-form
-     (error "Dotted ,~C~S" (comma-modifier (car p)) (cadr p)))
-    (comma-form
-     (unless (null (cddr p)) (error "Malformed ,~S" p))
-     (return (cons 'append (nreconc q (list (cadr p))))))))
+    (splicing-comma (error "Dotted ,~C~S" (comma-modifier p) (comma-form p)))
+    (comma (return (cons 'append (nreconc q (list (comma-form p))))))))
 
 @ This implements the bracket operator of the formal rules.
 
 @l
 (defun bracket (x)
   (typecase x
-    (atom `(list ,(bq-process x)))
-    (splicing-comma-form (cadr x))
-    (comma-form `(list ,(cadr x)))
+    (splicing-comma (comma-form x))
+    (comma `(list ,(comma-form x)))
     (t `(list ,(bq-process x)))))
 
 @t The first two tests come from page~528 of~\cltl; the third comes from
@@ -1810,17 +1837,27 @@ Appendix~C.
 
 @t Test the interaction between backquote, comma, and named sections.
 If a named section with more than one form (like `\<quux>') follows a
-comma, all but the first are silently ignored.
+comma, a continuable error is signaled, and all but the first are
+discarded.
 
 @l
 (deftest (bq named-section)
   (with-sample-named-sections
     (values (eval (tangle (read-form-from-string "`(, @<foo@>)")))
-            (eval (tangle (read-form-from-string "`(,@ @<foo@>)")))
-            (eval (tangle (read-form-from-string "`(,@ @<quux@>)")))))
+            (eval (tangle (read-form-from-string "`(,@ @<foo@>)")))))
   (:foo)
-  :foo
-  :quux)
+  :foo)
+
+(deftest (bq too-many-forms)
+  (with-sample-named-sections
+    (let ((handled nil))
+      (handler-bind ((error (lambda (condition)
+                              (setq handled t)
+                              (continue condition))))
+        (values (eval (tangle (read-form-from-string "`(,@ @<quux@>)")))
+                handled))))
+  :quux
+  t)
 
 @ During tangling, we print backquotes and commas using the backquote
 syntax, as recommended (but not required) by section~2.4.6.1 of the
@@ -1832,73 +1869,9 @@ syntax, as recommended (but not required) by section~2.4.6.1 of the
   (lambda (stream obj) ;
     (format stream "`~W" (cadr obj))))
 
-(set-tangle-dispatch 'comma-form
+(set-tangle-dispatch 'comma
   (lambda (stream obj) ;
-    (format stream ",~@[~C~]~W" (comma-modifier (car obj)) (cadr obj))))
-
-@ Many pretty-printing routines aren't very careful about atomic {\it vs.\/}
-non-atomic forms, which can cause them to print comma forms as raw lists.
-That's extremely bad, because it means that our comma-denoting objects
-would wind up in the tangled output. This isn't just a problem for \CLWEB:
-try evaluating |(pprint '`(let ,bindings))| at your {\sc repl} and see what
-happens.
-
-The work-around is to override the offending entries. These routines are
-probably incomplete, but it's a start. The format strings are adapted from
-those found in SBCL's \.{pprint.lisp}. The weaver needs exactly the same
-treatment, so we may as well do that here, too.
-
-@l
-(defun careful-pprint-fill (stream list &rest args)
-  (declare (ignore args))
-  (typecase list
-    ((or backquote-form comma-form splicing-comma-form) (pprint list stream))
-    (t (pprint-fill stream list t))))
-
-(defun pprint-defun (stream list &rest args)
-  (declare (ignore args))
-  (format stream
-          "~:<~^~W~^ ~@_~:I~W~^ ~:_~/clweb::careful-pprint-fill/~1I~@{ ~_~W~}~:>"
-          list))
-
-(defun pprint-defmethod (stream list &rest args)
-  (declare (ignore args))
-  (if (consp (third list))
-      (pprint-defun stream list)
-      (format stream
-              "~:<~^~W~^ ~@_~:I~W~^ ~W~^ ~:_~/clweb::careful-pprint-fill/~1I~@{ ~_~W~}~:>"
-              list)))
-
-(defun pprint-let (stream list &rest args)
-  (declare (ignore args))
-  (format stream
-          "~:<~^~W~^ ~@_~/clweb::careful-pprint-fill/~^~1I ~:_~@{~W~^ ~_~}~:>"
-          list))
-
-(defun pprint-flet (stream list &rest args)
-  (declare (ignore args))
-  (format stream
-          "~:<~^~W~^ ~@_~:<~@{~:<~^~W~^~3I ~:_~/clweb::careful-pprint-fill/~
-           ~1I ~:_~@{~W~^ ~_~}~:>~^ ~_~}~:>~^~1I ~:_~@{~W~^ ~_~}~:>"
-          list))
-
-(deftype defun-like () '(cons (member defun defmacro deftype progv lambda
-                                      defparameter defvar defconstant ;
-                                      define-setf-expander)))
-(set-tangle-dispatch 'defun-like #'pprint-defun)
-(set-weave-dispatch 'defun-like #'pprint-defun)
-
-(deftype defmethod-form () '(cons (eql defmethod)))
-(set-tangle-dispatch 'defmethod-form  #'pprint-defmethod)
-(set-weave-dispatch 'defmethod-form #'pprint-defmethod)
-
-(deftype let-like () '(cons (member let let* handler-bind)))
-(set-tangle-dispatch 'let-like #'pprint-let)
-(set-weave-dispatch 'let-like #'pprint-let)
-
-(deftype flet-like () '(cons (member flet labels macrolet symbol-macrolet)))
-(set-tangle-dispatch 'flet-like #'pprint-flet)
-(set-weave-dispatch 'flet-like #'pprint-flet)
+    (format stream ",~@[~C~]~W" (comma-modifier obj) (comma-form obj))))
 
 @ {\it Sharpsign\/} is the all-purpose dumping ground for Common Lisp
 reader macros. Because it's a dispatching macro character, we have to
@@ -3822,9 +3795,11 @@ which see.
   (lambda (stream obj)
     (format stream "\\`~W" (cadr obj))))
 
-(set-weave-dispatch 'comma-form
+(set-weave-dispatch 'comma
   (lambda (stream obj)
-    (format stream "\\CO{~@[~C~]}~W" (comma-modifier (car obj)) (cadr obj))))
+    (format stream "\\CO{~@[~C~]}~W"
+            (comma-modifier obj)
+            (comma-form obj :tangle nil))))
 
 @ @l
 (set-weave-dispatch 'function-marker
@@ -6056,26 +6031,36 @@ occurred. We'll these uninterned symbols {\it referring symbols}.
 
 First, we'll need a routine that does the substitution just described.
 The substitution is done blindly and without regard to the syntax or
-semantics of Common Lisp, since we can't walk pre-tangled code.
+semantics of Common Lisp, since we can't walk pre-tangled code. We take
+care to substitute inside of commas, too.
 
 @l
-(defun substitute-symbols (form section)
-  (let (symbols)
-    (labels ((get-symbols (form)
+(defun substitute-referring-symbols (form section)
+  (let (symbols refsyms)
+    (labels ((collect-symbols (form)
                (cond ((interesting-symbol-p form)
                       (pushnew form symbols))
                      ((atom form) nil)
-                     (t (get-symbols (car form))
-                        (get-symbols (cdr form))))))
-      (get-symbols form)
-      (sublis (map 'list
-                   (lambda (symbol)
-                     (let ((refsym (copy-symbol symbol)))
-                       (setf (symbol-value refsym) symbol)
-                       (setf (get refsym 'section) section)
-                       (cons symbol refsym)))
-                   symbols)
-              form))))
+                     (t (collect-symbols (car form))
+                        (collect-symbols (cdr form)))))
+             (make-referring-symbol (symbol)
+               (let ((refsym (copy-symbol symbol)))
+                 (setf (symbol-value refsym) symbol)
+                 (setf (get refsym 'section) section)
+                 (cons symbol refsym)))
+             (substitute-symbols (form)
+               (cond ((commap form)
+                      (make-comma (comma-modifier form)
+                                  (substitute-referring-symbols ;
+                                   (comma-form form) ;
+                                   section)))
+                     ((symbolp form)
+                      (or (cdr (assoc form refsyms)) form))
+                     ((atom form) form)
+                     (t (maptree #'substitute-symbols form)))))
+      (collect-symbols form)
+      (setq refsyms (mapcar #'make-referring-symbol symbols))
+      (maptree #'substitute-symbols form))))
 
 @ This next function goes the other way: given a symbol, it determines
 whether it is a referring symbol, and if so, it returns the symbol referred
@@ -6096,7 +6081,7 @@ form without having to apply a predicate first.
 @t@l
 (deftest (symbol-provenance 1)
   (let ((*index-packages* (list (find-package "KEYWORD"))))
-    (symbol-provenance (substitute-symbols :foo 1)))
+    (symbol-provenance (substitute-referring-symbols :foo 1)))
   :foo 1)
 
 (deftest (symbol-provenance 2)
@@ -6108,15 +6093,23 @@ form without having to apply a predicate first.
     (eql (symbol-provenance symbol) symbol))
   t)
 
+(deftest (symbol-provenance 4)
+  (let ((*index-packages* (list (find-package "KEYWORD"))))
+    (symbol-provenance
+     (macroexpand
+      (substitute-referring-symbols (tangle (read-form-from-string "`,:foo")) ;
+                                    1))))
+  :foo 1)
+
 @ To replace all of the referring symbols in a form, we'll use the following
 simple function.
 
 @l
-(defun unsubstitute-symbols (x)
+(defun unsubstitute-referring-symbols (x)
   (typecase x
     (symbol (symbol-provenance x))
     (atom x)
-    (t (maptree #'unsubstitute-symbols x))))
+    (t (maptree #'unsubstitute-referring-symbols x))))
 
 @ To get referring symbols in the tangled code, we'll use an |:around|
 method on |section-code| that conditions on a special variable,
@@ -6124,8 +6117,8 @@ method on |section-code| that conditions on a special variable,
 purposes of indexing.
 @^referring symbols@>
 
-We can't feed the raw section code to |substitute-symbols|, since it's
-not really Lisp code: it's full of markers and such. So we'll abuse the
+We can't feed the raw section code to |substitute-referring-symbols|, since
+it's not really Lisp code: it's full of markers and such. So we'll abuse the
 tangler infrastructure and use it to do marker replacement, but {\it not\/}
 named-section expansion.
 
@@ -6133,7 +6126,8 @@ named-section expansion.
 (defmethod section-code :around ((section section))
   (let ((code (call-next-method)))
     (if *indexing*
-        (substitute-symbols (tangle code :expand-named-sections nil) section)
+        (substitute-referring-symbols (tangle code :expand-named-sections nil) ;
+                                      section)
         code)))
 
 @ The top-level indexing routine will use this function to obtain the
@@ -6516,7 +6510,7 @@ symbols.
     ((walker indexing-walker) (operator (eql 'quote)) form env &key toplevel)
   (declare (ignore env toplevel))
   `(,(car form)
-    ,(unsubstitute-symbols (cadr form))))
+    ,(unsubstitute-referring-symbols (cadr form))))
 
 @t@l
 (define-indexing-test quoted-form

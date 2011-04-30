@@ -8,7 +8,8 @@
   (REQUIRE "RT")
   (DO-EXTERNAL-SYMBOLS (SYMBOL (FIND-PACKAGE "RT")) (IMPORT SYMBOL)))
 (DEFTEST MAYBE-PUSH
-         (LET ((LIST 'NIL)) (MAYBE-PUSH 'A LIST)
+         (LET ((LIST 'NIL))
+           (MAYBE-PUSH 'A LIST)
            (MAYBE-PUSH NIL LIST)
            (MAYBE-PUSH "" LIST)
            (MAYBE-PUSH 'B LIST)
@@ -52,7 +53,8 @@
                             COLLECT (RANDOM LIMIT)))))
            (DOLIST (N NUMBERS) (FIND-OR-INSERT N TREE))
            (LET ((KEYS 'NIL))
-             (FLET ((PUSH-KEY (NODE) (PUSH (NODE-KEY NODE) KEYS)))
+             (FLET ((PUSH-KEY (NODE)
+                      (PUSH (NODE-KEY NODE) KEYS)))
                (MAP-BST #'PUSH-KEY TREE)
                (EQUAL (NREVERSE KEYS)
                       (REMOVE-DUPLICATES (SORT NUMBERS #'<))))))
@@ -82,14 +84,14 @@
 (DEFTEST (SQUEEZE 2) (SQUEEZE "ab c") "ab c")
 (DEFTEST (SQUEEZE 3) (SQUEEZE (FORMAT NIL " a b ~C c " #\Tab)) "a b c")
 (DEFVAR *SAMPLE-NAMED-SECTIONS*
-        (WITH-TEMPORARY-SECTIONS
-         '((:SECTION :NAME "foo" :CODE (:FOO))
-           (:SECTION :NAME "bar" :CODE (:BAR))
-           (:SECTION :NAME "baz" :CODE (:BAZ))
-           (:SECTION :NAME "quux" :CODE (:QUUX :QUUUX :QUUUUX)))
-         *NAMED-SECTIONS*))
+  (WITH-TEMPORARY-SECTIONS
+   '((:SECTION :NAME "foo" :CODE (:FOO)) (:SECTION :NAME "bar" :CODE (:BAR))
+     (:SECTION :NAME "baz" :CODE (:BAZ))
+     (:SECTION :NAME "quux" :CODE (:QUUX :QUUUX :QUUUUX)))
+   *NAMED-SECTIONS*))
 (DEFMACRO WITH-SAMPLE-NAMED-SECTIONS (&BODY BODY)
-  `(LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*)) ,@BODY))
+  `(LET ((*NAMED-SECTIONS* *SAMPLE-NAMED-SECTIONS*))
+     ,@BODY))
 (DEFUN FIND-SAMPLE-SECTION (NAME)
   (FIND-OR-INSERT NAME *SAMPLE-NAMED-SECTIONS* :INSERT-IF-NOT-FOUND NIL))
 (DEFTEST FIND-NAMED-SECTION (SECTION-NAME (FIND-SAMPLE-SECTION "foo")) "foo")
@@ -100,7 +102,8 @@
            (VALUES
             (SECTION-NAME
              (HANDLER-BIND ((AMBIGUOUS-PREFIX-ERROR
-                             (LAMBDA (CONDITION) (DECLARE (IGNORE CONDITION))
+                             (LAMBDA (CONDITION)
+                               (DECLARE (IGNORE CONDITION))
                                (SETQ HANDLED T)
                                (INVOKE-RESTART 'USE-FIRST-MATCH))))
                (FIND-SAMPLE-SECTION "b...")))
@@ -213,8 +216,9 @@
           'PAR-MARKER)
          T)
 (DEFMACRO READ-FROM-STRING-WITH-CHARPOS
-          (STRING &OPTIONAL (EOF-ERROR-P T) (EOF-VALUE NIL) &KEY
-           (PRESERVE-WHITESPACE NIL))
+          (STRING
+           &OPTIONAL (EOF-ERROR-P T) (EOF-VALUE NIL)
+           &KEY (PRESERVE-WHITESPACE NIL))
   (LET ((READER
          (IF PRESERVE-WHITESPACE
              'READ-PRESERVING-WHITESPACE
@@ -266,19 +270,18 @@
              (READ-MAYBE-NOTHING S)))
          NIL)
 (DEFMETHOD PRINT-OBJECT ((OBJECT COMMA) STREAM)
-  (PRINT-UNREADABLE-OBJECT (OBJECT STREAM) (WRITE-CHAR #\, STREAM)))
-(DEFMETHOD PRINT-OBJECT ((OBJECT SPLICING-COMMA) STREAM)
   (PRINT-UNREADABLE-OBJECT (OBJECT STREAM)
-    (WRITE-CHAR #\, STREAM)
-    (WRITE-CHAR (COMMA-MODIFIER OBJECT) STREAM)))
+    (FORMAT STREAM ",~@[~C~]~S" (COMMA-MODIFIER OBJECT) (COMMA-FORM OBJECT))))
 (DEFTEST (BQ 1)
-         (LET ((B 3)) (DECLARE (SPECIAL B))
+         (LET ((B 3))
+           (DECLARE (SPECIAL B))
            (EQUAL
             (EVAL (TANGLE (READ-FORM-FROM-STRING "`(a b ,b ,(+ b 1) b)")))
             '(A B 3 4 B)))
          T)
 (DEFTEST (BQ 2)
-         (LET ((X '(A B C))) (DECLARE (SPECIAL X))
+         (LET ((X '(A B C)))
+           (DECLARE (SPECIAL X))
            (EQUAL
             (EVAL
              (TANGLE
@@ -288,14 +291,16 @@
          T)
 (DEFUN R (X) (REDUCE #'* X))
 (DEFTEST (BQ NESTED)
-         (LET ((Q '(R S)) (R '(3 5)) (S '(4 6))) (DECLARE (SPECIAL Q R S))
+         (LET ((Q '(R S)) (R '(3 5)) (S '(4 6)))
+           (DECLARE (SPECIAL Q R S))
            (VALUES (EVAL (EVAL (TANGLE (READ-FORM-FROM-STRING "``(,,q)"))))
                    (EVAL (EVAL (TANGLE (READ-FORM-FROM-STRING "``(,@,q)"))))
                    (EVAL (EVAL (TANGLE (READ-FORM-FROM-STRING "``(,,@q)"))))
                    (EVAL (EVAL (TANGLE (READ-FORM-FROM-STRING "``(,@,@q)"))))))
          (24) 24 ((3 5) (4 6)) (3 5 4 6))
 (DEFTEST (BQ VECTOR)
-         (LET ((A '(1 2 3))) (DECLARE (SPECIAL A))
+         (LET ((A '(1 2 3)))
+           (DECLARE (SPECIAL A))
            (VALUES (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(:a)")))
                    (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(,a)")))
                    (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(,@a)")))))
@@ -303,9 +308,18 @@
 (DEFTEST (BQ NAMED-SECTION)
          (WITH-SAMPLE-NAMED-SECTIONS
           (VALUES (EVAL (TANGLE (READ-FORM-FROM-STRING "`(, @<foo@>)")))
-                  (EVAL (TANGLE (READ-FORM-FROM-STRING "`(,@ @<foo@>)")))
-                  (EVAL (TANGLE (READ-FORM-FROM-STRING "`(,@ @<quux@>)")))))
-         (:FOO) :FOO :QUUX)
+                  (EVAL (TANGLE (READ-FORM-FROM-STRING "`(,@ @<foo@>)")))))
+         (:FOO) :FOO)
+(DEFTEST (BQ TOO-MANY-FORMS)
+         (WITH-SAMPLE-NAMED-SECTIONS
+          (LET ((HANDLED NIL))
+            (HANDLER-BIND ((ERROR
+                            (LAMBDA (CONDITION)
+                              (SETQ HANDLED T)
+                              (CONTINUE CONDITION))))
+              (VALUES (EVAL (TANGLE (READ-FORM-FROM-STRING "`(,@ @<quux@>)")))
+                      HANDLED))))
+         :QUUX T)
 (DEFTEST READ-FUNCTION
          (LET ((MARKER (READ-FORM-FROM-STRING "#'identity")))
            (VALUES (QUOTED-FORM MARKER) (MARKER-VALUE MARKER)))
@@ -351,7 +365,8 @@
            (FEATUREP '(:AND :A (:OR :C :B) (:NOT :D))))
          T)
 (DEFTEST (READ-TIME-CONDITIONAL 1)
-         (LET* ((*EVALUATING* NIL) (*FEATURES* NIL)
+         (LET* ((*EVALUATING* NIL)
+                (*FEATURES* NIL)
                 (CONDITIONAL (MARKER-VALUE (READ-FORM-FROM-STRING "#-foo 1"))))
            (VALUES (READ-TIME-CONDITIONAL-PLUSP CONDITIONAL)
                    (READ-TIME-CONDITIONAL-TEST CONDITIONAL)
@@ -420,7 +435,8 @@
          (WITH-SAMPLE-NAMED-SECTIONS
           (SECTION-NAME
            (HANDLER-BIND ((SECTION-NAME-DEFINITION-ERROR
-                           (LAMBDA (CONDITION) (DECLARE (IGNORE CONDITION))
+                           (LAMBDA (CONDITION)
+                             (DECLARE (IGNORE CONDITION))
                              (INVOKE-RESTART 'USE-SECTION))))
              (WITH-MODE :LISP
                (READ-FROM-STRING "@<foo@>=")))))
@@ -429,13 +445,15 @@
          (WITH-SAMPLE-NAMED-SECTIONS
           (SECTION-NAME
            (HANDLER-BIND ((SECTION-NAME-USE-ERROR
-                           (LAMBDA (CONDITION) (DECLARE (IGNORE CONDITION))
+                           (LAMBDA (CONDITION)
+                             (DECLARE (IGNORE CONDITION))
                              (INVOKE-RESTART 'CITE-SECTION))))
              (WITH-MODE :TEX
                (READ-FROM-STRING "@<foo@>")))))
          "foo")
 (DEFTEST INDEX-PACKAGE-READER
-         (LET ((*INDEX-PACKAGES* NIL)) (READ-FORM-FROM-STRING "@x\"CLWEB\"")
+         (LET ((*INDEX-PACKAGES* NIL))
+           (READ-FORM-FROM-STRING "@x\"CLWEB\"")
            (NOT (NULL (INTERESTING-SYMBOL-P 'INDEX-PACKAGE-READER))))
          T)
 (DEFTEST (TANGLE-1 1) (TANGLE-1 (READ-FORM-FROM-STRING ":a")) :A NIL)
@@ -487,7 +505,8 @@
                                  (ENSURE-PORTABLE-WALKING-ENVIRONMENT NIL)
                                  :MACRO
                                  `((FOO
-                                    ,(LAMBDA (FORM ENV) (DECLARE (IGNORE ENV))
+                                    ,(LAMBDA (FORM ENV)
+                                       (DECLARE (IGNORE ENV))
                                        FORM)))))))
            (AND (TYPEP CONTEXT 'MACRO-NAME) (LOCAL-BINDING-P CONTEXT)))
          T)
@@ -533,10 +552,11 @@
           (ERROR NIL NIL))
          NIL)
 (DEFTEST LAMBDA-EXPRESSION-TYPE
-         (FLET ((LAMBDA-EXPRESSION-P (X) (TYPEP X 'LAMBDA-EXPRESSION)))
+         (FLET ((LAMBDA-EXPRESSION-P (X)
+                  (TYPEP X 'LAMBDA-EXPRESSION)))
            (AND (LAMBDA-EXPRESSION-P '(LAMBDA (X) X))
-                (LAMBDA-EXPRESSION-P '(LAMBDA NIL T))
-                (LAMBDA-EXPRESSION-P '(LAMBDA NIL))
+                (LAMBDA-EXPRESSION-P '(LAMBDA () T))
+                (LAMBDA-EXPRESSION-P '(LAMBDA ()))
                 (NOT (LAMBDA-EXPRESSION-P '(LAMBDA X X)))
                 (NOT (LAMBDA-EXPRESSION-P 'LAMBDA))))
          T)
@@ -561,13 +581,22 @@
                         `(WALK-FORM WALKER ',FORM ENV ,TOPLEVEL)))
              (VALUES (WALK (ENSURE-TOPLEVEL) T)
                      (WALK (ENSURE-TOPLEVEL NIL) NIL)
-                     (NOT (NULL (WALK (LET () (ENSURE-TOPLEVEL NIL)) T)))
+                     (NOT
+                      (NULL
+                       (WALK
+                        (LET ()
+                          (ENSURE-TOPLEVEL NIL))
+                        T)))
                      (HANDLER-CASE (WALK (ENSURE-TOPLEVEL) NIL)
                                    (ERROR NIL NIL))
                      (HANDLER-CASE (WALK (ENSURE-TOPLEVEL NIL) T)
                                    (ERROR NIL NIL))
-                     (HANDLER-CASE (WALK (LET () (ENSURE-TOPLEVEL)) T)
-                                   (ERROR NIL NIL)))))
+                     (HANDLER-CASE
+                      (WALK
+                       (LET ()
+                         (ENSURE-TOPLEVEL))
+                       T)
+                      (ERROR NIL NIL)))))
          T T T NIL NIL NIL)
 (DEFMACRO DEFINE-WALKER-TEST
           (NAME-AND-OPTIONS FORM &OPTIONAL (RESULT NIL RESULT-SUPPLIED))
@@ -575,7 +604,8 @@
       (NAME &KEY (TOPLEVEL NIL))
       (ENSURE-LIST NAME-AND-OPTIONS)
     `(DEFTEST (WALK ,NAME)
-              (LET* ((FORM ',FORM) (WALKER (MAKE-INSTANCE 'TEST-WALKER))
+              (LET* ((FORM ',FORM)
+                     (WALKER (MAKE-INSTANCE 'TEST-WALKER))
                      (WALKED-FORM (WALK-FORM WALKER FORM NIL ,TOPLEVEL)))
                 ,(COND (RESULT `(TREE-EQUAL WALKED-FORM ',RESULT))
                        ((NOT RESULT-SUPPLIED) '(TREE-EQUAL WALKED-FORM FORM))
@@ -660,87 +690,140 @@
           (WALK-LIST WALKER SYMBOLS ENV TOPLEVEL)
           (WALK-FORM WALKER SYMBOLS ENV TOPLEVEL)))))
 (DEFINE-WALKER-TEST ORDINARY-LAMBDA-LIST
- (LAMBDA (X Y &OPTIONAL
-          (O
-           (+ (CHECK-BINDING O :VARIABLE NIL)
-              (CHECK-BINDING X :VARIABLE :SPECIAL)
-              (CHECK-BINDING Y :VARIABLE :LEXICAL)))
-          &REST ARGS &KEY ((SECRET K) 1 K-S-P)
-          (K2 (CHECK-BINDING K-S-P :VARIABLE :LEXICAL)) K3 &ALLOW-OTHER-KEYS
-          &AUX W
-          (Z
-           (IF K-S-P
-               O
-               X)))
-         (DECLARE (SPECIAL X))
+ (LAMBDA
+     (X Y
+      &OPTIONAL
+      (O
+       (+ (CHECK-BINDING O :VARIABLE NIL) (CHECK-BINDING X :VARIABLE :SPECIAL)
+          (CHECK-BINDING Y :VARIABLE :LEXICAL)))
+      &REST ARGS
+      &KEY ((SECRET K) 1 K-S-P) (K2 (CHECK-BINDING K-S-P :VARIABLE :LEXICAL))
+      K3 &ALLOW-OTHER-KEYS
+      &AUX W
+      (Z
+       (IF K-S-P
+           O
+           X)))
+   (DECLARE (SPECIAL X))
    (CHECK-BINDING X :VARIABLE :SPECIAL)
    (CHECK-BINDING (Y Z O K K-S-P K2 K3 ARGS W Z) :VARIABLE :LEXICAL)
    (CHECK-BINDING SECRET :VARIABLE NIL))
- (LAMBDA (X Y &OPTIONAL (O (+ O X Y)) &REST ARGS &KEY ((SECRET K) 1 K-S-P)
-          (K2 K-S-P) K3 &ALLOW-OTHER-KEYS &AUX W
-          (Z
-           (IF K-S-P
-               O
-               X)))
-         (DECLARE (SPECIAL X))
+ (LAMBDA
+     (X Y
+      &OPTIONAL (O (+ O X Y))
+      &REST ARGS
+      &KEY ((SECRET K) 1 K-S-P) (K2 K-S-P) K3 &ALLOW-OTHER-KEYS
+      &AUX W
+      (Z
+       (IF K-S-P
+           O
+           X)))
+   (DECLARE (SPECIAL X))
    X
    (Y Z O K K-S-P K2 K3 ARGS W Z)
    SECRET))
 (DEFINE-WALKER-TEST MACRO-LAMBDA-LIST
- (LAMBDA (&WHOLE W (X Y) &OPTIONAL ((O) (+ X Y)) &KEY
-          ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV . BODY)
-         (CHECK-BINDING (W X Y O K1 K2 K-S-P ENV BODY) :VARIABLE :LEXICAL))
- (LAMBDA (&WHOLE W (X Y) &OPTIONAL ((O) (+ X Y)) &KEY
-          ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV &REST BODY)
-         (W X Y O K1 K2 K-S-P ENV BODY)))
+ (LAMBDA
+     (&WHOLE W (X Y)
+      &OPTIONAL ((O) (+ X Y))
+      &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV . BODY)
+   (CHECK-BINDING (W X Y O K1 K2 K-S-P ENV BODY) :VARIABLE :LEXICAL))
+ (LAMBDA
+     (&WHOLE W (X Y)
+      &OPTIONAL ((O) (+ X Y))
+      &KEY ((:K (K1 K2)) (2 3) K-S-P) &ENVIRONMENT ENV
+      &REST BODY)
+   (W X Y O K1 K2 K-S-P ENV BODY)))
 (DEFINE-WALKER-TEST LET
- (LET ((X 1) (Y (CHECK-BINDING X :VARIABLE NIL))) (DECLARE (SPECIAL X))
+ (LET ((X 1) (Y (CHECK-BINDING X :VARIABLE NIL)))
+   (DECLARE (SPECIAL X))
    (CHECK-BINDING X :VARIABLE :SPECIAL)
    (CHECK-BINDING Y :VARIABLE :LEXICAL))
- (LET ((X 1) (Y X)) (DECLARE (SPECIAL X)) X Y))
+ (LET ((X 1) (Y X))
+   (DECLARE (SPECIAL X))
+   X
+   Y))
 (DEFINE-WALKER-TEST FLET
- (FLET ((FOO (X) (CHECK-BINDING X :VARIABLE :LEXICAL)) (BAR (Y) Y))
+ (FLET ((FOO (X)
+          (CHECK-BINDING X :VARIABLE :LEXICAL))
+        (BAR (Y)
+          Y))
    (DECLARE (SPECIAL X)
             (IGNORE (FUNCTION BAR)))
    (CHECK-BINDING X :VARIABLE :SPECIAL)
    (CHECK-BINDING FOO :FUNCTION :FUNCTION))
- (FLET ((FOO (X) X) (BAR (Y) Y))
+ (FLET ((FOO (X)
+          X)
+        (BAR (Y)
+          Y))
    (DECLARE (SPECIAL X)
             (IGNORE (FUNCTION BAR)))
    X
    FOO))
-(DEFINE-WALKER-TEST (MACROLET :TOPLEVEL T)
- (MACROLET ((FOO (X) `,(CHECK-BINDING X :VARIABLE :LEXICAL)) (BAR (Y) `,Y))
+(DEFINE-WALKER-TEST
+ (MACROLET :TOPLEVEL
+   T)
+ (MACROLET ((FOO (X)
+              `,(CHECK-BINDING X :VARIABLE :LEXICAL))
+            (BAR (Y)
+              `,Y))
    (CHECK-BINDING FOO :FUNCTION :MACRO)
    (ENSURE-TOPLEVEL)
    (FOO :FOO))
- (MACROLET ((FOO (X) X) (BAR (Y) Y)) FOO T :FOO))
-(DEFINE-WALKER-TEST (SYMBOL-MACROLET :TOPLEVEL T)
- (SYMBOL-MACROLET ((FOO :FOO ) (BAR :BAR ))
+ (MACROLET ((FOO (X)
+              X)
+            (BAR (Y)
+              Y))
+   FOO
+   T
+   :FOO))
+(DEFINE-WALKER-TEST
+ (SYMBOL-MACROLET :TOPLEVEL
+   T)
+ (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
    (CHECK-BINDING (FOO BAR) :VARIABLE :SYMBOL-MACRO)
    (ENSURE-TOPLEVEL))
- (SYMBOL-MACROLET ((FOO :FOO ) (BAR :BAR )) (:FOO :BAR) T))
+ (SYMBOL-MACROLET ((FOO :FOO) (BAR :BAR))
+   (:FOO :BAR)
+   T))
 (DEFINE-WALKER-TEST LET*
- (LET* ((X 1) (Y (CHECK-BINDING X :VARIABLE :SPECIAL))) (DECLARE (SPECIAL X))
+ (LET* ((X 1) (Y (CHECK-BINDING X :VARIABLE :SPECIAL)))
+   (DECLARE (SPECIAL X))
    (CHECK-BINDING Y :VARIABLE :LEXICAL))
- (LET* ((X 1) (Y X)) (DECLARE (SPECIAL X)) Y))
+ (LET* ((X 1) (Y X))
+   (DECLARE (SPECIAL X))
+   Y))
 (DEFINE-WALKER-TEST LABELS
- (LABELS ((FOO (X) (CHECK-BINDING X :VARIABLE :LEXICAL))
-          (BAR (Y) (CHECK-BINDING FOO :FUNCTION :FUNCTION)))
+ (LABELS ((FOO (X)
+            (CHECK-BINDING X :VARIABLE :LEXICAL))
+          (BAR (Y)
+            (CHECK-BINDING FOO :FUNCTION :FUNCTION)))
    (DECLARE (SPECIAL X))
    (CHECK-BINDING X :VARIABLE :SPECIAL)
    (CHECK-BINDING FOO :FUNCTION :FUNCTION))
- (LABELS ((FOO (X) X) (BAR (Y) FOO)) (DECLARE (SPECIAL X)) X FOO))
+ (LABELS ((FOO (X)
+            X)
+          (BAR (Y)
+            FOO))
+   (DECLARE (SPECIAL X))
+   X
+   FOO))
 (DEFINE-WALKER-TEST (LOCALLY :TOPLEVEL T)
  (LOCALLY
   NIL
   (ENSURE-TOPLEVEL)
-  (LET ((Y T)) (CHECK-BINDING Y :VARIABLE :LEXICAL)
+  (LET ((Y T))
+    (CHECK-BINDING Y :VARIABLE :LEXICAL)
     (LOCALLY
      (DECLARE (SPECIAL Y))
      (ENSURE-TOPLEVEL NIL)
      (CHECK-BINDING Y :VARIABLE :SPECIAL))))
- (LOCALLY NIL T (LET ((Y T)) Y (LOCALLY (DECLARE (SPECIAL Y)) T Y))))
+ (LOCALLY
+  NIL
+  T
+  (LET ((Y T))
+    Y
+    (LOCALLY (DECLARE (SPECIAL Y)) T Y))))
 (DEFINE-WALKER-TEST
  (DECLAIM :TOPLEVEL
           T)
@@ -779,7 +862,8 @@
   (DECLARE (IGNORE ENV DECLARE))
   (FORMAT *TRACE-OUTPUT* "~&~@<; ~@;walking bindings ~S ~S~:>~%" NAMES CONTEXT))
 (DEFTEST INDEX-PACKAGE
-         (LET ((*INDEX-PACKAGES* NIL)) (INDEX-PACKAGE "KEYWORD")
+         (LET ((*INDEX-PACKAGES* NIL))
+           (INDEX-PACKAGE "KEYWORD")
            (VALUES (INTERESTING-SYMBOL-P NIL)
                    (NOT (NULL (INTERESTING-SYMBOL-P :FOO)))))
          NIL T)
@@ -793,10 +877,14 @@
 (DEFUN ENTRY-HEADING-STRICTLY-LESSP (X Y)
   (AND (ENTRY-HEADING-LESSP X Y) (NOT (ENTRY-HEADING-LESSP Y X))))
 (DEFTEST ENTRY-HEADING-LESSP
-         (LET* ((A (MAKE-HEADING "a")) (B (MAKE-HEADING "b"))
-                (X (MAKE-HEADING "x")) (Y (MAKE-HEADING "y"))
-                (AX (MAKE-HEADING "a" X)) (AY (MAKE-HEADING "a" Y))
-                (BX (MAKE-HEADING "b" X)) (BY (MAKE-HEADING "a" Y)))
+         (LET* ((A (MAKE-HEADING "a"))
+                (B (MAKE-HEADING "b"))
+                (X (MAKE-HEADING "x"))
+                (Y (MAKE-HEADING "y"))
+                (AX (MAKE-HEADING "a" X))
+                (AY (MAKE-HEADING "a" Y))
+                (BX (MAKE-HEADING "b" X))
+                (BY (MAKE-HEADING "a" Y)))
            (EVERY #'IDENTITY
                   (LIST (NOT (ENTRY-HEADING-STRICTLY-LESSP A A))
                         (ENTRY-HEADING-STRICTLY-LESSP A B)
@@ -811,9 +899,12 @@
 (DEFUN ENTRY-HEADING-SYMMETRIC-UNEQUALP (X Y)
   (AND (NOT (ENTRY-HEADING-EQUALP X Y)) (NOT (ENTRY-HEADING-EQUALP Y X))))
 (DEFTEST ENTRY-HEADING-EQUALP
-         (LET* ((A (MAKE-HEADING "a")) (B (MAKE-HEADING "b"))
-                (X (MAKE-HEADING "x")) (Y (MAKE-HEADING "y"))
-                (AX (MAKE-HEADING "a" X)) (AY (MAKE-HEADING "a" Y)))
+         (LET* ((A (MAKE-HEADING "a"))
+                (B (MAKE-HEADING "b"))
+                (X (MAKE-HEADING "x"))
+                (Y (MAKE-HEADING "y"))
+                (AX (MAKE-HEADING "a" X))
+                (AY (MAKE-HEADING "a" Y)))
            (EVERY #'IDENTITY
                   (LIST (ENTRY-HEADING-SYMMETRIC-EQUALP A A)
                         (ENTRY-HEADING-SYMMETRIC-UNEQUALP A B)
@@ -887,25 +978,31 @@
          T)
 (DEFTEST (SYMBOL-PROVENANCE 1)
          (LET ((*INDEX-PACKAGES* (LIST (FIND-PACKAGE "KEYWORD"))))
-           (SYMBOL-PROVENANCE (SUBSTITUTE-SYMBOLS :FOO 1)))
+           (SYMBOL-PROVENANCE (SUBSTITUTE-REFERRING-SYMBOLS :FOO 1)))
          :FOO 1)
 (DEFTEST (SYMBOL-PROVENANCE 2) (SYMBOL-PROVENANCE :FOO) :FOO)
 (DEFTEST (SYMBOL-PROVENANCE 3)
          (LET ((SYMBOL (MAKE-SYMBOL "FOO")))
            (EQL (SYMBOL-PROVENANCE SYMBOL) SYMBOL))
          T)
+(DEFTEST (SYMBOL-PROVENANCE 4)
+         (LET ((*INDEX-PACKAGES* (LIST (FIND-PACKAGE "KEYWORD"))))
+           (SYMBOL-PROVENANCE
+            (MACROEXPAND
+             (SUBSTITUTE-REFERRING-SYMBOLS
+              (TANGLE (READ-FORM-FROM-STRING "`,:foo")) 1))))
+         :FOO 1)
 (DEFUN ALL-INDEX-ENTRIES (INDEX)
   (LET ((ENTRIES))
     (MAP-BST
      (LAMBDA (ENTRY)
-             (PUSH
-              (LIST (HEADING-NAME (ENTRY-HEADING ENTRY))
-                    (LOOP FOR LOCATOR IN (ENTRY-LOCATORS ENTRY)
-                          IF (LOCATOR-DEFINITION-P LOCATOR)
-                          COLLECT `(:DEF
-                                    ,(SECTION-NUMBER (LOCATION LOCATOR))) ELSE
-                          COLLECT (SECTION-NUMBER (LOCATION LOCATOR))))
-              ENTRIES))
+       (PUSH
+        (LIST (HEADING-NAME (ENTRY-HEADING ENTRY))
+              (LOOP FOR LOCATOR IN (ENTRY-LOCATORS ENTRY)
+                    IF (LOCATOR-DEFINITION-P LOCATOR)
+                    COLLECT `(:DEF ,(SECTION-NUMBER (LOCATION LOCATOR))) ELSE
+                    COLLECT (SECTION-NUMBER (LOCATION LOCATOR))))
+        ENTRIES))
      (INDEX-ENTRIES INDEX))
     (NREVERSE ENTRIES)))
 (DEFUN WALK-SECTIONS (WALKER SECTIONS ENV &KEY (VERIFY-WALK T) TOPLEVEL)
@@ -924,8 +1021,8 @@
            COLLECT WALKED-FORM))))
 (DEFCLASS TRACING-INDEXING-WALKER (TRACING-WALKER INDEXING-WALKER) NIL)
 (DEFUN TEST-INDEXING-WALK
-       (SECTIONS EXPECTED-ENTRIES ENV &KEY (VERIFY-WALK T) TOPLEVEL
-        INDEX-LEXICALS TRACE PRINT)
+       (SECTIONS EXPECTED-ENTRIES ENV
+        &KEY (VERIFY-WALK T) TOPLEVEL INDEX-LEXICALS TRACE PRINT)
   (LET* ((WALKER
           (MAKE-INSTANCE
            (IF TRACE
@@ -958,17 +1055,28 @@
                (TEST-INDEXING-WALK ,SECTIONS ',EXPECTED-ENTRIES NIL ,@OPTIONS))
               T)))
 (DEFINE-INDEXING-TEST (LEXICAL-VARIABLE :INDEX-LEXICALS T)
- '((:SECTION :CODE ((LET ((X NIL) (Y NIL) (Z NIL))))))
+ '((:SECTION :CODE
+    ((LET ((X NIL) (Y NIL) (Z NIL))
+       ))))
  ("X lexical variable" ((:DEF 0))) ("Y lexical variable" ((:DEF 0)))
  ("Z lexical variable" ((:DEF 0))))
 (DEFINE-INDEXING-TEST SPECIAL-VARIABLE
  '((:SECTION :CODE ((LOCALLY (DECLARE (SPECIAL *X*)) *X*))))
  ("*X* special variable" (0)))
-(DEFINE-INDEXING-TEST (MACROLET :VERIFY-WALK NIL)
- '((:SECTION :CODE ((MACROLET ((FROB (X) `(* ,X 42))) (FROB 6)))))
+(DEFINE-INDEXING-TEST
+ (MACROLET :VERIFY-WALK
+   NIL)
+ '((:SECTION :CODE
+    ((MACROLET ((FROB (X)
+                  `(* ,X 42)))
+       (FROB 6)))))
  ("FROB local macro" ((:DEF 0))))
-(DEFINE-INDEXING-TEST (SYMBOL-MACROLET :VERIFY-WALK NIL)
- '((:SECTION :CODE ((SYMBOL-MACROLET ((FOO :BAR )) FOO))))
+(DEFINE-INDEXING-TEST
+ (SYMBOL-MACROLET :VERIFY-WALK
+   NIL)
+ '((:SECTION :CODE
+    ((SYMBOL-MACROLET ((FOO :BAR))
+       FOO))))
  ("FOO local symbol macro" ((:DEF 0))))
 (DEFINE-INDEXING-TEST CATCH/THROW
  '((:SECTION :CODE ((CATCH 'FOO (THROW 'BAR :BAR))))) ("BAR catch tag" (0))
@@ -1023,11 +1131,12 @@
  '((:SECTION :CODE ((DEFSTRUCT FOO)))
    (:SECTION :CODE ((DEFSTRUCT (BAR (:TYPE LIST)) A B C))))
  ("BAR structure" ((:DEF 1))) ("FOO structure" ((:DEF 0))))
-(DEFINE-INDEXING-TEST (DEFVAR :VERIFY-WALK () :TOPLEVEL T :AUX (SUPER DUPER))
+(DEFINE-INDEXING-TEST (DEFVAR :VERIFY-WALK NIL :TOPLEVEL T :AUX (SUPER DUPER))
  `((:SECTION :CODE ((DEFVAR ,SUPER 450)))
    (:SECTION :CODE ((DEFPARAMETER ,DUPER (1+ ,SUPER)))))
  ("DUPER special variable" ((:DEF 1))) ("SUPER special variable" (1 (:DEF 0))))
-(DEFINE-INDEXING-TEST (DEFCONSTANT :VERIFY-WALK () :TOPLEVEL T :AUX (EL-GORDO))
+(DEFINE-INDEXING-TEST
+ (DEFCONSTANT :VERIFY-WALK NIL :TOPLEVEL T :AUX (EL-GORDO))
  `((:SECTION :CODE ((DEFCONSTANT ,EL-GORDO MOST-POSITIVE-FIXNUM))))
  ("EL-GORDO constant" ((:DEF 0))))
 (DEFINE-INDEXING-TEST
@@ -1087,11 +1196,11 @@
 (DEFTEST (COALESCE-LOCATORS 1)
          (MAPCAR
           (LAMBDA (SECTIONS)
-                  (MAPCAR #'LOCATION
-                   (COALESCE-LOCATORS
-                    (MAPCAR
-                     (LAMBDA (N) (MAKE-INSTANCE 'SECTION-LOCATOR :SECTION N))
-                     SECTIONS))))
+            (MAPCAR #'LOCATION
+                    (COALESCE-LOCATORS
+                     (MAPCAR
+                      (LAMBDA (N) (MAKE-INSTANCE 'SECTION-LOCATOR :SECTION N))
+                      SECTIONS))))
           '((1 3 5 7) (1 2 3 5 7) (1 3 4 5 7) (1 2 3 5 6 7) (1 2 3 5 6 7 9)))
          ((1 3 5 7) ((1 3) 5 7) (1 (3 5) 7) ((1 3) (5 7)) ((1 3) (5 7) 9)))
 (DEFTEST (COALESCE-LOCATORS 2)
