@@ -436,7 +436,7 @@
          (DECLARE (IGNORABLE (FUNCTION ,REWIND)))
          (UNWIND-PROTECT (PROGN ,@BODY) (MAP NIL #'CLOSE ,CLOSING))))))
 (DEFMACRO READ-WITH-ECHO ((STREAM OBJECT ECHOED) &BODY BODY)
-  (WITH-UNIQUE-NAMES (OUT ECHO RAW-OUTPUT LENGTH)
+  (WITH-UNIQUE-NAMES (OUT ECHO RAW-OUTPUT LENGTH CHAR)
     `(WITH-OPEN-STREAM (,OUT (MAKE-STRING-OUTPUT-STREAM))
        (WITH-OPEN-STREAM (,ECHO (MAKE-ECHO-STREAM ,STREAM ,OUT))
          (LET* ((,OBJECT (READ-PRESERVING-WHITESPACE ,ECHO))
@@ -444,11 +444,13 @@
                 (,LENGTH (LENGTH ,RAW-OUTPUT))
                 (,ECHOED
                  (SUBSEQ ,RAW-OUTPUT 0
-                         (IF (OR (EOF-P (PEEK-CHAR NIL ,ECHO NIL EOF))
-                                 (PROGN
-                                  (UNREAD-CHAR (READ-CHAR ,ECHO) ,ECHO)
-                                  (PLUSP
-                                   (LENGTH (GET-OUTPUT-STREAM-STRING ,OUT)))))
+                         (IF (LET ((,CHAR (READ-CHAR ,ECHO NIL EOF)))
+                               (OR (EOF-P ,CHAR)
+                                   (PROGN
+                                    (UNREAD-CHAR ,CHAR ,ECHO)
+                                    (PLUSP
+                                     (LENGTH
+                                      (GET-OUTPUT-STREAM-STRING ,OUT))))))
                              ,LENGTH
                              (1- ,LENGTH)))))
            (DECLARE (IGNORABLE ,OBJECT ,ECHOED))

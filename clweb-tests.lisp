@@ -181,7 +181,7 @@
              (VALUES OBJECT CHARS)))
          :FOO ":foo")
 (DEFTEST (READ-WITH-ECHO VECTOR)
-         (WITH-INPUT-FROM-STRING (STREAM "#(1 2 3) foo")
+         (WITH-INPUT-FROM-STRING (STREAM "#(1 2 3) :foo")
            (READ-WITH-ECHO (STREAM OBJECT CHARS)
              (VALUES OBJECT CHARS)))
          #(1 2 3) "#(1 2 3)")
@@ -364,6 +364,11 @@
                    (MARKER-BOUNDP (READ-FORM-FROM-STRING "#-a 1"))
                    (MARKER-BOUNDP (READ-FORM-FROM-STRING "#+b 2"))))
          1 2 NIL NIL)
+(DEFTEST (READ-TIME-CONDITIONAL CHARPOS)
+         (LIST-MARKER-CHARPOS
+          (WITH-MODE :LISP
+            (READ-FROM-STRING-WITH-CHARPOS (FORMAT NIL "(#-:foo foo~% bar)"))))
+         (1 0 1))
 (DEFTEST SNARF-UNTIL-CONTROL-CHAR
          (WITH-INPUT-FROM-STRING (S "abc*123")
            (VALUES (SNARF-UNTIL-CONTROL-CHAR S #\*)

@@ -1197,7 +1197,7 @@ consumed.
 
 @l
 (defmacro read-with-echo ((stream object echoed) &body body)
-  (with-unique-names (out echo raw-output length)
+  (with-unique-names (out echo raw-output length char)
     `(with-open-stream (,out (make-string-output-stream))
        (with-open-stream (,echo (make-echo-stream ,stream ,out))
          (let* ((,object (read-preserving-whitespace ,echo))
@@ -1225,9 +1225,10 @@ previously-unread character by reading and then unreading the next character
 in the echo stream and seeing if it actually gets echoed.
 
 @<Should we include the last character of |raw-input|?@>=
-(or (eof-p (peek-char nil ,echo nil eof)) ; clearly `yes' for {\sc eof}
-    (progn (unread-char (read-char ,echo) ,echo)
-           (plusp (length (get-output-stream-string ,out)))))
+(let ((,char (read-char ,echo nil eof)))
+  (or (eof-p ,char) ; clearly `yes' for {\sc eof}
+      (progn (unread-char ,char ,echo)
+             (plusp (length (get-output-stream-string ,out))))))
 
 @t@l
 (deftest (read-with-echo eof)
@@ -1255,7 +1256,7 @@ in the echo stream and seeing if it actually gets echoed.
   :foo ":foo")
 
 (deftest (read-with-echo vector)
-  (with-input-from-string (stream "#(1 2 3) foo")
+  (with-input-from-string (stream "#(1 2 3) :foo")
     (read-with-echo (stream object chars)
       (values object chars)))
   #(1 2 3) "#(1 2 3)")
@@ -2311,6 +2312,12 @@ characters that the reader scans, and use that to reconstruct the form.
   2
   nil
   nil)
+
+(deftest (read-time-conditional charpos)
+  (list-marker-charpos (with-mode :lisp
+                         (read-from-string-with-charpos
+                          (format nil "(#-:foo foo~% bar)"))))
+  (1 0 1))
 
 @1*Web control codes. So much for the standard macro characters. Now we're
 ready to move on to \WEB-specific reading. We accumulate \TeX\ mode
