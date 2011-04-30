@@ -6753,7 +6753,7 @@ qualifiers (if any) should have been walked already; we'll walk the
 specialized \L-list and body forms here.
 
 @l
-(defun walk-method-definition (walker operator function-name qualifiers
+(defun walk-method-definition (walker operator function-name qualifiers ;
                                lambda-list body env)
   (multiple-value-bind (body-forms decls doc) ;
       (parse-body body :walker walker :env env)
