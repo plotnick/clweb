@@ -1254,6 +1254,12 @@ in the echo stream and seeing if it actually gets echoed.
       (values object chars)))
   :foo ":foo")
 
+(deftest (read-with-echo vector)
+  (with-input-from-string (stream "#(1 2 3) foo")
+    (read-with-echo (stream object chars)
+      (values object chars)))
+  #(1 2 3) "#(1 2 3)")
+
 @1*Markers. Next, we define a class of objects called {\it markers\/} that
 denote abstract objects in source code. Some of these objects, such as
 newlines and comments, are ones that would ordinarily be ignored by the
