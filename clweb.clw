@@ -877,7 +877,7 @@ run-time.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (define-symbol-macro eof (load-time-value *eof* t)))
 
-@ We'll test for our {\sc eof}-value using |eof-p|.
+@ We'll test for our {\sc eof} value using |eof-p|.
 
 @l
 (defun eof-p (object) (eq object eof))
