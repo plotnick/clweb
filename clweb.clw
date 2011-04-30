@@ -3057,10 +3057,11 @@ of the tests file by supplying |:tests-file nil|.
                @<Output a form that sets the source pathname@>
                (dolist (form (tangle (unnamed-section-code-parts sections)))
                  (pprint form output))))))
-    (when (and tests-file ;
-               (> (length *test-sections*) 1)) ; there's always a limbo section
-      (when verbose (format t "~&; writing tests to ~A~%" tests-file))
-      (write-forms *test-sections* tests-file))
+    (cond ((and tests-file
+                (> (length *test-sections*) 1)) ; there's always a limbo section
+           (when verbose (format t "~&; writing tests to ~A~%" tests-file))
+           (write-forms *test-sections* tests-file))
+          (t (setq tests-file nil)))
     (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
     (write-forms *sections* lisp-file)
     (multiple-value-prog1
