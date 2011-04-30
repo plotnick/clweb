@@ -6,15 +6,6 @@
 @e
 (in-package "TEST")
 
-@t*Initialize test harness.
-@l
-(in-package "TEST")
-@e
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (require 'rt)
-  (loop for symbol being each external-symbol of (find-package "RT")
-        do (import symbol)))
-
 @*Foo. The function |foo| adds twice its argument's value to thrice it.
 @l
 (defun foo (x)
@@ -25,12 +16,6 @@ and X trebled."
 @ @<The only even prime@>=2
 @ @<Twice |x|@>=(* x @<The only...@>)
 @ @<Thrice...@>=(* x 3)
-
-@t And here's a test for the simple function defined above.
-@l
-(deftest foo @<Call |foo| with an argument of |2|@> 10)
-
-@t@<Call |foo|...@>=(foo 2)
 
 @*Bar. The function |bar| returns the first four natural numbers (including 0),
 and demonstrates how a named section may be defined piecewise.
