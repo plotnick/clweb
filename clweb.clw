@@ -988,8 +988,8 @@ character position of an underlying stream. Note that these aren't
 instances of |stream| (and can't be, without relying on an extension to
 Common Lisp like Gray streams). But they contain a standard composite
 stream we'll call a {\it proxy stream\/} which is hooked up to the underlying
-stream whose position they're tracking, and it's these proxy streams that
-we'll pass around, so that the standard stream functions will all work.
+stream whose position they're tracking. It's these proxy streams that
+we'll pass around, so all the standard stream functions will still work.
 @^proxy stream@>
 
 @l
