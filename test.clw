@@ -35,7 +35,8 @@ which should be spliced into place.
   (@<Put the first three natural numbers in |a|, |b|, and |c|@>
     (+ a b c)))
 
-@ @<Put the first three...@>=destructuring-bind (a b c &rest args) (bar)
+@ @<Put the first three...@>=
+destructuring-bind (a b c &rest args) (bar) (declare (ignore args))
 
 @ Here's a section with no code. None at all. Not even a scrap. It exists
 just so that we can make sure that in such an eventuality, everything is
