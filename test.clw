@@ -135,7 +135,7 @@ newlines and such are ignored:
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun count-em (list) (length list)))
 (define-symbol-macro three-bears '(:fred :jerry :samuel))
-(defmacro how-many-bears () (count-em three-bears))
+(defmacro how-many-bears () `(count-em three-bears))
 
 (defgeneric generic-foo (foo))
 
