@@ -3823,6 +3823,16 @@ which see.
     (format stream "\\#\\'~S" (quoted-form obj)))
   1)
 
+@ We transform \.{#'} into instances of |function-marker| during reading,
+so we don't want lists like |(function foo)| turned into |#'foo| during
+weaving.
+
+@l
+(set-weave-dispatch '(cons (eql function))
+  (lambda (stream obj)
+    (format stream "(~{~W~^ ~})" obj))
+  1)
+
 @ @l
 (set-weave-dispatch 'simple-vector-marker
   (lambda (stream obj)

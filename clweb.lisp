@@ -1601,6 +1601,8 @@
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\#\\'~S" (QUOTED-FORM OBJ)))
                     1)
+(SET-WEAVE-DISPATCH '(CONS (EQL FUNCTION))
+                    (LAMBDA (STREAM OBJ) (FORMAT STREAM "(~{~W~^ ~})" OBJ)) 1)
 (SET-WEAVE-DISPATCH 'SIMPLE-VECTOR-MARKER
                     (LAMBDA (STREAM OBJ)
                       (FORMAT STREAM "\\#~@[~D~]~S"
