@@ -1295,55 +1295,55 @@
        (SECTIONS
         &KEY INPUT-FILE OUTPUT-FILE INDEX-FILE SECTIONS-FILE WEAVING-TESTS
         VERBOSE PRINT EXTERNAL-FORMAT)
-  (FLET ((WEAVE (OBJECT STREAM)
-           (WRITE OBJECT :STREAM STREAM :READABLY T :CASE :DOWNCASE :PRETTY T
-                  :PPRINT-DISPATCH *WEAVE-PPRINT-DISPATCH* :RIGHT-MARGIN 1000)))
-    (MACROLET ((WITH-OUTPUT-FILE ((STREAM FILESPEC) &BODY BODY)
-                 `(WITH-OPEN-FILE
-                      (,STREAM ,FILESPEC :DIRECTION :OUTPUT :EXTERNAL-FORMAT
-                       EXTERNAL-FORMAT :IF-EXISTS :SUPERSEDE)
-                    ,@BODY)))
-      (WITH-OUTPUT-FILE (OUT OUTPUT-FILE) (FORMAT OUT "\\input clwebmac~%")
-       (WHEN WEAVING-TESTS
-         (FORMAT OUT "\\def\\progname{~/clweb::print-escaped/}~%"
-                 (IF INPUT-FILE
-                     (STRING-CAPITALIZE (PATHNAME-NAME INPUT-FILE))
-                     "program")))
-       (IF PRINT
-           (FLET ((WEAVE-SECTION (SECTION)
-                    (FORMAT T "~:[~;*~]~D" (STARRED-SECTION-P SECTION)
-                            (SECTION-NUMBER SECTION))
-                    (WEAVE SECTION OUT)))
-             (PPRINT-LOGICAL-BLOCK
-                 (NIL (COERCE SECTIONS 'LIST) :PER-LINE-PREFIX ";  ")
-               (WEAVE-SECTION (PPRINT-POP))
-               (LOOP (PPRINT-EXIT-IF-LIST-EXHAUSTED)
-                     (WRITE-CHAR #\ )
-                     (PPRINT-NEWLINE :FILL)
-                     (WEAVE-SECTION (PPRINT-POP)))))
-           (MAP NIL (LAMBDA (SECTION) (WEAVE SECTION OUT)) SECTIONS))
-       (WHEN INDEX-FILE
-         (WHEN VERBOSE (FORMAT T "~&; writing the index to ~A~%" INDEX-FILE))
-         (WITH-OUTPUT-FILE (IDX INDEX-FILE)
-          (WEAVE
-           (INDEX-SECTIONS SECTIONS :INDEX
-                           (IF WEAVING-TESTS
-                               (MAKE-INDEX)
-                               *INDEX*))
-           IDX))
-         (WITH-OUTPUT-FILE (SCN SECTIONS-FILE)
-          (MAP-BST
-           (LAMBDA (SECTION)
-             (UNLESS
-                 (EVERY
-                  (IF WEAVING-TESTS
-                      (COMPLEMENT #'TEST-SECTION-P)
-                      #'TEST-SECTION-P)
-                  (NAMED-SECTION-SECTIONS SECTION))
-               (WEAVE (MAKE-SECTION-NAME-INDEX-ENTRY SECTION) SCN)))
-           *NAMED-SECTIONS*))
-         (FORMAT OUT "~&\\inx~%\\fin~%\\con~%"))
-       (FORMAT OUT "~&\\end~%") (TRUENAME OUT)))))
+  (MACROLET ((WITH-OUTPUT-FILE ((STREAM FILESPEC) &BODY BODY)
+               `(WITH-OPEN-FILE
+                    (,STREAM ,FILESPEC :DIRECTION :OUTPUT :EXTERNAL-FORMAT
+                     EXTERNAL-FORMAT :IF-EXISTS :SUPERSEDE)
+                  ,@BODY)))
+    (WITH-OUTPUT-FILE (OUT OUTPUT-FILE) (FORMAT OUT "\\input clwebmac~%")
+     (WHEN WEAVING-TESTS
+       (FORMAT OUT "\\def\\progname{~/clweb::print-escaped/}~%"
+               (IF INPUT-FILE
+                   (STRING-CAPITALIZE (PATHNAME-NAME INPUT-FILE))
+                   "program")))
+     (IF PRINT
+         (FLET ((WEAVE-SECTION (SECTION)
+                  (FORMAT T "~:[~;*~]~D" (STARRED-SECTION-P SECTION)
+                          (SECTION-NUMBER SECTION))
+                  (WEAVE-OBJECT SECTION OUT)))
+           (PPRINT-LOGICAL-BLOCK
+               (NIL (COERCE SECTIONS 'LIST) :PER-LINE-PREFIX ";  ")
+             (WEAVE-SECTION (PPRINT-POP))
+             (LOOP (PPRINT-EXIT-IF-LIST-EXHAUSTED)
+                   (WRITE-CHAR #\ )
+                   (PPRINT-NEWLINE :FILL)
+                   (WEAVE-SECTION (PPRINT-POP)))))
+         (MAP NIL (LAMBDA (SECTION) (WEAVE-OBJECT SECTION OUT)) SECTIONS))
+     (WHEN INDEX-FILE
+       (WHEN VERBOSE (FORMAT T "~&; writing the index to ~A~%" INDEX-FILE))
+       (WITH-OUTPUT-FILE (IDX INDEX-FILE)
+        (WEAVE-OBJECT
+         (INDEX-SECTIONS SECTIONS :INDEX
+                         (IF WEAVING-TESTS
+                             (MAKE-INDEX)
+                             *INDEX*))
+         IDX))
+       (WITH-OUTPUT-FILE (SCN SECTIONS-FILE)
+        (MAP-BST
+         (LAMBDA (SECTION)
+           (UNLESS
+               (EVERY
+                (IF WEAVING-TESTS
+                    (COMPLEMENT #'TEST-SECTION-P)
+                    #'TEST-SECTION-P)
+                (NAMED-SECTION-SECTIONS SECTION))
+             (WEAVE-OBJECT (MAKE-SECTION-NAME-INDEX-ENTRY SECTION) SCN)))
+         *NAMED-SECTIONS*))
+       (FORMAT OUT "~&\\inx~%\\fin~%\\con~%"))
+     (FORMAT OUT "~&\\end~%") (TRUENAME OUT))))
+(DEFUN WEAVE-OBJECT (OBJECT STREAM)
+  (WRITE OBJECT :STREAM STREAM :READABLY T :CASE :DOWNCASE :PRETTY T
+         :PPRINT-DISPATCH *WEAVE-PPRINT-DISPATCH* :RIGHT-MARGIN 1000))
 (DEFUN PRINT-TEX (STREAM TEX-MODE-MATERIAL &REST ARGS)
   (DECLARE (IGNORE ARGS))
   (DOLIST (X TEX-MODE-MATERIAL)

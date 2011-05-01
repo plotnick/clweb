@@ -3244,44 +3244,39 @@ currently weaving the tests.
 (defun weave-sections (sections &key
                        input-file output-file index-file sections-file
                        weaving-tests verbose print external-format)
-  (flet ((weave (object stream)
-           (write object
-                  :stream stream :readably t
-                  :case :downcase
-                  :pretty t :pprint-dispatch *weave-pprint-dispatch* ;
-                  :right-margin 1000)))
-    (macrolet ((with-output-file ((stream filespec) &body body)
-                 `(with-open-file (,stream ,filespec
-                                   :direction :output
-                                   :external-format external-format
-                                   :if-exists :supersede)
-                    ,@body)))
-      (with-output-file (out output-file)
-        (format out "\\input clwebmac~%")
-        (when weaving-tests
-          @<Write the program name to the tests output file@>)
-        (if print
-            @<Weave the sections to the output file, reporting as we go@>
-            (map nil (lambda (section) (weave section out)) sections))
-        (when index-file
-          (when verbose (format t "~&; writing the index to ~A~%" index-file))
-          (with-output-file (idx index-file)
-            (weave (index-sections sections
-                                   :index (if weaving-tests ;
-                                              (make-index) ;
-                                              *index*))
-                   idx))
-          (with-output-file (scn sections-file)
-            (map-bst (lambda (section)
-                       (unless (every (if weaving-tests ;
-                                          (complement #'test-section-p) ;
-                                          #'test-section-p)
-                                      (named-section-sections section))
-                         (weave (make-section-name-index-entry section) scn)))
-                     *named-sections*))
-          (format out "~&\\inx~%\\fin~%\\con~%"))
-        (format out "~&\\end~%")
-        (truename out)))))
+  (macrolet ((with-output-file ((stream filespec) &body body)
+               `(with-open-file (,stream ,filespec
+                                 :direction :output
+                                 :external-format external-format
+                                 :if-exists :supersede)
+                  ,@body)))
+    (with-output-file (out output-file)
+      (format out "\\input clwebmac~%")
+      (when weaving-tests
+        @<Write the program name to the tests output file@>)
+      (if print
+          @<Weave the sections to the output file, reporting as we go@>
+          (map nil (lambda (section) (weave-object section out)) sections))
+      (when index-file
+        (when verbose (format t "~&; writing the index to ~A~%" index-file))
+        (with-output-file (idx index-file)
+          (weave-object (index-sections sections ;
+                                        :index (if weaving-tests ;
+                                                   (make-index) ;
+                                                   *index*))
+                        idx))
+        (with-output-file (scn sections-file)
+          (map-bst (lambda (section)
+                     (unless (every (if weaving-tests ;
+                                        (complement #'test-section-p) ;
+                                        #'test-section-p)
+                                    (named-section-sections section))
+                       (weave-object (make-section-name-index-entry section) ;
+                                     scn)))
+                   *named-sections*))
+        (format out "~&\\inx~%\\fin~%\\con~%"))
+      (format out "~&\\end~%")
+      (truename out))))
 
 @ We'll use the pretty printer to print the section numbers to standard
 output as we weave them. Starred sections get a `\.{*}' prefix, and the
@@ -3292,7 +3287,7 @@ whole of the output is in the form of a comment.
          (format t "~:[~;*~]~D" ;
                  (starred-section-p section) ;
                  (section-number section))
-         (weave section out)))
+         (weave-object section out)))
   (pprint-logical-block (nil (coerce sections 'list) :per-line-prefix ";  ")
     (weave-section (pprint-pop))
     (loop
@@ -3316,8 +3311,6 @@ limbo text.
 
 @1*Printing the woven output. The individual sections and their contents
 are printed using the pretty printer with a customized dispatch table.
-The rest of the weaver proper consists entirely of pretty-printing routines
-that we'll install in that table.
 
 @<Global variables@>=
 (defparameter *weave-pprint-dispatch* (copy-pprint-dispatch nil))
@@ -3326,6 +3319,16 @@ that we'll install in that table.
 (defun set-weave-dispatch (type-specifier function &optional (priority 0))
   (set-pprint-dispatch type-specifier function priority ;
                        *weave-pprint-dispatch*))
+
+@ Here's a little convenience routine for weaving an object to a stream.
+
+@l
+(defun weave-object (object stream)
+  (write object
+         :stream stream :readably t
+         :case :downcase
+         :pretty t :pprint-dispatch *weave-pprint-dispatch* ;
+         :right-margin 1000))
 
 @ \TeX-mode material is represented as a list of strings containing pure
 \TeX\ text and lists of (inner-)Lisp forms, and this routine is responsible
