@@ -1279,7 +1279,13 @@
   (WHEN (AND TESTS-FILE (> (LENGTH *TEST-SECTIONS*) 1))
     (WHEN VERBOSE (FORMAT T "~&; weaving tests to ~A~%" TESTS-FILE))
     (WEAVE-SECTIONS *TEST-SECTIONS* :INPUT-FILE INPUT-FILE :OUTPUT-FILE
-                    TESTS-FILE :VERBOSE VERBOSE :PRINT PRINT :EXTERNAL-FORMAT
+                    TESTS-FILE :INDEX-FILE
+                    (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "IDX" :CASE :COMMON)
+                                     TESTS-FILE)
+                    :SECTIONS-FILE
+                    (MERGE-PATHNAMES (MAKE-PATHNAME :TYPE "SCN" :CASE :COMMON)
+                                     TESTS-FILE)
+                    :VERBOSE VERBOSE :PRINT PRINT :EXTERNAL-FORMAT
                     EXTERNAL-FORMAT :WEAVING-TESTS T))
   (WHEN VERBOSE (FORMAT T "~&; weaving sections to ~A~%" OUTPUT-FILE))
   (WEAVE-SECTIONS *SECTIONS* :INPUT-FILE INPUT-FILE :OUTPUT-FILE OUTPUT-FILE
@@ -1319,11 +1325,21 @@
        (WHEN INDEX-FILE
          (WHEN VERBOSE (FORMAT T "~&; writing the index to ~A~%" INDEX-FILE))
          (WITH-OUTPUT-FILE (IDX INDEX-FILE)
-          (WEAVE (INDEX-SECTIONS SECTIONS) IDX))
+          (WEAVE
+           (INDEX-SECTIONS SECTIONS :INDEX
+                           (IF WEAVING-TESTS
+                               (MAKE-INDEX)
+                               *INDEX*))
+           IDX))
          (WITH-OUTPUT-FILE (SCN SECTIONS-FILE)
           (MAP-BST
            (LAMBDA (SECTION)
-             (UNLESS (EVERY #'TEST-SECTION-P (NAMED-SECTION-SECTIONS SECTION))
+             (UNLESS
+                 (EVERY
+                  (IF WEAVING-TESTS
+                      (COMPLEMENT #'TEST-SECTION-P)
+                      #'TEST-SECTION-P)
+                  (NAMED-SECTION-SECTIONS SECTION))
                (WEAVE (MAKE-SECTION-NAME-INDEX-ENTRY SECTION) SCN)))
            *NAMED-SECTIONS*))
          (FORMAT OUT "~&\\inx~%\\fin~%\\con~%"))

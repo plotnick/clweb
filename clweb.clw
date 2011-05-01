@@ -3172,6 +3172,12 @@ If successful, |weave| returns the truename of the output file.
     (weave-sections *test-sections*
                     :input-file input-file
                     :output-file tests-file
+                    :index-file (merge-pathnames ;
+                                 (make-pathname :type "IDX" :case :common) ;
+                                 tests-file)
+                    :sections-file (merge-pathnames ;
+                                    (make-pathname :type "SCN" :case :common) ;
+                                    tests-file)
                     :verbose verbose
                     :print print
                     :external-format external-format
@@ -3260,10 +3266,16 @@ currently weaving the tests.
         (when index-file
           (when verbose (format t "~&; writing the index to ~A~%" index-file))
           (with-output-file (idx index-file)
-            (weave (index-sections sections) idx))
+            (weave (index-sections sections
+                                   :index (if weaving-tests ;
+                                              (make-index) ;
+                                              *index*))
+                   idx))
           (with-output-file (scn sections-file)
             (map-bst (lambda (section)
-                       (unless (every #'test-section-p ;
+                       (unless (every (if weaving-tests ;
+                                          (complement #'test-section-p) ;
+                                          #'test-section-p)
                                       (named-section-sections section))
                          (weave (make-section-name-index-entry section) scn)))
                      *named-sections*))
@@ -7217,3 +7229,4 @@ case.
   ("@ !" ((:def 1))))
 
 @*Index.
+@t*Index.
