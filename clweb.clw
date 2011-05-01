@@ -5162,17 +5162,11 @@ symbols have the incorrect type of binding, it signals an error.
                      (name namespace local)
                      "~:[Global~;Local~] ~(~A~) binding of ~S type ~S, not ~S."
                      local namespace name actual-type expected-type))))
-   (destructuring-bind (symbols namespace type &optional ;
-                        (local t local-supplied)) ;
-       (cdr form)
-     (loop with symbols = (ensure-list symbols)
-           for symbol in symbols
-           do (check-binding symbol namespace type local))
-     `(,(car form)
-       ,symbols
-       ,namespace
-       ,type
-       ,@(when local-supplied `(,local))))))
+    (destructuring-bind (symbols namespace type &optional (local t)) (cdr form)
+      (loop with symbols = (ensure-list symbols)
+            for symbol in symbols
+            do (check-binding symbol namespace type local))
+      form)))
 
 @t@l
 (define-walker-test ordinary-lambda-list
