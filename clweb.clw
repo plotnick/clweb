@@ -5151,6 +5151,7 @@ symbols have the incorrect type of binding, it signals an error.
 @l
 (define-special-form-walker check-binding ((walker test-walker) form env &key ;
                                            toplevel)
+  (declare (ignore toplevel))
   (flet ((check-binding (name namespace expected-type local &aux ;
                          (env (and local env)))
            (let ((actual-type
@@ -5162,7 +5163,7 @@ symbols have the incorrect type of binding, it signals an error.
                      "~:[Global~;Local~] ~(~A~) binding of ~S type ~S, not ~S."
                      local namespace name actual-type expected-type))))
    (destructuring-bind (symbols namespace type &optional ;
-                                (local t local-supplied)) ;
+                        (local t local-supplied)) ;
        (cdr form)
      (loop with symbols = (ensure-list symbols)
            for symbol in symbols
