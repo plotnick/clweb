@@ -4976,23 +4976,26 @@ form and the pattern (if any) need to be walked in an environment
 (etypecase arg
   (symbol @<Process the symbol...@>)
   (cons
-   (destructuring-bind (var/pattern &optional init-form supplied-p-parameter) ;
+   (destructuring-bind (var/pattern &optional
+                        (init-form nil init-form-supplied)
+                        (supplied-p-parameter nil spp-supplied))
        arg
-     (when init-form
+     (when init-form-supplied
        (setq init-form (walk-form walker init-form env)))
-     (setq var/pattern (maybe-destructure var/pattern))
-     (push (nconc (list var/pattern)
-                  (and init-form (list init-form))
-                  (and supplied-p-parameter ;
-                       (list (walk-var supplied-p-parameter))))
+     (push (nconc (list (maybe-destructure var/pattern))
+                  (and init-form-supplied (list init-form))
+                  (and spp-supplied (list (walk-var supplied-p-parameter))))
            new-lambda-list))))
 
 @ @<Process |arg| as a keyword parameter@>=
 (etypecase arg
   (symbol @<Process the symbol in |arg| as a parameter@>)
   (cons
-   (destructuring-bind (var/kv &optional init-form supplied-p-parameter) arg
-     (when init-form
+   (destructuring-bind (var/kv &optional
+                        (init-form nil init-form-supplied)
+                        (supplied-p-parameter nil spp-supplied))
+       arg
+     (when init-form-supplied
        (setq init-form (walk-form walker init-form env)))
      (cond ((consp var/kv)
             (destructuring-bind (keyword-name var/pattern) var/kv
@@ -5002,9 +5005,8 @@ form and the pattern (if any) need to be walked in an environment
                                  var/pattern))))
            (t (setq var/kv (walk-var var/kv))))
      (push (nconc (list var/kv)
-                  (and init-form (list init-form))
-                  (and supplied-p-parameter ;
-                       (list (walk-var supplied-p-parameter))))
+                  (and init-form-supplied (list init-form))
+                  (and spp-supplied (list (walk-var supplied-p-parameter))))
            new-lambda-list))))
 
 @ @<Process |arg| as an auxiliary variable@>=
@@ -5158,24 +5160,26 @@ symbols have the incorrect type of binding, it signals an error.
 
 @t@l
 (define-walker-test ordinary-lambda-list
-  (lambda (x y
-           &optional (o (+ (check-binding o :variable nil)
-                           (check-binding x :variable :special)
-                           (check-binding y :variable :lexical)))
-           &rest args
-           &key ((secret k) 1 k-s-p)
-                (k2 (check-binding k-s-p :variable :lexical))
-                k3 &allow-other-keys
-           &aux w (z (if k-s-p o x)))
+  (lambda (x y &optional
+           (o (+ (check-binding o :variable nil)
+                 (check-binding x :variable :special)
+                 (check-binding y :variable :lexical)))
+           (p nil p-supplied-p) &rest args &key
+           ((secret k) 1 k-s-p)
+           (k2 (check-binding k-s-p :variable :lexical))
+           k3 &allow-other-keys &aux
+           w (z (if k-s-p o x)))
     (declare (special x))
     (check-binding x :variable :special)
     (check-binding (y z o k k-s-p k2 k3 args w z) :variable :lexical)
     (check-binding secret :variable nil)))
 
 (define-walker-test macro-lambda-list
-  (lambda (&whole w (x y) &optional ((o) (+ x y))
+  (lambda (&whole w (x y)
+           &optional ((o) (+ x y))
            &key ((:k (k1 k2)) (2 3) k-s-p)
-           &environment env &rest body)
+           &environment env
+           &rest body)
     (check-binding (w x y o k1 k2 k-s-p env body) :variable :lexical)))
 
 (define-walker-test normalize-rest-arg

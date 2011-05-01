@@ -2050,14 +2050,16 @@
              (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
            (CONS
             (DESTRUCTURING-BIND
-                (VAR/PATTERN &OPTIONAL INIT-FORM SUPPLIED-P-PARAMETER)
+                (VAR/PATTERN
+                 &OPTIONAL (INIT-FORM NIL INIT-FORM-SUPPLIED)
+                 (SUPPLIED-P-PARAMETER NIL SPP-SUPPLIED))
                 ARG
-              (WHEN INIT-FORM
+              (WHEN INIT-FORM-SUPPLIED
                 (SETQ INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
-              (SETQ VAR/PATTERN (MAYBE-DESTRUCTURE VAR/PATTERN))
               (PUSH
-               (NCONC (LIST VAR/PATTERN) (AND INIT-FORM (LIST INIT-FORM))
-                      (AND SUPPLIED-P-PARAMETER
+               (NCONC (LIST (MAYBE-DESTRUCTURE VAR/PATTERN))
+                      (AND INIT-FORM-SUPPLIED (LIST INIT-FORM))
+                      (AND SPP-SUPPLIED
                            (LIST (WALK-VAR SUPPLIED-P-PARAMETER))))
                NEW-LAMBDA-LIST)))))
         (:KEYVARS
@@ -2069,9 +2071,11 @@
              (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
            (CONS
             (DESTRUCTURING-BIND
-                (VAR/KV &OPTIONAL INIT-FORM SUPPLIED-P-PARAMETER)
+                (VAR/KV
+                 &OPTIONAL (INIT-FORM NIL INIT-FORM-SUPPLIED)
+                 (SUPPLIED-P-PARAMETER NIL SPP-SUPPLIED))
                 ARG
-              (WHEN INIT-FORM
+              (WHEN INIT-FORM-SUPPLIED
                 (SETQ INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
               (COND
                ((CONSP VAR/KV)
@@ -2084,8 +2088,8 @@
                                 VAR/PATTERN))))
                (T (SETQ VAR/KV (WALK-VAR VAR/KV))))
               (PUSH
-               (NCONC (LIST VAR/KV) (AND INIT-FORM (LIST INIT-FORM))
-                      (AND SUPPLIED-P-PARAMETER
+               (NCONC (LIST VAR/KV) (AND INIT-FORM-SUPPLIED (LIST INIT-FORM))
+                      (AND SPP-SUPPLIED
                            (LIST (WALK-VAR SUPPLIED-P-PARAMETER))))
                NEW-LAMBDA-LIST)))))
         (:AUXVARS
