@@ -4481,7 +4481,7 @@ testing.
 
 @t The simplest special form we'll recognize is |ensure-toplevel|, which
 simply asserts that it occurs at top level, or not if an argument of |nil|
-is given. It returns |t|.
+is given.
 
 @l
 (define-special-form-walker ensure-toplevel ((walker test-walker) form env ;
@@ -4490,23 +4490,23 @@ is given. It returns |t|.
     (declare (ignore operator))
     (assert (if ensure-toplevel toplevel (not toplevel))
             (form ensure-toplevel toplevel)
-            "~:[At~;Not at~] top level." ensure-toplevel)
-    t))
+            "~:[At~;Not at~] top level." ensure-toplevel))
+  form)
 
 @t@l
 (deftest toplevel
   (let ((walker (make-instance 'test-walker))
         (env (ensure-portable-walking-environment nil)))
-    (macrolet ((walk (form toplevel)
-                 `(walk-form walker ',form env ,toplevel)))
-      (values (walk (ensure-toplevel) t)
-              (walk (ensure-toplevel nil) nil)
-              (not (null (walk (let () (ensure-toplevel nil)) t)))
-              (handler-case (walk (ensure-toplevel) nil)
+    (flet ((walk (form toplevel)
+             (tree-equal (walk-form walker form env toplevel) form)))
+      (values (walk '(ensure-toplevel) t)
+              (walk '(ensure-toplevel nil) nil)
+              (walk '(let () (ensure-toplevel nil)) t)
+              (handler-case (walk '(ensure-toplevel) nil)
                 (error () nil))
-              (handler-case (walk (ensure-toplevel nil) t)
+              (handler-case (walk '(ensure-toplevel nil) t)
                 (error () nil))
-              (handler-case (walk (let () (ensure-toplevel)) t)
+              (handler-case (walk '(let () (ensure-toplevel)) t)
                 (error () nil)))))
   t t t nil nil nil)
 
@@ -4542,8 +4542,7 @@ is evaluated.
   (progn :foo :bar :baz))
 
 (define-walker-test (progn-toplevel :toplevel t)
-  (progn (ensure-toplevel))
-  (progn t))
+  (progn (ensure-toplevel)))
 
 @ Block names have their own namespace class.
 
@@ -5129,9 +5128,8 @@ current lexical environment. Its syntax is `(|check-binding| \<symbols>
 \<namespace> \<type>)', where \<symbols> is an unevaluated designator
 for a list of symbols, \<namespace> is one of |:function| or~|:variable|,
 and~\<type> is the type of binding expected for each of the given
-symbols (e.g., |:lexical|, |:special|, |:function|). If all of the
-symbols have the correct type of binding, it returns the walked symbols;
-otherwise, it signals an error.
+symbols (e.g., |:lexical|, |:special|, |:function|). If any of the
+symbols have the incorrect type of binding, it signals an error.
 
 @l
 (define-special-form-walker check-binding ((walker test-walker) form env &key ;
@@ -5146,13 +5144,17 @@ otherwise, it signals an error.
                      (name namespace local)
                      "~:[Global~;Local~] ~(~A~) binding of ~S type ~S, not ~S."
                      local namespace name actual-type expected-type))))
-   (destructuring-bind (symbols namespace type &optional (local t)) (cdr form)
+   (destructuring-bind (symbols namespace type &optional ;
+                                (local t local-supplied)) ;
+       (cdr form)
      (loop with symbols = (ensure-list symbols)
            for symbol in symbols
            do (check-binding symbol namespace type local))
-     (if (listp symbols)
-         (walk-list walker symbols env toplevel)
-         (walk-form walker symbols env toplevel)))))
+     `(,(car form)
+       ,symbols
+       ,namespace
+       ,type
+       ,@(when local-supplied `(,local))))))
 
 @t@l
 (define-walker-test ordinary-lambda-list
@@ -5168,24 +5170,17 @@ otherwise, it signals an error.
     (declare (special x))
     (check-binding x :variable :special)
     (check-binding (y z o k k-s-p k2 k3 args w z) :variable :lexical)
-    (check-binding secret :variable nil))
-  (lambda (x y
-           &optional (o (+ o x y))
-           &rest args
-           &key ((secret k) 1 k-s-p) (k2 k-s-p) k3 &allow-other-keys
-           &aux w (z (if k-s-p o x)))
-    (declare (special x))
-    x (y z o k k-s-p k2 k3 args w z) secret))
+    (check-binding secret :variable nil)))
 
 (define-walker-test macro-lambda-list
   (lambda (&whole w (x y) &optional ((o) (+ x y))
            &key ((:k (k1 k2)) (2 3) k-s-p)
-           &environment env . body)
-    (check-binding (w x y o k1 k2 k-s-p env body) :variable :lexical))
-  (lambda (&whole w (x y) &optional ((o) (+ x y))
-           &key ((:k (k1 k2)) (2 3) k-s-p)
            &environment env &rest body)
-    (w x y o k1 k2 k-s-p env body)))
+    (check-binding (w x y o k1 k2 k-s-p env body) :variable :lexical)))
+
+(define-walker-test normalize-rest-arg
+  (lambda (a . b))
+  (lambda (a &rest b)))
 
 @ We come now to the binding special forms. The six lexical binding
 forms in Common Lisp (|let|, |let*|, |flet|, |labels|, |macrolet|,
@@ -5221,8 +5216,7 @@ their body forms in an environment that contains all of the new bindings.
         (y (check-binding x :variable nil)))
     (declare (special x))
     (check-binding x :variable :special)
-    (check-binding y :variable :lexical))
-  (let ((x 1) (y x)) (declare (special x)) x y))
+    (check-binding y :variable :lexical)))
 
 @ We need a |walk-bindings| method for local function bindings; this will
 be used for |labels| as well. Notice that we don't currently preserve any
@@ -5273,13 +5267,7 @@ produces the same kind of warning.
     (declare (special x)
              (ignore (function bar)))
     (check-binding x :variable :special)
-    (check-binding foo :function :function))
-  (flet ((foo (x) x)
-         (bar (y) y))
-    (declare (special x)
-             (ignore (function bar)))
-    x
-    foo))
+    (check-binding foo :function :function)))
 
 @ The bindings established by |macrolet| and |symbol-macrolet| are
 different from those established by the other binding forms in that they
@@ -5320,12 +5308,9 @@ using |parse-macro| and |enclose| before we add them to the environment.
 
 @t@l
 (define-walker-test (macrolet :toplevel t)
-  (macrolet ((foo (x) `,(check-binding x :variable :lexical))
-             (bar (y) `,y))
+  (macrolet ((foo (x) (check-binding x :variable :lexical)))
     (check-binding foo :function :macro)
-    (ensure-toplevel)
-    (foo :foo))
-  (macrolet ((foo (x) x) (bar (y) y)) foo t :foo))
+    (ensure-toplevel)))
 
 @ Walking |symbol-macrolet| is simpler, since the definitions are given in
 the bindings themselves. The body forms of a top level |macrolet| form are
@@ -5361,8 +5346,13 @@ also considered top level.
   (symbol-macrolet ((foo :foo)
                     (bar :bar))
     (check-binding (foo bar) :variable :symbol-macro)
-    (ensure-toplevel))
-  (symbol-macrolet ((foo :foo) (bar :bar)) (:foo :bar) t))
+    (ensure-toplevel)
+    foo bar)
+  (symbol-macrolet ((foo :foo)
+                    (bar :bar))
+    (check-binding (foo bar) :variable :symbol-macro)
+    (ensure-toplevel)
+    :foo :bar))
 
 @ The two outliers are |let*|, which augments its environment sequentially,
 and |labels|, which does so before walking any of its bindings.
@@ -5389,8 +5379,7 @@ and |labels|, which does so before walking any of its bindings.
   (let* ((x 1)
          (y (check-binding x :variable :special)))
     (declare (special x))
-    (check-binding y :variable :lexical))
-  (let* ((x 1) (y x)) (declare (special x)) y))
+    (check-binding y :variable :lexical)))
 
 @ @l
 (define-special-form-walker labels ((walker walker) form env &key toplevel)
@@ -5420,8 +5409,7 @@ and |labels|, which does so before walking any of its bindings.
            (bar (y) (check-binding foo :function :function)))
     (declare (special x))
     (check-binding x :variable :special)
-    (check-binding foo :function :function))
-  (labels ((foo (x) x) (bar (y) foo)) (declare (special x)) x foo))
+    (check-binding foo :function :function)))
 
 @ The last special form we need a specialized walker for is |locally|,
 which simply executes its body in a lexical environment augmented by a
@@ -5446,8 +5434,7 @@ body forms.
       (check-binding y :variable :lexical)
       (locally (declare (special y))
         (ensure-toplevel nil)
-        (check-binding y :variable :special))))
-  (locally () t (let ((y t)) y (locally (declare (special y)) t y))))
+        (check-binding y :variable :special)))))
 
 @ In order to recognize global proclamations, we'll treat |declaim| as a
 special form.
@@ -5464,10 +5451,7 @@ special form.
 (define-walker-test (declaim :toplevel t)
   (progn
     (declaim (special *foo*))
-    (check-binding *foo* :variable :special nil))
-  (progn
-    (declaim (special *foo*))
-    *foo*))
+    (check-binding *foo* :variable :special nil)))
 
 @t We don't do anything special with |define-symbol-macro|, but it should
 expand into an `(|eval-when| (|:compile-toplevel|) ...)' form that will
