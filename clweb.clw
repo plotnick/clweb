@@ -3157,13 +3157,10 @@ encodings for non-printable-{\sc ascii} characters vary widely.
 If successful, |weave| returns the truename of the output file. 
 
 @l
-(defun weave (input-file &rest args &key
-              output-file
-              tests-file
+(defun weave (input-file &rest args &key output-file tests-file
               (index-file nil index-file-supplied-p)
               (verbose *weave-verbose*)
               (print *weave-print*)
-              (if-does-not-exist t)
               (external-format :default) &aux
               @<Merge defaults for weaver file names@>
               (*readtable* *readtable*)
@@ -3172,10 +3169,9 @@ If successful, |weave| returns the truename of the output file.
   (declare (ignorable tests-file))
   (when verbose (format t "~&; weaving web from ~A:~%" input-file))
   @<Initialize global variables@>
-  (with-open-file (input input-file
-                   :direction :input
-                   :external-format external-format
-                   :if-does-not-exist (if if-does-not-exist :error nil))
+  (with-open-file (input input-file ;
+                   :direction :input ;
+                   :external-format external-format)
     (read-sections input))
   (when (and tests-file ;
              (> (length *test-sections*) 1)) ; there's always a limbo section
