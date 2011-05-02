@@ -3014,14 +3014,15 @@ the default table.
 file and then invoking the file compiler on that file. The arguments are
 essentially the same as those to |compile-file|, except for the |tests-file|
 keyword argument, which specifies the file to which the test sections' code
-should be written (see~|tests-file-pathname|, above, for the defaulting).
+should be written (see~|tests-file-pathname|, above, for the defaulting
+behavior).
 
 We return the values returned by invoking |compile-file| on the tangled
-file, but we actually compile the tests file, if any, {\it after\/} the
-tangled file, on the assumption that the tests might require a module
-provided by the output file. Note that this might cause the output file
-to be unintentionally loaded; the work-around is to disable production
-of the tests file by supplying |:tests-file nil|.
+file. We compile the tests file, if any, {\it after\/} the tangled file,
+on the assumption that the tests might require a module provided by the
+output file. Note that this might cause the output file to be unintentionally
+loaded; the work-around is to disable production of the tests file by
+supplying a null |:tests-file| argument.
 
 @l
 (defun tangle-file (input-file &rest args &key
