@@ -3616,9 +3616,9 @@ of the form `(\<suffix>~.~\<replacement>)'.
   (weave-symbol lambda "\\L")
   (weave-symbol pi "$\\pi$"))
 
-@ We transform \.{#'} into instances of |function-marker| during reading,
-so we don't want lists like |(function foo)| turned into |#'foo| during
-weaving.
+@ We transform \.{\#'} into instances of |function-marker| during reading,
+so we don't want lists of the form |(function foo)| turned into |#'foo|
+during weaving.
 
 @l
 (set-weave-dispatch '(cons (eql function))
