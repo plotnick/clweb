@@ -3043,7 +3043,7 @@ supplying a null |:tests-file| argument.
                    :external-format external-format)
     (read-sections input))
   @<Complain about any unused named sections@>
-  (cond ((and tests-file
+  (cond ((and tests-file ;
               (> (length *test-sections*) 1)) ; there's always a limbo section
          (when verbose (format t "~&; writing tests to ~A~%" tests-file))
          (tangle-sections *test-sections*
