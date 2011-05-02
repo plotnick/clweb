@@ -1143,14 +1143,15 @@
                :ERROR
                NIL))
         (LOAD-WEB-FROM-STREAM STREAM PRINT))))
-(DEFUN LOAD-SECTIONS-FROM-TEMP-FILE
-       (FILE APPEND &AUX (TRUENAME (PROBE-FILE FILE)))
-  "Load web sections from FILE, then delete it."
-  (WHEN TRUENAME
+(DEFUN LOAD-SECTIONS-FROM-TEMP-FILE (FILE APPEND &AUX (FILE (PROBE-FILE FILE)))
+  "Load web sections from FILE, then delete it. If APPEND is true, named
+section definitions in FILE will be appended to existing definitions;
+otherwise, they will replace them."
+  (WHEN FILE
     (UNWIND-PROTECT
-        (WITH-OPEN-FILE (STREAM TRUENAME :DIRECTION :INPUT)
+        (WITH-OPEN-FILE (STREAM FILE :DIRECTION :INPUT)
           (LOAD-WEB-FROM-STREAM STREAM T :APPEND APPEND))
-      (DELETE-FILE TRUENAME))))
+      (DELETE-FILE FILE))))
 (DEFUN TESTS-FILE-PATHNAME
        (OUTPUT-FILE TYPE
         &KEY (TESTS-FILE NIL TESTS-FILE-SUPPLIED-P) &ALLOW-OTHER-KEYS)

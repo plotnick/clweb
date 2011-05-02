@@ -2941,20 +2941,20 @@ will not affect the calling environment.
 
 @ This next function exists solely for the sake of front-ends that wish to
 load a piece of a \WEB, such as the author's `\.{clweb.el}'. Note that it
-does {\it not\/} initialize the global variables like |*named-sections*|;
-this allows for incremental redefinition.
+does not initialize the global variables like |*named-sections*|; this
+allows for incremental redefinition.
 @.clweb.el@>
 
 @l
-(defun load-sections-from-temp-file (file append &aux
-                                     (truename (probe-file file)))
-  "Load web sections from FILE, then delete it."
-  (when truename
+(defun load-sections-from-temp-file (file append &aux (file (probe-file file)))
+  "Load web sections from FILE, then delete it. If APPEND is true, named
+section definitions in FILE will be appended to existing definitions;
+otherwise, they will replace them."
+  (when file
     (unwind-protect
-         (with-open-file (stream truename :direction :input)
+         (with-open-file (stream file :direction :input)
            (load-web-from-stream stream t :append append))
-      (delete-file truename))))
-
+      (delete-file file))))
 
 @ Both |tangle-file| and |weave|, below, take a |tests-file| argument that
 has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
