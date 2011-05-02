@@ -2012,128 +2012,125 @@ otherwise, they will replace them."
                                        (WHEN VARS
                                          (LIST `(,(CAR DECL) ,@VARS)))))))
                                 DECLARE))))
-(DEFUN WALK-LAMBDA-LIST
-       (WALKER LAMBDA-LIST DECLS ENV &AUX NEW-LAMBDA-LIST (STATE :REQVARS))
-  (LABELS ((WALK-VAR (VAR)
-             (MULTIPLE-VALUE-SETQ (VAR ENV)
-               (WALK-BINDING WALKER VAR (MAKE-CONTEXT 'VARIABLE-NAME :LOCAL T)
-                             ENV :DECLARE DECLS)))
-           (UPDATE-STATE (KEYWORD)
-             (SETQ STATE
-                     (CASE KEYWORD
-                       (&OPTIONAL :OPTVARS)
-                       ((&REST &BODY) :RESTVAR)
-                       (&KEY :KEYVARS)
-                       (&AUX :AUXVARS)
-                       (&ENVIRONMENT :ENVVAR)
-                       (T STATE))))
-           (MAYBE-DESTRUCTURE (VAR/PATTERN)
-             (IF (CONSP VAR/PATTERN)
-                 (MULTIPLE-VALUE-SETQ (VAR/PATTERN ENV)
-                   (WALK-LAMBDA-LIST WALKER VAR/PATTERN DECLS ENV))
-                 (WALK-VAR VAR/PATTERN))))
-    (AND (CONSP LAMBDA-LIST) (EQL (CAR LAMBDA-LIST) '&WHOLE)
-         (PUSH (POP LAMBDA-LIST) NEW-LAMBDA-LIST)
-         (CAR (PUSH (WALK-VAR (POP LAMBDA-LIST)) NEW-LAMBDA-LIST)))
-    (DO ((LAMBDA-LIST LAMBDA-LIST (CDR LAMBDA-LIST)))
-        ((ATOM LAMBDA-LIST) NIL)
-      (WHEN (EQL (CAR LAMBDA-LIST) '&ENVIRONMENT) (RETURN (CADR LAMBDA-LIST))))
-    (DO* ((LAMBDA-LIST LAMBDA-LIST (CDR LAMBDA-LIST))
-          (ARG (CAR LAMBDA-LIST) (CAR LAMBDA-LIST)))
-         ((NULL LAMBDA-LIST) (VALUES (NREVERSE NEW-LAMBDA-LIST) ENV))
-      (ECASE STATE
-        (:ENVVAR
-         (PUSH (WALK-VAR ARG) NEW-LAMBDA-LIST)
-         (WHEN (CONSP LAMBDA-LIST) (UPDATE-STATE (CAR LAMBDA-LIST))))
-        ((:REQVARS :RESTVAR)
-         (ETYPECASE ARG
-           (SYMBOL
-            (COND
-             ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
-              (UPDATE-STATE ARG))
-             (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
-           (CONS
-            (MULTIPLE-VALUE-BIND (PATTERN NEW-ENV)
-                (WALK-LAMBDA-LIST WALKER ARG DECLS ENV)
-              (SETQ ENV NEW-ENV)
-              (PUSH PATTERN NEW-LAMBDA-LIST)))))
-        (:OPTVARS
-         (ETYPECASE ARG
-           (SYMBOL
-            (COND
-             ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
-              (UPDATE-STATE ARG))
-             (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
-           (CONS
-            (DESTRUCTURING-BIND
-                (VAR/PATTERN
-                 &OPTIONAL (INIT-FORM NIL INIT-FORM-SUPPLIED)
-                 (SUPPLIED-P-PARAMETER NIL SPP-SUPPLIED))
-                ARG
-              (WHEN INIT-FORM-SUPPLIED
-                (SETQ INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
-              (PUSH
-               (NCONC (LIST (MAYBE-DESTRUCTURE VAR/PATTERN))
-                      (AND INIT-FORM-SUPPLIED (LIST INIT-FORM))
-                      (AND SPP-SUPPLIED
-                           (LIST (WALK-VAR SUPPLIED-P-PARAMETER))))
-               NEW-LAMBDA-LIST)))))
-        (:KEYVARS
-         (ETYPECASE ARG
-           (SYMBOL
-            (COND
-             ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
-              (UPDATE-STATE ARG))
-             (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
-           (CONS
-            (DESTRUCTURING-BIND
-                (VAR/KV
-                 &OPTIONAL (INIT-FORM NIL INIT-FORM-SUPPLIED)
-                 (SUPPLIED-P-PARAMETER NIL SPP-SUPPLIED))
-                ARG
-              (WHEN INIT-FORM-SUPPLIED
-                (SETQ INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
+(DEFUN WALK-LAMBDA-LIST (WALKER LAMBDA-LIST DECLS ENV)
+  (LET ((NEW-LAMBDA-LIST 'NIL) (STATE :REQVARS))
+    (LABELS ((WALK-VAR (VAR)
+               (MULTIPLE-VALUE-SETQ (VAR ENV)
+                 (WALK-BINDING WALKER VAR
+                               (MAKE-CONTEXT 'VARIABLE-NAME :LOCAL T) ENV
+                               :DECLARE DECLS)))
+             (UPDATE-STATE (KEYWORD)
+               (SETQ STATE
+                       (CASE KEYWORD
+                         (&OPTIONAL :OPTVARS)
+                         ((&REST &BODY) :RESTVARS)
+                         (&KEY :KEYVARS)
+                         (&AUX :AUXVARS)
+                         (&ENVIRONMENT :ENVVAR)
+                         (T STATE))))
+             (MAYBE-DESTRUCTURE (VAR/PATTERN)
+               (IF (CONSP VAR/PATTERN)
+                   (MULTIPLE-VALUE-SETQ (VAR/PATTERN ENV)
+                     (WALK-LAMBDA-LIST WALKER VAR/PATTERN DECLS ENV))
+                   (WALK-VAR VAR/PATTERN))))
+      (AND (CONSP LAMBDA-LIST) (EQL (CAR LAMBDA-LIST) '&WHOLE)
+           (PUSH (POP LAMBDA-LIST) NEW-LAMBDA-LIST)
+           (CAR (PUSH (WALK-VAR (POP LAMBDA-LIST)) NEW-LAMBDA-LIST)))
+      (DO ((LAMBDA-LIST LAMBDA-LIST (CDR LAMBDA-LIST)))
+          ((ATOM LAMBDA-LIST) NIL)
+        (WHEN (EQL (CAR LAMBDA-LIST) '&ENVIRONMENT)
+          (RETURN (CADR LAMBDA-LIST))))
+      (DO* ((LAMBDA-LIST LAMBDA-LIST (CDR LAMBDA-LIST))
+            (ARG (CAR LAMBDA-LIST)
+                 (IF (CONSP LAMBDA-LIST)
+                     (CAR LAMBDA-LIST)
+                     LAMBDA-LIST)))
+           ((ATOM LAMBDA-LIST)
+            (VALUES (NRECONC NEW-LAMBDA-LIST (AND ARG (WALK-VAR ARG))) ENV))
+        (ECASE STATE
+          (:ENVVAR
+           (PUSH (WALK-VAR ARG) NEW-LAMBDA-LIST)
+           (WHEN (CONSP LAMBDA-LIST) (UPDATE-STATE (CAR LAMBDA-LIST))))
+          ((:REQVARS :RESTVARS)
+           (ETYPECASE ARG
+             (SYMBOL
               (COND
-               ((CONSP VAR/KV)
-                (DESTRUCTURING-BIND
-                    (KEYWORD-NAME VAR/PATTERN)
-                    VAR/KV
-                  (SETQ VAR/PATTERN (MAYBE-DESTRUCTURE VAR/PATTERN))
-                  (SETQ VAR/KV
-                          (LIST (WALK-ATOMIC-FORM WALKER KEYWORD-NAME NIL ENV)
-                                VAR/PATTERN))))
-               (T (SETQ VAR/KV (WALK-VAR VAR/KV))))
-              (PUSH
-               (NCONC (LIST VAR/KV) (AND INIT-FORM-SUPPLIED (LIST INIT-FORM))
-                      (AND SPP-SUPPLIED
-                           (LIST (WALK-VAR SUPPLIED-P-PARAMETER))))
-               NEW-LAMBDA-LIST)))))
-        (:AUXVARS
-         (ETYPECASE ARG
-           (SYMBOL
-            (COND
-             ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
-              (UPDATE-STATE ARG))
-             (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
-           (CONS
-            (DESTRUCTURING-BIND
-                (VAR &OPTIONAL INIT-FORM)
-                ARG
-              (SETQ VAR (WALK-VAR VAR)
-                    INIT-FORM (AND INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
-              (PUSH (NCONC (LIST VAR) (AND INIT-FORM (LIST INIT-FORM)))
-                    NEW-LAMBDA-LIST))))))
-      (WHEN
-          (OR (ATOM LAMBDA-LIST)
-              (AND (CDR LAMBDA-LIST) (ATOM (CDR LAMBDA-LIST))))
-        (LET ((VAR
-               (WALK-VAR
-                (IF (CONSP LAMBDA-LIST)
-                    (CDR LAMBDA-LIST)
-                    LAMBDA-LIST))))
-          (PUSH '&REST NEW-LAMBDA-LIST)
-          (PUSH VAR NEW-LAMBDA-LIST))
-        (SETQ LAMBDA-LIST NIL)))))
+               ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
+                (UPDATE-STATE ARG))
+               (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
+             (CONS
+              (MULTIPLE-VALUE-BIND (PATTERN NEW-ENV)
+                  (WALK-LAMBDA-LIST WALKER ARG DECLS ENV)
+                (SETQ ENV NEW-ENV)
+                (PUSH PATTERN NEW-LAMBDA-LIST)))))
+          (:OPTVARS
+           (ETYPECASE ARG
+             (SYMBOL
+              (COND
+               ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
+                (UPDATE-STATE ARG))
+               (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
+             (CONS
+              (DESTRUCTURING-BIND
+                  (VAR/PATTERN
+                   &OPTIONAL (INIT-FORM NIL INIT-FORM-SUPPLIED)
+                   (SUPPLIED-P-PARAMETER NIL SPP-SUPPLIED))
+                  ARG
+                (WHEN INIT-FORM-SUPPLIED
+                  (SETQ INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
+                (PUSH
+                 (NCONC (LIST (MAYBE-DESTRUCTURE VAR/PATTERN))
+                        (AND INIT-FORM-SUPPLIED (LIST INIT-FORM))
+                        (AND SPP-SUPPLIED
+                             (LIST (WALK-VAR SUPPLIED-P-PARAMETER))))
+                 NEW-LAMBDA-LIST)))))
+          (:KEYVARS
+           (ETYPECASE ARG
+             (SYMBOL
+              (COND
+               ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
+                (UPDATE-STATE ARG))
+               (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
+             (CONS
+              (DESTRUCTURING-BIND
+                  (VAR/KV
+                   &OPTIONAL (INIT-FORM NIL INIT-FORM-SUPPLIED)
+                   (SUPPLIED-P-PARAMETER NIL SPP-SUPPLIED))
+                  ARG
+                (WHEN INIT-FORM-SUPPLIED
+                  (SETQ INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
+                (COND
+                 ((CONSP VAR/KV)
+                  (DESTRUCTURING-BIND
+                      (KEYWORD-NAME VAR/PATTERN)
+                      VAR/KV
+                    (SETQ VAR/PATTERN (MAYBE-DESTRUCTURE VAR/PATTERN))
+                    (SETQ VAR/KV
+                            (LIST
+                             (WALK-ATOMIC-FORM WALKER KEYWORD-NAME NIL ENV)
+                             VAR/PATTERN))))
+                 (T (SETQ VAR/KV (WALK-VAR VAR/KV))))
+                (PUSH
+                 (NCONC (LIST VAR/KV) (AND INIT-FORM-SUPPLIED (LIST INIT-FORM))
+                        (AND SPP-SUPPLIED
+                             (LIST (WALK-VAR SUPPLIED-P-PARAMETER))))
+                 NEW-LAMBDA-LIST)))))
+          (:AUXVARS
+           (ETYPECASE ARG
+             (SYMBOL
+              (COND
+               ((MEMBER ARG LAMBDA-LIST-KEYWORDS) (PUSH ARG NEW-LAMBDA-LIST)
+                (UPDATE-STATE ARG))
+               (T (SETQ ARG (WALK-VAR ARG)) (PUSH ARG NEW-LAMBDA-LIST))))
+             (CONS
+              (DESTRUCTURING-BIND
+                  (VAR &OPTIONAL INIT-FORM)
+                  ARG
+                (SETQ VAR (WALK-VAR VAR)
+                      INIT-FORM
+                        (AND INIT-FORM (WALK-FORM WALKER INIT-FORM ENV)))
+                (PUSH (NCONC (LIST VAR) (AND INIT-FORM (LIST INIT-FORM)))
+                      NEW-LAMBDA-LIST))))))))))
 (DEFTYPE CLASS-SPECIALIZER () '(CONS SYMBOL (CONS SYMBOL NULL)))
 (DEFTYPE COMPOUND-SPECIALIZER (&OPTIONAL (OPERATOR (QUOTE EQL)))
   `(CONS SYMBOL (CONS (CONS (EQL ,OPERATOR) *) NULL)))

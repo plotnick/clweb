@@ -4929,50 +4929,49 @@ This function returns two values: the walked \L-list and a new environment
 object containing bindings for all of the parameters found therein.
 
 @l
-(defun walk-lambda-list (walker lambda-list decls env &aux
-                         new-lambda-list (state :reqvars))
-  (labels ((walk-var (var)
-             (multiple-value-setq (var env)
-               (walk-binding walker var
-                             (make-context 'variable-name :local t)
-                             env
-                             :declare decls)))
-           (update-state (keyword)
-             (setq state (case keyword
-                           (&optional :optvars)
-                           ((&rest &body) :restvar)
-                           (&key :keyvars)
-                           (&aux :auxvars)
-                           (&environment :envvar)
-                           (t state))))
-           (maybe-destructure (var/pattern)
-             (if (consp var/pattern)
-                 (multiple-value-setq (var/pattern env)
-                   (walk-lambda-list walker var/pattern decls env))
-                 (walk-var var/pattern))))
-    @<Check for |&whole| and |&environment| vars, and augment the lexical
-      environment with them if found@>
-    (do* ((lambda-list lambda-list (cdr lambda-list))
-          (arg (car lambda-list) (car lambda-list)))
-         ((null lambda-list) (values (nreverse new-lambda-list) env))
-      (ecase state
-        (:envvar @<Process |arg| as an environment parameter@>)
-        ((:reqvars :restvar) ; required and rest parameters have the same syntax
-         @<Process |arg| as a required parameter@>)
-        (:optvars @<Process |arg| as an optional parameter@>)
-        (:keyvars @<Process |arg| as a keyword parameter@>)
-        (:auxvars @<Process |arg| as an auxiliary variable@>))
-      (when (or (atom lambda-list)
-                (and (cdr lambda-list)
-                     (atom (cdr lambda-list))))
-        @<Process dotted rest var@>))))
+(defun walk-lambda-list (walker lambda-list decls env)
+  (let ((new-lambda-list '())
+        (state :reqvars))
+    (labels ((walk-var (var)
+               (multiple-value-setq (var env)
+                 (walk-binding walker var ;
+                               (make-context 'variable-name :local t) ;
+                               env ;
+                               :declare decls)))
+             (update-state (keyword)
+               (setq state (case keyword
+                             (&optional :optvars)
+                             ((&rest &body) :restvars)
+                             (&key :keyvars)
+                             (&aux :auxvars)
+                             (&environment :envvar)
+                             (t state))))
+             (maybe-destructure (var/pattern)
+               (if (consp var/pattern)
+                   (multiple-value-setq (var/pattern env)
+                     (walk-lambda-list walker var/pattern decls env))
+                   (walk-var var/pattern))))
+      @<Check for |&whole| and |&environment| vars...@>
+      (do* ((lambda-list lambda-list (cdr lambda-list))
+            (arg (car lambda-list) (if (consp lambda-list) ;
+                                       (car lambda-list) ;
+                                       lambda-list)))
+           ((atom lambda-list)
+            (values (nreconc new-lambda-list (and arg (walk-var arg))) env))
+        (ecase state
+          (:envvar @<Process |arg| as an environment parameter@>)
+          ((:reqvars :restvars) @<Process |arg| as a required parameter@>)
+          (:optvars @<Process |arg| as an optional parameter@>)
+          (:keyvars @<Process |arg| as a keyword parameter@>)
+          (:auxvars @<Process |arg| as an auxiliary variable@>))))))
 
 @ A |&whole| variable must come first in a \L-list, and an |&environment|
 variable, although it may appear anywhere in the list, must be bound along
 with |&whole|. We'll pop a |&whole| variable off the front of |lambda-list|,
 but we'll leave any |&environment| variable to be picked up later.
 
-@<Check for |&whole| and |&environment|...@>=
+@<Check for |&whole| and |&environment| vars and augment the
+  environment if found@>=
 (and (consp lambda-list)
      (eql (car lambda-list) '&whole)
      (push (pop lambda-list) new-lambda-list)
@@ -4990,11 +4989,14 @@ so we just push it onto the new \L-list and prepare for the next parameter.
 (when (consp lambda-list)
   (update-state (car lambda-list)))
 
-@ @<Process |arg| as a required parameter@>=
+@ Required parameters may be either symbols or patterns. Rest parameters
+have the same syntax.
+
+@<Process |arg| as a required parameter@>=
 (etypecase arg
   (symbol @<Process the symbol in |arg| as a parameter@>)
   (cons
-   (multiple-value-bind (pattern new-env)
+   (multiple-value-bind (pattern new-env) ;
        (walk-lambda-list walker arg decls env)
      (setq env new-env)
      (push pattern new-lambda-list))))
@@ -5057,15 +5059,6 @@ form and the pattern (if any) need to be walked in an environment
        (update-state arg))
       (t (setq arg (walk-var arg))
          (push arg new-lambda-list)))
-
-@ We normalize a dotted rest parameter into a proper |&rest| parameter
-to avoid having to worry about reversing an improper |new-lambda-list|.
-
-@<Process dotted rest var@>=
-(let ((var (walk-var (if (consp lambda-list) (cdr lambda-list) lambda-list))))
-  (push '&rest new-lambda-list)
-  (push var new-lambda-list))
-(setq lambda-list nil)
 
 @ While we're in the mood to deal with \L-lists, here's a routine that can
 walk the `specialized' \L-lists used in |defmethod| forms. We can't use the
@@ -5204,13 +5197,8 @@ symbols have the incorrect type of binding, it signals an error.
   (lambda (&whole w (x y)
            &optional ((o) (+ x y))
            &key ((:k (k1 k2)) (2 3) k-s-p)
-           &environment env
-           &rest body)
+           &environment env . body)
     (check-binding (w x y o k1 k2 k-s-p env body) :variable :lexical)))
-
-(define-walker-test normalize-rest-arg
-  (lambda (a . b))
-  (lambda (a &rest b)))
 
 @ We come now to the binding special forms. The six lexical binding
 forms in Common Lisp (|let|, |let*|, |flet|, |labels|, |macrolet|,
