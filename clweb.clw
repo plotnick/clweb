@@ -3025,9 +3025,7 @@ loaded; the work-around is to disable production of the tests file by
 supplying a null |:tests-file| argument.
 
 @l
-(defun tangle-file (input-file &rest args &key
-                    output-file
-                    tests-file
+(defun tangle-file (input-file &rest args &key output-file tests-file
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
@@ -3040,38 +3038,32 @@ supplying a null |:tests-file| argument.
   (declare (ignorable output-file tests-file))
   (when verbose (format t "~&; tangling web from ~A:~%" input-file))
   @<Initialize global variables@>
-  (with-open-file (input input-file
-                   :direction :input
+  (with-open-file (input input-file ;
+                   :direction :input ;
                    :external-format external-format)
     (read-sections input))
   @<Complain about any unused named sections@>
-  (flet ((write-forms (sections output-file)
-           (with-open-file (output output-file
-                            :direction :output
-                            :if-exists :supersede
-                            :external-format external-format)
-             (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%" ;
-                     input-file)
-             (let ((*evaluating* nil)
-                   (*print-pprint-dispatch* *tangle-pprint-dispatch*)
-                   (*print-readably* t))
-               @<Output a form that sets the source pathname@>
-               (dolist (form (tangle (unnamed-section-code-parts sections)))
-                 (pprint form output))))))
-    (cond ((and tests-file
-                (> (length *test-sections*) 1)) ; there's always a limbo section
-           (when verbose (format t "~&; writing tests to ~A~%" tests-file))
-           (write-forms *test-sections* tests-file))
-          (t (setq tests-file nil)))
-    (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
-    (write-forms *sections* lisp-file)
-    (multiple-value-prog1
-        (apply #'compile-file lisp-file :allow-other-keys t args)
-      (when tests-file
-        (compile-file tests-file ; use default output file
-                      :verbose verbose
-                      :print print
-                      :external-format external-format)))))
+  (cond ((and tests-file
+              (> (length *test-sections*) 1)) ; there's always a limbo section
+         (when verbose (format t "~&; writing tests to ~A~%" tests-file))
+         (tangle-sections *test-sections*
+                          :input-file input-file
+                          :output-file tests-file
+                          :external-format external-format))
+        (t (setq tests-file nil)))
+  (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
+  (tangle-sections *sections*
+                   :input-file input-file
+                   :output-file lisp-file
+                   :external-format external-format)
+  (multiple-value-prog1
+      (apply #'compile-file lisp-file :allow-other-keys t args)
+    (when tests-file
+      ;; Note that we use the default output file here.
+      (compile-file tests-file ;
+                    :verbose verbose ;
+                    :print print ;
+                    :external-format external-format))))
 
 @ @<Merge defaults for tangler...@>=
 (input-file (merge-pathnames input-file ;
@@ -3089,22 +3081,6 @@ supplying a null |:tests-file| argument.
 @<Global variables@>=
 (defvar *tangle-file-pathname* nil)
 (defvar *tangle-file-truename* nil)
-
-@ Allegro Common Lisp uses the variable |*source-pathname*| to locate
-definitions in source files. If we override that, we can get it to look
-in the \CLWEB\ file instead of the tangled Lisp file.
-@^Allegro Common Lisp@>
-
-We have to do this output as a string rather than a form because the
-package |"EXCL"| might not exist in the implementation with which we're
-tangling.
-
-@<Output a form that sets...@>=
-(format output
-        "#+ALLEGRO~
-         ~&(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)~
-         ~&  (SETQ EXCL:*SOURCE-PATHNAME* ~S))~%"
-        *tangle-file-pathname*)
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
@@ -3124,6 +3100,40 @@ warnings about unused named sections.
 
 @ @<Condition classes@>=
 (define-condition unused-named-section-warning (simple-warning) ())
+
+@ |tangle-file| uses this helper function to actually write the tangled forms
+to the intermediate Lisp source file. It's used for both ordinary and test
+sections.
+
+@l
+(defun tangle-sections (sections &key input-file output-file external-format)
+  (with-open-file (output output-file
+                   :direction :output
+                   :if-exists :supersede
+                   :external-format external-format)
+    (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%" input-file)
+    (let ((*evaluating* nil)
+          (*print-pprint-dispatch* *tangle-pprint-dispatch*)
+          (*print-readably* t))
+      @<Output a form that sets the source pathname@>
+      (dolist (form (tangle (unnamed-section-code-parts sections)))
+        (pprint form output)))))
+
+@ Allegro Common Lisp uses the variable |*source-pathname*| to locate
+definitions in source files. If we override that, we can get it to look
+in the \CLWEB\ file instead of the tangled Lisp file.
+@^Allegro Common Lisp@>
+
+We have to do this output as a string rather than a form because the
+package |"EXCL"| might not exist in the implementation with which we're
+tangling.
+
+@<Output a form that sets...@>=
+(format output
+        "#+ALLEGRO~
+         ~&(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)~
+         ~&  (SETQ EXCL:*SOURCE-PATHNAME* ~S))~%"
+        *tangle-file-pathname*)
 
 @*Weaving. The function |weave| reads a web from |input-file| and produces
 an output \TeX\ file named by |output-file|. By default, it also weaves
