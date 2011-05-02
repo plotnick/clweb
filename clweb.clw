@@ -3248,8 +3248,8 @@ differ only slightly; the |weaving-tests| argument will be true if it's
 currently weaving the tests.
 
 @l
-(defun weave-sections (sections &key
-                       input-file output-file index-file sections-file
+(defun weave-sections (sections &key input-file output-file ;
+                       index-file sections-file
                        weaving-tests verbose print external-format)
   (macrolet ((with-output-file ((stream filespec) &body body)
                `(with-open-file (,stream ,filespec
@@ -3259,8 +3259,7 @@ currently weaving the tests.
                   ,@body)))
     (with-output-file (out output-file)
       (format out "\\input clwebmac~%")
-      (when weaving-tests
-        @<Write the program name to the tests output file@>)
+      (when weaving-tests @<Write the program name to the tests output file@>)
       (if print
           @<Weave the sections to the output file, reporting as we go@>
           (map nil (lambda (section) (weave-object section out)) sections))
