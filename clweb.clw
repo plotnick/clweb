@@ -3616,6 +3616,16 @@ of the form `(\<suffix>~.~\<replacement>)'.
   (weave-symbol lambda "\\L")
   (weave-symbol pi "$\\pi$"))
 
+@ We transform \.{#'} into instances of |function-marker| during reading,
+so we don't want lists like |(function foo)| turned into |#'foo| during
+weaving.
+
+@l
+(set-weave-dispatch '(cons (eql function))
+  (lambda (stream obj)
+    (format stream "(~{~W~^ ~})" obj))
+  1)
+
 @1*Indentation tracking. Next, we turn to list printing, and the tricky
 topic of indentation. On the assumption that the human writing a web is
 smarter than a program doing any sort of automatic indentation, we attempt
@@ -3821,16 +3831,6 @@ which see.
 (set-weave-dispatch 'function-marker
   (lambda (stream obj)
     (format stream "\\#\\'~S" (quoted-form obj)))
-  1)
-
-@ We transform \.{#'} into instances of |function-marker| during reading,
-so we don't want lists like |(function foo)| turned into |#'foo| during
-weaving.
-
-@l
-(set-weave-dispatch '(cons (eql function))
-  (lambda (stream obj)
-    (format stream "(~{~W~^ ~})" obj))
   1)
 
 @ @l
