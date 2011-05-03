@@ -3030,50 +3030,68 @@ supplying a null |:tests-file| argument.
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (external-format :default) &allow-other-keys &aux
-                    @<Merge defaults for tangler file names@>
-                    (*tangle-file-pathname* input-file)
-                    (*tangle-file-truename* (truename *tangle-file-pathname*))
                     (*readtable* *readtable*)
                     (*package* *package*))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (declare (ignorable output-file tests-file))
-  (when verbose (format t "~&; tangling web from ~A:~%" input-file))
-  @<Initialize global variables@>
-  (with-open-file (input input-file ;
-                   :direction :input ;
-                   :external-format external-format)
-    (read-sections input))
-  @<Complain about any unused named sections@>
-  (cond ((and tests-file ;
-              (> (length *test-sections*) 1)) ; there's always a limbo section
-         (when verbose (format t "~&; writing tests to ~A~%" tests-file))
-         (tangle-sections *test-sections*
-                          :input-file input-file
-                          :output-file tests-file
-                          :external-format external-format))
-        (t (setq tests-file nil)))
-  (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
-  (tangle-sections *sections*
-                   :input-file input-file
-                   :output-file lisp-file
-                   :external-format external-format)
-  (multiple-value-prog1
-      (apply #'compile-file lisp-file :allow-other-keys t args)
-    (when tests-file
-      ;; Note that we use the default output file here.
-      (compile-file tests-file ;
-                    :verbose verbose ;
-                    :print print ;
-                    :external-format external-format))))
+  (multiple-value-bind (input-file lisp-file output-file ;
+                        tests-file tests-output-file)
+      (apply #'tangle-file-pathnames input-file args)
+    (let* ((*tangle-file-pathname* input-file)
+           (*tangle-file-truename* (truename *tangle-file-pathname*)))
+      (when verbose (format t "~&; tangling web from ~A:~%" input-file))
+      @<Initialize global variables@>
+      (with-open-file (input input-file ;
+                             :direction :input ;
+                             :external-format external-format)
+        (read-sections input))
+      @<Complain about any unused named sections@>
+      (cond ((and tests-file (> (length *test-sections*) 1))
+             (when verbose (format t "~&; writing tests to ~A~%" tests-file))
+             (tangle-sections *test-sections*
+                              :input-file input-file
+                              :output-file tests-file
+                              :external-format external-format))
+            (t (setq tests-file nil)))
+      (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
+      (tangle-sections *sections*
+                       :input-file input-file
+                       :output-file lisp-file
+                       :external-format external-format)
+      (multiple-value-prog1
+          (compile-file lisp-file
+                        :output-file output-file
+                        :verbose verbose
+                        :print print
+                        :external-format external-format)
+        (when tests-file
+          (compile-file tests-file
+                        :output-file tests-output-file
+                        :verbose verbose
+                        :print print
+                        :external-format external-format))))))
 
-@ @<Merge defaults for tangler...@>=
-(input-file (merge-pathnames input-file ;
-                             (make-pathname :type "CLW" :case :common)))
-(output-file (apply #'compile-file-pathname ;
-                    input-file :allow-other-keys t args))
-(lisp-file (merge-pathnames (make-pathname :type "LISP" :case :common) ;
-                            output-file))
-(tests-file (apply #'tests-file-pathname output-file "LISP" args))
+@ This routine performs the defaulting for the file name arguments to
+|tangle-file|. It returns five pathnames: the defaulted input file,
+the output (\.{FASL}) file, the intermediate Lisp file, the test suite
+Lisp file, and the test suite output file.
+
+@l
+(defun tangle-file-pathnames (input-file &rest args &key output-file tests-file ;
+                              &allow-other-keys)
+  (declare (ignorable output-file tests-file))
+  (let* ((input-file (merge-pathnames input-file ;
+                                      (make-pathname :type "CLW" ;
+                                                     :case :common)))
+         (output-file (apply #'compile-file-pathname input-file ;
+                             :allow-other-keys t args))
+         (lisp-file (merge-pathnames (make-pathname :type "LISP" :case :common) ;
+                                     output-file))
+         (tests-file (apply #'tests-file-pathname output-file "LISP" args))
+         (tests-output-file (apply #'tests-file-pathname output-file
+                                   (pathname-type output-file :case :common)
+                                   args)))
+    (values input-file lisp-file output-file tests-file tests-output-file)))
 
 @ During tangling, we bind |*tangle-file-pathname*| and
 |*tangle-file-truename*| in the same way that |compile-file| binds
