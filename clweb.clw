@@ -3203,7 +3203,7 @@ If successful, |weave| returns the truename of the output file.
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (declare (ignorable output-file tests-file index-file))
   (multiple-value-bind (input-file output-file index-file sections-file)
-      (apply #'weave-file-pathnames input-file args)
+      (apply #'weave-pathnames input-file args)
     (when verbose (format t "~&; weaving web from ~A:~%" input-file))
     @<Initialize global variables@>
     (with-open-file (input input-file ;
@@ -3214,7 +3214,7 @@ If successful, |weave| returns the truename of the output file.
       (when (and tests-file (> (length *test-sections*) 1))
         (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
         (multiple-value-bind (input-file output-file index-file sections-file)
-            (apply #'weave-file-pathnames input-file ;
+            (apply #'weave-pathnames input-file ;
                    :output-file tests-file ;
                    args)
           @<Fix up the index and sections filenames for test suite output@>
@@ -3250,49 +3250,51 @@ files for the test suite.
           sections-file (merge-pathnames output-file-name sections-file))))
 
 @ This routine does the defaulting for the filename arguments to |weave|.
+It returns four filenames: the input filename, the output (\TeX) filename,
+the index filename, and the section names list filename. They are defaulted
+as follows:
 
 \smallskip
 \item\bull In keeping with the usual behavior of both Lisp and \TeX,
-the type of the input filename may be omitted; it defaults to `\.{CLW}'.
+the type of the input filename may be omitted; it defaults to~`\.{CLW}'.
 
 \item\bull If |output-file| is not supplied or is |nil|, a pathname will be
-generated from |input-file| by replacing its type component with `\.{TEX}'.
+generated from |input-file| by replacing its type component with~`\.{TEX}'.
 
 \item\bull If |index-file| is not supplied or is supplied and non-null, an
 index of variables, functions, classes, \etc. will be written to the
 indicated file. The default filename is generated from |output-file| by
-replacing its type component with `\.{IDX}'.
+replacing its type component with~`\.{IDX}'.
 
-\item\bull A list of section names will be written to a file whose name
-is generated from the index filename by replacing its type component
-with `\.{SCN}'.
+\item\bull The sections filename is generated from the index filename
+by replacing its type component with~`\.{SCN}'.
 
 @l
-(defun weave-file-pathnames (input-file &key output-file ;
-                             (index-file nil index-file-supplied) ;
-                             &allow-other-keys)
-  (let* ((input-file (let ((input-file-type ;
-                            (make-pathname :type "CLW" :case :common)))
-                       (merge-pathnames input-file input-file-type)))
-         (output-file (let* ((output-file-type ;
-                              (make-pathname :type "TEX" :case :common))
-                             (output-file-defaults ;
-                              (merge-pathnames output-file-type input-file)))
+(defun weave-pathnames (input-file &key output-file ;
+                        (index-file nil index-file-supplied) ;
+                        &allow-other-keys)
+  (let* ((input-file (merge-pathnames input-file ;
+                                      (make-pathname :type "CLW" ;
+                                                     :case :common)))
+         (output-file (let ((output-file-defaults
+                             (merge-pathnames (make-pathname :type "TEX" ;
+                                                             :case :common) ;
+                                              input-file)))
                         (if output-file
                             (merge-pathnames output-file output-file-defaults)
                             output-file-defaults)))
-         (index-file (let* ((index-file-type ;
-                             (make-pathname :type "IDX" :case :common))
-                            (index-file-defaults ;
-                             (merge-pathnames index-file-type output-file)))
+         (index-file (let ((index-file-defaults
+                            (merge-pathnames (make-pathname :type "IDX" ;
+                                                            :case :common) ;
+                                             output-file)))
                        (if index-file
                            (merge-pathnames index-file index-file-defaults)
                            (when (not index-file-supplied)
                              index-file-defaults))))
-         (sections-file (let ((sections-file-type ;
-                               (make-pathname :type "SCN" :case :common)))
-                          (when index-file
-                            (merge-pathnames sections-file-type index-file)))))
+         (sections-file (when index-file
+                          (merge-pathnames (make-pathname :type "SCN" ;
+                                                          :case :common) ;
+                                           index-file))))
     (values input-file output-file index-file sections-file)))
 
 @ @<Global variables@>=
