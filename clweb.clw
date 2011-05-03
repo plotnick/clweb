@@ -3157,56 +3157,68 @@ encodings for non-printable-{\sc ascii} characters vary widely.
 If successful, |weave| returns the truename of the output file. 
 
 @l
-(defun weave (input-file &rest args &key output-file tests-file
-              (index-file nil index-file-supplied-p)
+(defun weave (input-file &rest args &key output-file tests-file index-file
               (verbose *weave-verbose*)
               (print *weave-print*)
               (external-format :default) &aux
-              @<Merge defaults for weaver file names@>
               (*readtable* *readtable*)
               (*package* *package*))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
-  (declare (ignorable tests-file))
-  (when verbose (format t "~&; weaving web from ~A:~%" input-file))
-  @<Initialize global variables@>
-  (with-open-file (input input-file ;
-                   :direction :input ;
-                   :external-format external-format)
-    (read-sections input))
-  (when (and tests-file ;
-             (> (length *test-sections*) 1)) ; there's always a limbo section
-    (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
-    (weave-sections *test-sections*
+  (declare (ignorable output-file tests-file index-file))
+  (multiple-value-bind (input-file output-file index-file sections-file)
+      (apply #'weave-file-pathnames input-file args)
+    (when verbose (format t "~&; weaving web from ~A:~%" input-file))
+    @<Initialize global variables@>
+    (with-open-file (input input-file ;
+                     :direction :input ;
+                     :external-format external-format)
+      (read-sections input))
+    (let ((tests-file (apply #'tests-file-pathname output-file "TEX" args)))
+      (when (and tests-file (> (length *test-sections*) 1))
+        (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
+        (multiple-value-bind (input-file output-file index-file sections-file)
+            (apply #'weave-file-pathnames input-file ;
+                   :output-file tests-file ;
+                   args)
+          @<Fix up the index and sections file names for test suite output@>
+          (weave-sections *test-sections*
+                          :input-file input-file
+                          :output-file output-file
+                          :index-file index-file
+                          :sections-file sections-file
+                          :verbose verbose
+                          :print print
+                          :external-format external-format
+                          :weaving-tests t))))
+    (when verbose (format t "~&; weaving sections to ~A~%" output-file))
+    (weave-sections *sections*
                     :input-file input-file
-                    :output-file tests-file
-                    :index-file (merge-pathnames ;
-                                 (make-pathname :type "IDX" :case :common) ;
-                                 tests-file)
-                    :sections-file (merge-pathnames ;
-                                    (make-pathname :type "SCN" :case :common) ;
-                                    tests-file)
+                    :output-file output-file
+                    :index-file index-file
+                    :sections-file sections-file
                     :verbose verbose
                     :print print
-                    :external-format external-format
-                    :weaving-tests t))
-  (when verbose (format t "~&; weaving sections to ~A~%" output-file))
-  (weave-sections *sections*
-                  :input-file input-file
-                  :output-file output-file
-                  :index-file index-file
-                  :sections-file sections-file
-                  :verbose verbose
-                  :print print
-                  :external-format external-format))
+                    :external-format external-format)))
 
-@ In keeping with the usual behavior of both Lisp and \TeX, the type of
+@ We don't accept a separate argument for the test suite index file name,
+so we have to do a little post-processing to get it all right. At this
+point, |output-file| is the name of the {\it tests\/} output file; we'll
+use its name component as the name components of the index and sections
+files for the test suite.
+
+@<Fix up the index and sections file names...@>=
+(when index-file
+  (let ((output-file-name (make-pathname :name (pathname-name output-file))))
+    (setq index-file (merge-pathnames output-file-name index-file)
+          sections-file (merge-pathnames output-file-name sections-file))))
+
+@ This routine does the defaulting for the file name arguments to |weave|.
+
+In keeping with the usual behavior of both Lisp and \TeX, the type of
 the input file may be omitted; it defaults to `\.{CLW}'.
 
 If |output-file| is not supplied or is |nil|, a pathname will be generated
 from |input-file| by replacing its |type| component with `\.{TEX}'.
-
-The |tests-file| argument is derived from the given file name and the output
-file name by |tests-file-pathname|, which see.
 
 If |index-file| is not supplied or is supplied and non-null, an index of
 variables, functions, classes, \etc. will be written to the indicated file.
@@ -3215,24 +3227,33 @@ The default file name is generated from |output-file| by replacing its
 be written to a file whose name is generated from the index file name by
 replacing its type component with `\.{SCN}'.
 
-@<Merge defaults for weaver...@>=
-(input-file (merge-pathnames input-file ;
-                             (make-pathname :type "CLW" :case :common)))
-(output-file (if output-file
-                 (merge-pathnames output-file ;
-                                  (make-pathname :type "TEX" :case :common))
-                 (merge-pathnames (make-pathname :type "TEX" :case :common) ;
-                                  input-file)))
-(tests-file (apply #'tests-file-pathname output-file "TEX" args))
-(index-file (if index-file
-                (merge-pathnames index-file ;
-                                 (make-pathname :type "IDX" :case :common))
-                (when (not index-file-supplied-p)
-                  (merge-pathnames (make-pathname :type "IDX" :case :common) ;
-                                   output-file))))
-(sections-file (when index-file
-                 (merge-pathnames (make-pathname :type "SCN" :case :common) ;
-                                  index-file)))
+@l
+(defun weave-file-pathnames (input-file &key output-file ;
+                             (index-file nil index-file-supplied) ;
+                             &allow-other-keys)
+  (let* ((input-file (let ((input-file-type ;
+                            (make-pathname :type "CLW" :case :common)))
+                       (merge-pathnames input-file input-file-type)))
+         (output-file (let* ((output-file-type ;
+                              (make-pathname :type "TEX" :case :common))
+                             (output-file-defaults ;
+                              (merge-pathnames output-file-type input-file)))
+                        (if output-file
+                            (merge-pathnames output-file output-file-defaults)
+                            output-file-defaults)))
+         (index-file (let* ((index-file-type ;
+                             (make-pathname :type "IDX" :case :common))
+                            (index-file-defaults ;
+                             (merge-pathnames index-file-type output-file)))
+                       (if index-file
+                           (merge-pathnames index-file index-file-defaults)
+                           (when (not index-file-supplied)
+                             index-file-defaults))))
+         (sections-file (let ((sections-file-type ;
+                               (make-pathname :type "SCN" :case :common)))
+                          (when index-file
+                            (merge-pathnames sections-file-type index-file)))))
+    (values input-file output-file index-file sections-file)))
 
 @ @<Global variables@>=
 (defvar *weave-verbose* t
