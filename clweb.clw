@@ -6,6 +6,7 @@
 \def\rdq{{\tenec \char'24}} % right guillemet
 \def\pb{\.{|...|}} % program brackets
 \def\v{\.{\char'174}} % vertical bar in typewriter font
+\def\bull{\vrule height .9ex width .8ex depth -.1ex } % square bullet
 \def\WEB{{\tt WEB}}
 \def\CWEB{{\tt CWEB}}
 \def\CLWEB{{\tt CLWEB}}
@@ -3214,18 +3215,21 @@ files for the test suite.
 
 @ This routine does the defaulting for the file name arguments to |weave|.
 
-In keeping with the usual behavior of both Lisp and \TeX, the type of
-the input file may be omitted; it defaults to `\.{CLW}'.
+\smallskip
+\item\bull In keeping with the usual behavior of both Lisp and \TeX,
+the type of the input file may be omitted; it defaults to `\.{CLW}'.
 
-If |output-file| is not supplied or is |nil|, a pathname will be generated
-from |input-file| by replacing its |type| component with `\.{TEX}'.
+\item\bull If |output-file| is not supplied or is |nil|, a pathname will be
+generated from |input-file| by replacing its |type| component with `\.{TEX}'.
 
-If |index-file| is not supplied or is supplied and non-null, an index of
-variables, functions, classes, \etc. will be written to the indicated file.
-The default file name is generated from |output-file| by replacing its
-|type| component with `\.{IDX}'. In addition, a list of section names will
-be written to a file whose name is generated from the index file name by
-replacing its type component with `\.{SCN}'.
+\item\bull If |index-file| is not supplied or is supplied and non-null, an
+index of variables, functions, classes, \etc. will be written to the
+indicated file. The default file name is generated from |output-file| by
+replacing its |type| component with `\.{IDX}'.
+
+\item\bull A list of section names will be written to a file whose name
+is generated from the index file name by replacing its type component
+with `\.{SCN}'.
 
 @l
 (defun weave-file-pathnames (input-file &key output-file ;
