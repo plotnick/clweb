@@ -5156,7 +5156,7 @@ the parameters found therein.
              (symbol (walk-binding spec))
              (class-specializer
               (list (walk-binding (car spec))
-                    (walk-name walker (cadr spec)  ;
+                    (walk-name walker (cadr spec) ;
                                (make-context 'class-name%) env)))
              ((compound-specializer eql)
               (list (walk-binding (car spec))
