@@ -3095,15 +3095,16 @@ using the defaulted output filename.
 filename by replacing its type with the type of the defaulted output file.
 
 @l
-(defun tangle-file-pathnames (input-file &rest args &key output-file tests-file ;
-                              &allow-other-keys)
+(defun tangle-file-pathnames (input-file &rest args &key ;
+                              output-file tests-file &allow-other-keys)
   (declare (ignorable output-file tests-file))
   (let* ((input-file (merge-pathnames input-file ;
                                       (make-pathname :type "CLW" ;
                                                      :case :common)))
          (output-file (apply #'compile-file-pathname input-file ;
                              :allow-other-keys t args))
-         (lisp-file (merge-pathnames (make-pathname :type "LISP" :case :common) ;
+         (lisp-file (merge-pathnames (make-pathname :type "LISP" ;
+                                                    :case :common) ;
                                      output-file))
          (tests-file (apply #'tests-file-pathname output-file "LISP" args))
          (tests-output-file ;
