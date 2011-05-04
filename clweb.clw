@@ -2967,47 +2967,50 @@ merging defaults from the output filename. Finally, if the argument is
 supplied and is |nil|, then no tests file will be written at all.
 
 @l
-(defun tests-file-pathname (input-file type &key output-file ;
+(defun tests-file-pathname (input-file type &key
+                            (output-file *default-pathname-defaults*)
                             (tests-file nil tests-file-supplied) ;
                             &allow-other-keys)
   (if tests-file
       (merge-pathnames tests-file (make-pathname :type type :case :common))
       (unless tests-file-supplied
         (merge-pathnames
-         (make-pathname :name (concatenate 'string ;
-                                           (pathname-name input-file ;
-                                                          :case :common) ;
-                                           "-TESTS")
-                        :type type
-                        :case :common)
-         (make-pathname :defaults output-file)))))
+         (make-pathname
+           :host (pathname-host output-file)
+           :name (concatenate 'string (pathname-name input-file :case :common) ;
+                              "-TESTS")
+           :type type
+           :case :common)
+         output-file))))
+
+@t We'll shortly be defining a whole bunch of tests for pathname-generating
+functions. These tests become vastly more compact if we use logical
+pathnames. So we'll define a trivial translation for the logical pathname
+host `\.{CLWEB-TEST}'. In the extremely unlikely event that this conflicts
+with a logical pathname host in your environment, please notify the author.
+
+@l
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (setf (logical-pathname-translations "clweb-test") '(("**;*.*.*" ""))))
 
 @t@l
 (deftest (tests-file-pathname 1)
-  (equal (tests-file-pathname (make-pathname :name "FOO" :case :common) "LISP"
-                              :tests-file (make-pathname :name "BAR" ;
-                                                         :case :common))
-         (make-pathname :name "BAR" :type "LISP" :case :common))
-  t)
+  (tests-file-pathname #P"clweb-test:foo" "LISP"
+                       :tests-file #P"clweb-test:bar")
+  #P"clweb-test:bar.lisp.newest")
 
 (deftest (tests-file-pathname 2)
-  (equal (tests-file-pathname (make-pathname :name "FOO" :case :common) "TEX")
-         (make-pathname :name "FOO-TESTS" :type "TEX" :case :common))
-  t)
+  (tests-file-pathname #P"clweb-test:foo" "TEX"
+                       :output-file #P"clweb-test:")
+  #P"clweb-test:foo-tests.tex.newest")
 
 (deftest (tests-file-pathname 3)
-  (equal (tests-file-pathname (make-pathname :name "FOO" :case :common) "TEX"
-                              :output-file (make-pathname
-                                            :directory '(:absolute "A" "B")
-                                            :case :common))
-         (make-pathname :directory '(:absolute "A" "B")
-                        :name "FOO-TESTS"
-                        :type "TEX"
-                        :case :common))
-  t)
+  (tests-file-pathname #P"clweb-test:foo" "TEX"
+                       :output-file #P"clweb-test:a;b;")
+  #P"clweb-test:a;b;foo-tests.tex.newest")
 
 (deftest (tests-file-pathname 4)
-  (tests-file-pathname (make-pathname :name "FOO" :case :common) "LISP"
+  (tests-file-pathname #P"clweb-test:foo" "LISP"
                        :tests-file nil)
   nil)
 
@@ -3109,75 +3112,52 @@ filename by replacing its type with the type of the defaulted output file.
 (defun tangle-file-pathnames (input-file &rest args &key ;
                               output-file tests-file &allow-other-keys)
   (declare (ignorable output-file tests-file))
-  (flet ((make-type (type) (make-pathname :type type :case :common)))
-    (let* ((input-file (merge-pathnames input-file (make-type "CLW")))
-           (output-file (apply #'compile-file-pathname input-file ;
-                               :allow-other-keys t args))
-           (lisp-file (merge-pathnames (make-type "LISP") output-file))
-           (tests-file (apply #'tests-file-pathname input-file "LISP" ;
-                              :output-file output-file ;
-                              args))
-           (tests-output-file ;
-            (when tests-file
-              (merge-pathnames (make-pathname :type (pathname-type output-file))
-                               tests-file))))
-      (values input-file lisp-file output-file tests-file tests-output-file))))
+  (let* ((input-file (merge-pathnames ;
+                      input-file ;
+                      (make-pathname :type "CLW" :case :common)))
+         (output-file (apply #'compile-file-pathname input-file ;
+                             :allow-other-keys t args))
+         (lisp-file (merge-pathnames
+                     (make-pathname :host (pathname-host output-file) ;
+                                    :type "LISP" ;
+                                    :case :common)
+                     output-file))
+         (tests-file (apply #'tests-file-pathname input-file "LISP" ;
+                            :output-file output-file ;
+                            args))
+         (tests-output-file ;
+          (when tests-file
+            (merge-pathnames
+             (make-pathname :host (pathname-host output-file)
+                            :type (pathname-type output-file))
+             tests-file))))
+    (values input-file lisp-file output-file tests-file tests-output-file)))
 
 @t@l
 (deftest (tangle-file-pathnames 1)
-  (let ((*default-pathname-defaults* (make-pathname)))
-    (equal (multiple-value-list
-            (tangle-file-pathnames (make-pathname :name "FOO" :case :common)))
-           (list (make-pathname :name "FOO" :type "CLW" :case :common)
-                 (make-pathname :name "FOO" :type "LISP" :case :common)
-                 (compile-file-pathname ;
-                  (make-pathname :name "FOO" :type "LISP" :case :common))
-                 (make-pathname :name "FOO-TESTS" :type "LISP" :case :common)
-                 (compile-file-pathname ;
-                  (make-pathname :name "FOO-TESTS" :type "LISP" :case :common)))))
-  t)
+  (tangle-file-pathnames #P"clweb-test:foo")
+  #P"clweb-test:foo.clw.newest"
+  #P"clweb-test:foo.lisp.newest"
+  #.(compile-file-pathname #P"clweb-test:foo.lisp")
+  #P"clweb-test:foo-tests.lisp.newest"
+  #.(compile-file-pathname #P"clweb-test:foo-tests.lisp"))
 
 (deftest (tangle-file-pathnames 2)
-  (let ((*default-pathname-defaults* (make-pathname)))
-    (equal (multiple-value-list
-            (tangle-file-pathnames (make-pathname :name "FOO" :case :common)
-                                   :output-file (make-pathname
-                                                 :directory '(:absolute "A" "B")
-                                                 :name "BAR"
-                                                 :type "FASL"
-                                                 :case :common)))
-           (list (make-pathname :name "FOO" :type "CLW" :case :common)
-                 (make-pathname :directory '(:absolute "A" "B")
-                                :name "BAR"
-                                :type "LISP" :case :common)
-                 (compile-file-pathname ;
-                  (make-pathname :directory '(:absolute "A" "B")
-                                 :name "BAR"
-                                 :type "LISP"
-                                 :case :common))
-                 (make-pathname :directory '(:absolute "A" "B")
-                                :name "FOO-TESTS"
-                                :type "LISP"
-                                :case :common)
-                 (compile-file-pathname ;
-                  (make-pathname :directory '(:absolute "A" "B")
-                                 :name "FOO-TESTS"
-                                 :type "LISP"
-                                 :case :common)))))
-  t)
+  (tangle-file-pathnames #P"clweb-test:foo"
+                         :output-file #P"clweb-test:a;b;bar.fasl")
+  #P"clweb-test:foo.clw.newest"
+  #P"clweb-test:a;b;bar.lisp.newest"
+  #.(compile-file-pathname #P"clweb-test:a;b;bar.lisp")
+  #P"clweb-test:a;b;foo-tests.lisp.newest"
+  #.(compile-file-pathname #P"clweb-test:a;b;foo-tests.lisp"))
 
 (deftest (tangle-file-pathnames 3)
-  (let ((*default-pathname-defaults* (make-pathname)))
-    (equal (multiple-value-list
-            (tangle-file-pathnames (make-pathname :name "FOO" :case :common)
-                                   :tests-file nil))
-           (list (make-pathname :name "FOO" :type "CLW" :case :common)
-                 (make-pathname :name "FOO" :type "LISP" :case :common)
-                 (compile-file-pathname ;
-                  (make-pathname :name "FOO" :type "LISP" :case :common))
-                 nil
-                 nil)))
-  t)
+  (tangle-file-pathnames #P"clweb-test:foo" :tests-file nil)
+  #P"clweb-test:foo.clw.newest"
+  #P"clweb-test:foo.lisp.newest"
+  #.(compile-file-pathname #P"clweb-test:foo.lisp")
+  nil
+  nil)
 
 @ During tangling, we bind |*tangle-file-pathname*| and
 |*tangle-file-truename*| in the same way that |compile-file| binds
@@ -3343,22 +3323,66 @@ by replacing its type component with~`\.{SCN}'.
 (defun weave-pathnames (input-file &key output-file ;
                         (index-file nil index-file-supplied) ;
                         &allow-other-keys)
-  (flet ((make-type (type) (make-pathname :type type :case :common)))
-    (let* ((input-file (merge-pathnames input-file (make-type "CLW")))
-           (output-file (let ((output-file-defaults ;
-                               (merge-pathnames (make-type "TEX") input-file)))
-                          (if output-file
-                              (merge-pathnames output-file output-file-defaults)
-                              output-file-defaults)))
-           (index-file (let ((index-file-defaults ;
-                              (merge-pathnames (make-type "IDX") output-file)))
-                         (if index-file
-                             (merge-pathnames index-file index-file-defaults)
-                             (when (not index-file-supplied) ;
-                               index-file-defaults))))
-           (sections-file (when index-file ;
-                            (merge-pathnames (make-type "SCN") index-file))))
-      (values input-file output-file index-file sections-file))))
+  (let* ((input-file (merge-pathnames ;
+                      input-file ;
+                      (make-pathname :type "CLW" :case :common)))
+         (output-file (let ((output-file-defaults
+                             (merge-pathnames
+                              (make-pathname :host (pathname-host input-file) ;
+                                             :type "TEX" ;
+                                             :case :common)
+                              input-file)))
+                        (if output-file
+                            (merge-pathnames output-file output-file-defaults)
+                            output-file-defaults)))
+         (index-file (let ((index-file-defaults
+                            (merge-pathnames
+                             (make-pathname :host (pathname-host output-file) ;
+                                            :type "IDX" ;
+                                            :case :common)
+                             output-file)))
+                       (if index-file
+                           (merge-pathnames index-file index-file-defaults)
+                           (when (not index-file-supplied) ;
+                             index-file-defaults))))
+         (sections-file (when index-file
+                          (merge-pathnames
+                           (make-pathname :host (pathname-host index-file) ;
+                                          :type "SCN" ;
+                                          :case :common)
+                           index-file))))
+    (values input-file output-file index-file sections-file)))
+
+@t@l
+(deftest (weave-pathnames 1)
+  (weave-pathnames #P"clweb-test:foo")
+  #P"clweb-test:foo.clw.newest"
+  #P"clweb-test:foo.tex.newest"
+  #P"clweb-test:foo.idx.newest"
+  #P"clweb-test:foo.scn.newest")
+
+(deftest (weave-pathnames 2)
+  (weave-pathnames #P"clweb-test:foo" :output-file #P"clweb-test:a;b;bar")
+  #P"clweb-test:foo.clw.newest"
+  #P"clweb-test:a;b;bar.tex.newest"
+  #P"clweb-test:a;b;bar.idx.newest"
+  #P"clweb-test:a;b;bar.scn.newest")
+
+(deftest (weave-pathnames 3)
+  (weave-pathnames #P"clweb-test:foo" :index-file nil)
+  #P"clweb-test:foo.clw.newest"
+  #P"clweb-test:foo.tex.newest"
+  nil
+  nil)
+
+(deftest (weave-pathnames 4)
+  (weave-pathnames #P"clweb-test:foo"
+                   :output-file #P"clweb-test:a;b;bar.tex"
+                   :index-file #P"clweb-test:c;index")
+  #P"clweb-test:foo.clw.newest"
+  #P"clweb-test:a;b;bar.tex.newest"
+  #P"clweb-test:c;index.idx.newest"
+  #P"clweb-test:c;index.scn.newest")
 
 @ @<Global variables@>=
 (defvar *weave-verbose* t
