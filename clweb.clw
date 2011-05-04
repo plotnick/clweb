@@ -2975,12 +2975,13 @@ supplied and is |nil|, then no tests file will be written at all.
       (merge-pathnames tests-file (make-pathname :type type :case :common))
       (unless tests-file-supplied
         (merge-pathnames
-         (make-pathname
-           :host (pathname-host output-file)
-           :name (concatenate 'string (pathname-name input-file :case :common) ;
-                              "-TESTS")
-           :type type
-           :case :common)
+         (make-pathname :host (pathname-host output-file :case :common)
+                        :name (concatenate 'string ;
+                                           (pathname-name input-file ;
+                                                          :case :common) ;
+                                           "-TESTS")
+                        :type type
+                        :case :common)
          output-file))))
 
 @t We'll shortly be defining a whole bunch of tests for pathname-generating
@@ -3013,6 +3014,27 @@ with a logical pathname host in your environment, please notify the author.
   (tests-file-pathname #P"clweb-test:foo" "LISP"
                        :tests-file nil)
   nil)
+
+@ When we're doing our complicated pathname defaulting below, we'll
+frequently have need of a pathname derived from another one, but with a
+different type component. This little routine constructs such pathnames.
+The type should always be given in common case.
+
+It might seem odd to use |merge-pathnames| for this task, when |make-pathnames|
+takes a |:defaults| argument that would seem to do exactly the right thing.
+And you would be correct: it is odd. But it is not without reason: both
+Allegro and CCL get the case wrong for pathnames constructed in that way
+when case is |:common|.
+@^Allegro Common Lisp@>
+@^Clozure Common Lisp@>
+
+@l
+(defun make-type-pathname (type &optional ;
+                           (defaults *default-pathname-defaults*))
+  (merge-pathnames (make-pathname :host (pathname-host defaults :case :common)
+                                  :type type
+                                  :case :common)
+                   defaults))
 
 @ We'll use a custom pprint-dispatch table for tangling to avoid cluttering
 the default table.
@@ -3117,20 +3139,14 @@ filename by replacing its type with the type of the defaulted output file.
                       (make-pathname :type "CLW" :case :common)))
          (output-file (apply #'compile-file-pathname input-file ;
                              :allow-other-keys t args))
-         (lisp-file (merge-pathnames
-                     (make-pathname :host (pathname-host output-file) ;
-                                    :type "LISP" ;
-                                    :case :common)
-                     output-file))
+         (lisp-file (make-type-pathname "LISP" output-file))
          (tests-file (apply #'tests-file-pathname input-file "LISP" ;
                             :output-file output-file ;
                             args))
          (tests-output-file ;
           (when tests-file
-            (merge-pathnames
-             (make-pathname :host (pathname-host output-file)
-                            :type (pathname-type output-file))
-             tests-file))))
+            (make-type-pathname (pathname-type output-file :case :common) ;
+                                tests-file))))
     (values input-file lisp-file output-file tests-file tests-output-file)))
 
 @t@l
@@ -3326,31 +3342,19 @@ by replacing its type component with~`\.{SCN}'.
   (let* ((input-file (merge-pathnames ;
                       input-file ;
                       (make-pathname :type "CLW" :case :common)))
-         (output-file (let ((output-file-defaults
-                             (merge-pathnames
-                              (make-pathname :host (pathname-host input-file) ;
-                                             :type "TEX" ;
-                                             :case :common)
-                              input-file)))
+         (output-file (let ((output-file-defaults ;
+                             (make-type-pathname "TEX" input-file)))
                         (if output-file
                             (merge-pathnames output-file output-file-defaults)
                             output-file-defaults)))
-         (index-file (let ((index-file-defaults
-                            (merge-pathnames
-                             (make-pathname :host (pathname-host output-file) ;
-                                            :type "IDX" ;
-                                            :case :common)
-                             output-file)))
+         (index-file (let ((index-file-defaults ;
+                            (make-type-pathname "IDX" output-file)))
                        (if index-file
                            (merge-pathnames index-file index-file-defaults)
                            (when (not index-file-supplied) ;
                              index-file-defaults))))
-         (sections-file (when index-file
-                          (merge-pathnames
-                           (make-pathname :host (pathname-host index-file) ;
-                                          :type "SCN" ;
-                                          :case :common)
-                           index-file))))
+         (sections-file (when index-file ;
+                          (make-type-pathname "SCN" index-file))))
     (values input-file output-file index-file sections-file)))
 
 @t@l
