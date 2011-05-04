@@ -2254,7 +2254,9 @@ characters that the reader scans, and use that to reconstruct the form.
                      (*read-suppress* nil))
                  (read stream t nil t)))
          (*read-suppress* (if plusp (not (featurep test)) (featurep test))))
-    (peek-char t stream t nil t)
+    (case (peek-char nil stream t nil t)
+      (#\Newline nil) ; preserve newline as part of the form
+      (t (peek-char t stream t nil t)))
     (read-with-echo (stream value form)
       (apply #'make-instance 'read-time-conditional-marker
              :plusp plusp :test test :form form
@@ -2978,8 +2980,11 @@ is |:common|. This simple wrapper seems to behave correctly.
                       (case :local))
   (merge-pathnames
    (cl:make-pathname :host (or host (pathname-host defaults :case case))
-                     :device device :directory directory
-                     :name name :type type :version version
+                     :device device
+                     :directory directory
+                     :name name
+                     :type type
+                     :version version
                      :case case)
    defaults))
 
@@ -4053,10 +4058,11 @@ which see.
 @ @l
 (set-weave-dispatch 'read-time-conditional-marker
   (lambda (stream obj)
-    (format stream "\\#~:[--~;+~]\\RC{~S ~/clweb::print-escaped/}"
-            (read-time-conditional-plusp obj)
-            (read-time-conditional-test obj)
-            (read-time-conditional-form obj))))
+    (let ((*print-escape-list* (acons " " " " *print-escape-list*)))
+      (format stream "\\#~:[--~;+~]~S{\\RC ~/clweb::print-escaped/}"
+              (read-time-conditional-plusp obj)
+              (read-time-conditional-test obj)
+              (read-time-conditional-form obj)))))
 
 @*Code walking. Our last major task is to produce an index of every
 interesting symbol that occurs in a web (we'll define what makes a

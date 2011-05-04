@@ -281,8 +281,7 @@
         AND
         COLLECT CHAR INTO CHARS
         FINALLY (RETURN (COERCE CHARS 'STRING))))
-#-:CCL 
-(defun whitespacep (char) (find char *whitespace* :test #'char=))
+#-:CCL (defun whitespacep (char) (find char *whitespace* :test #'char=))
 (DEFUN FIND-SECTION (NAME &AUX (NAME (SQUEEZE NAME)))
   (IF (NULL *NAMED-SECTIONS*)
       (VALUES (SETQ *NAMED-SECTIONS* (MAKE-INSTANCE 'NAMED-SECTION :NAME NAME))
@@ -852,7 +851,9 @@
           (IF PLUSP
               (NOT (FEATUREP TEST))
               (FEATUREP TEST))))
-    (PEEK-CHAR T STREAM T NIL T)
+    (CASE (PEEK-CHAR NIL STREAM T NIL T)
+      (#\Newline NIL)
+      (T (PEEK-CHAR T STREAM T NIL T)))
     (READ-WITH-ECHO (STREAM VALUE FORM)
       (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP PLUSP :TEST
              TEST :FORM FORM (AND (NOT *READ-SUPPRESS*) (LIST :VALUE VALUE))))))
@@ -1154,8 +1155,8 @@ otherwise, they will replace them."
         (WITH-OPEN-FILE (STREAM FILE :DIRECTION :INPUT)
           (LOAD-WEB-FROM-STREAM STREAM T :APPEND APPEND))
       (DELETE-FILE FILE))))
-#+(:OR :ALLEGRO :CCL) 
-(defun make-pathname (&key host device directory name type version
+#+(:OR :ALLEGRO
+   :CCL) (defun make-pathname (&key host device directory name type version
                       (defaults
                        (cl:make-pathname :host (pathname-host
                                                 *default-pathname-defaults*
@@ -1169,8 +1170,11 @@ otherwise, they will replace them."
                       (case :local))
   (merge-pathnames
    (cl:make-pathname :host (or host (pathname-host defaults :case case))
-                     :device device :directory directory
-                     :name name :type type :version version
+                     :device device
+                     :directory directory
+                     :name name
+                     :type type
+                     :version version
                      :case case)
    defaults))
 (DEFUN TESTS-FILE-PATHNAME
@@ -1679,11 +1683,13 @@ otherwise, they will replace them."
                       (FORMAT STREAM "\\#S~W" (STRUCTURE-MARKER-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'READ-TIME-CONDITIONAL-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM
-                              "\\#~:[--~;+~]\\RC{~S ~/clweb::print-escaped/}"
-                              (READ-TIME-CONDITIONAL-PLUSP OBJ)
-                              (READ-TIME-CONDITIONAL-TEST OBJ)
-                              (READ-TIME-CONDITIONAL-FORM OBJ))))
+                      (LET ((*PRINT-ESCAPE-LIST*
+                             (ACONS " " " " *PRINT-ESCAPE-LIST*)))
+                        (FORMAT STREAM
+                                "\\#~:[--~;+~]~S{\\RC ~/clweb::print-escaped/}"
+                                (READ-TIME-CONDITIONAL-PLUSP OBJ)
+                                (READ-TIME-CONDITIONAL-TEST OBJ)
+                                (READ-TIME-CONDITIONAL-FORM OBJ)))))
 (DEFUN ENSURE-PORTABLE-WALKING-ENVIRONMENT (ENV)
   #+:ALLEGRO (sys:ensure-portable-walking-environment env)
   #-:ALLEGRO env)
@@ -1702,10 +1708,8 @@ otherwise, they will replace them."
          (APPLY ,ORIG ARGS)
        (DECLARE (IGNORE LOCATIVE))
        (VALUES TYPE LOCAL DECLARATIONS))))
-#+:ALLEGRO 
-(reorder-env-information variable-information #'sys:variable-information)
-#+:ALLEGRO 
-(reorder-env-information function-information #'sys:function-information)
+#+:ALLEGRO (reorder-env-information variable-information #'sys:variable-information)
+#+:ALLEGRO (reorder-env-information function-information #'sys:function-information)
 (DEFCLASS WALK-CONTEXT NIL NIL)
 (DEFUN MAKE-CONTEXT (CONTEXT &REST ARGS) (APPLY #'MAKE-INSTANCE CONTEXT ARGS))
 (DEFCLASS NAMESPACE (WALK-CONTEXT)
