@@ -3106,9 +3106,9 @@ filename by replacing its type with the type of the defaulted output file.
          (lisp-file (merge-pathnames (make-pathname :type "LISP" :case :common) ;
                                      output-file))
          (tests-file (apply #'tests-file-pathname output-file "LISP" args))
-         (tests-output-file (merge-pathnames (pathname-type output-file ;
-                                                            :case :common) ;
-                                             tests-file)))
+         (tests-output-file ;
+          (merge-pathnames (make-pathname :type (pathname-type output-file)) ;
+                           tests-file)))
     (values input-file lisp-file output-file tests-file tests-output-file)))
 
 @ During tangling, we bind |*tangle-file-pathname*| and
