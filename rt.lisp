@@ -144,6 +144,9 @@
            (loop for i from 0 below size
                  always (equalp-with-case (row-major-aref x i)
                                           (row-major-aref y i))))))
+   ((pathnamep x)
+    (and (pathnamep y)
+         (equal x y)))
    (t (eql x y))))
 
 (defun do-entry (entry &optional
