@@ -117,7 +117,8 @@ signaled while processing a web.
   (:shadow "ENCLOSE"
            #+allegro "ENSURE-PORTABLE-WALKING-ENVIRONMENT"
            #+allegro "FUNCTION-INFORMATION"
-           #+allegro "VARIABLE-INFORMATION"))
+           #+allegro "VARIABLE-INFORMATION"
+           #+(or allegro ccl) "MAKE-PATHNAME"))
 @e
 (in-package "CLWEB")
 
@@ -2957,6 +2958,31 @@ otherwise, they will replace them."
            (load-web-from-stream stream t :append append))
       (delete-file file))))
 
+@ Both Allegro and CCL get the wrong case for pathname components created
+using |make-pathname| with a supplied |:defaults| argument when |:case|
+is |:common|. This simple wrapper seems to behave correctly.
+
+@l
+#+(or allegro ccl)
+(defun make-pathname (&key host device directory name type version
+                      (defaults
+                       (cl:make-pathname :host (pathname-host
+                                                *default-pathname-defaults*
+                                                :case :common)
+                                         :device nil
+                                         :directory nil
+                                         :name nil
+                                         :type nil
+                                         :version nil
+                                         :case :common))
+                      (case :local))
+  (merge-pathnames
+   (cl:make-pathname :host (or host (pathname-host defaults :case case))
+                     :device device :directory directory
+                     :name name :type type :version version
+                     :case case)
+   defaults))
+
 @ Both |tangle-file| and |weave|, below, take a |tests-file| argument that
 has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
 then we use a pathname derived from the one given by merging in a default
@@ -2972,17 +2998,15 @@ supplied and is |nil|, then no tests file will be written at all.
                             (tests-file nil tests-file-supplied) ;
                             &allow-other-keys)
   (if tests-file
-      (merge-pathnames tests-file (make-pathname :type type :case :common))
+      (make-pathname :type type :defaults tests-file :case :common)
       (unless tests-file-supplied
-        (merge-pathnames
-         (make-pathname :host (pathname-host output-file :case :common)
-                        :name (concatenate 'string ;
-                                           (pathname-name input-file ;
-                                                          :case :common) ;
-                                           "-TESTS")
-                        :type type
-                        :case :common)
-         output-file))))
+        (make-pathname :name (concatenate 'string ;
+                                          (pathname-name input-file ;
+                                                         :case :common) ;
+                                          "-TESTS")
+                       :type type
+                       :defaults output-file
+                       :case :common))))
 
 @t We'll shortly be defining a whole bunch of tests for pathname-generating
 functions. These tests become vastly more compact if we use logical
@@ -2998,43 +3022,22 @@ with a logical pathname host in your environment, please notify the author.
 (deftest (tests-file-pathname 1)
   (tests-file-pathname #P"clweb-test:foo" "LISP"
                        :tests-file #P"clweb-test:bar")
-  #P"clweb-test:bar.lisp.newest")
+  #P"clweb-test:bar.lisp")
 
 (deftest (tests-file-pathname 2)
   (tests-file-pathname #P"clweb-test:foo" "TEX"
                        :output-file #P"clweb-test:")
-  #P"clweb-test:foo-tests.tex.newest")
+  #P"clweb-test:foo-tests.tex")
 
 (deftest (tests-file-pathname 3)
   (tests-file-pathname #P"clweb-test:foo" "TEX"
                        :output-file #P"clweb-test:a;b;")
-  #P"clweb-test:a;b;foo-tests.tex.newest")
+  #P"clweb-test:a;b;foo-tests.tex")
 
 (deftest (tests-file-pathname 4)
   (tests-file-pathname #P"clweb-test:foo" "LISP"
                        :tests-file nil)
   nil)
-
-@ When we're doing our complicated pathname defaulting below, we'll
-frequently have need of a pathname derived from another one, but with a
-different type component. This little routine constructs such pathnames.
-The type should always be given in common case.
-
-It might seem odd to use |merge-pathnames| for this task, when |make-pathnames|
-takes a |:defaults| argument that would seem to do exactly the right thing.
-And you would be correct: it is odd. But it is not without reason: both
-Allegro and CCL get the case wrong for pathnames constructed in that way
-when case is |:common|.
-@^Allegro Common Lisp@>
-@^Clozure Common Lisp@>
-
-@l
-(defun make-type-pathname (type &optional ;
-                           (defaults *default-pathname-defaults*))
-  (merge-pathnames (make-pathname :host (pathname-host defaults :case :common)
-                                  :type type
-                                  :case :common)
-                   defaults))
 
 @ We'll use a custom pprint-dispatch table for tangling to avoid cluttering
 the default table.
@@ -3139,14 +3142,17 @@ filename by replacing its type with the type of the defaulted output file.
                       (make-pathname :type "CLW" :case :common)))
          (output-file (apply #'compile-file-pathname input-file ;
                              :allow-other-keys t args))
-         (lisp-file (make-type-pathname "LISP" output-file))
+         (lisp-file (make-pathname :type "LISP" ;
+                                   :defaults output-file ;
+                                   :case :common))
          (tests-file (apply #'tests-file-pathname input-file "LISP" ;
                             :output-file output-file ;
                             args))
          (tests-output-file ;
           (when tests-file
-            (make-type-pathname (pathname-type output-file :case :common) ;
-                                tests-file))))
+            (make-pathname :type (pathname-type output-file :case :common)
+                           :defaults tests-file
+                           :case :common))))
     (values input-file lisp-file output-file tests-file tests-output-file)))
 
 @t@l
@@ -3342,19 +3348,25 @@ by replacing its type component with~`\.{SCN}'.
   (let* ((input-file (merge-pathnames ;
                       input-file ;
                       (make-pathname :type "CLW" :case :common)))
-         (output-file (let ((output-file-defaults ;
-                             (make-type-pathname "TEX" input-file)))
+         (output-file (let ((output-file-defaults
+                             (make-pathname :type "TEX" ;
+                                            :defaults input-file ;
+                                            :case :common)))
                         (if output-file
                             (merge-pathnames output-file output-file-defaults)
                             output-file-defaults)))
-         (index-file (let ((index-file-defaults ;
-                            (make-type-pathname "IDX" output-file)))
+         (index-file (let ((index-file-defaults
+                            (make-pathname :type "IDX" ;
+                                           :defaults output-file ;
+                                           :case :common)))
                        (if index-file
                            (merge-pathnames index-file index-file-defaults)
                            (when (not index-file-supplied) ;
                              index-file-defaults))))
-         (sections-file (when index-file ;
-                          (make-type-pathname "SCN" index-file))))
+         (sections-file (when index-file
+                          (make-pathname :type "SCN" ;
+                                         :defaults index-file ;
+                                         :case :common))))
     (values input-file output-file index-file sections-file)))
 
 @t@l
