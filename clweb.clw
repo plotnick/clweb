@@ -2961,26 +2961,26 @@ otherwise, they will replace them."
 has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
 then we use a pathname derived from the one given by merging in a default
 type (`\.{LISP}' in the case of tangling, `\.{TEX}' for weaving). If it's
-not supplied, then we construct a pathname from the output file by
-appending the string \.{"-TESTS"} to its name component. Finally, if the
-argument is supplied and is |nil|, then no tests file will be written at
-all.
+not supplied, then we construct a pathname from the input file by appending
+the string \.{"-TESTS"} to its name component, using the supplied type, and
+merging defaults from the output filename. Finally, if the argument is
+supplied and is |nil|, then no tests file will be written at all.
 
 @l
-(defun tests-file-pathname (output-file type &key ;
-                            (tests-file nil tests-file-supplied-p) ;
+(defun tests-file-pathname (input-file type &key output-file ;
+                            (tests-file nil tests-file-supplied) ;
                             &allow-other-keys)
   (if tests-file
       (merge-pathnames tests-file (make-pathname :type type :case :common))
-      (unless tests-file-supplied-p
+      (unless tests-file-supplied
         (merge-pathnames
          (make-pathname :name (concatenate 'string ;
-                                           (pathname-name output-file ;
+                                           (pathname-name input-file ;
                                                           :case :common) ;
                                            "-TESTS")
                         :type type
                         :case :common)
-         output-file))))
+         (make-pathname :defaults output-file)))))
 
 @t@l
 (deftest (tests-file-pathname 1)
@@ -2996,6 +2996,17 @@ all.
   t)
 
 (deftest (tests-file-pathname 3)
+  (equal (tests-file-pathname (make-pathname :name "FOO" :case :common) "TEX"
+                              :output-file (make-pathname
+                                            :directory '(:absolute "A" "B")
+                                            :case :common))
+         (make-pathname :directory '(:absolute "A" "B")
+                        :name "FOO-TESTS"
+                        :type "TEX"
+                        :case :common))
+  t)
+
+(deftest (tests-file-pathname 4)
   (tests-file-pathname (make-pathname :name "FOO" :case :common) "LISP"
                        :tests-file nil)
   nil)
@@ -3089,7 +3100,7 @@ with the supplied input filename and other arguments, including any supplied
 by replacing its type component with~`\.{LISP}'.
 
 \item\bull The tests filename is computed by the function |tests-file-pathname|
-using the defaulted output filename.
+using the defaulted input and output filenames.
 
 \item\bull The tests output filename is generated from the defaulted tests
 filename by replacing its type with the type of the defaulted output file.
@@ -3103,11 +3114,70 @@ filename by replacing its type with the type of the defaulted output file.
            (output-file (apply #'compile-file-pathname input-file ;
                                :allow-other-keys t args))
            (lisp-file (merge-pathnames (make-type "LISP") output-file))
-           (tests-file (apply #'tests-file-pathname output-file "LISP" args))
+           (tests-file (apply #'tests-file-pathname input-file "LISP" ;
+                              :output-file output-file ;
+                              args))
            (tests-output-file ;
-            (merge-pathnames (make-pathname :type (pathname-type output-file)) ;
-                             tests-file)))
+            (when tests-file
+              (merge-pathnames (make-pathname :type (pathname-type output-file))
+                               tests-file))))
       (values input-file lisp-file output-file tests-file tests-output-file))))
+
+@t@l
+(deftest (tangle-file-pathnames 1)
+  (let ((*default-pathname-defaults* (make-pathname)))
+    (equal (multiple-value-list
+            (tangle-file-pathnames (make-pathname :name "FOO" :case :common)))
+           (list (make-pathname :name "FOO" :type "CLW" :case :common)
+                 (make-pathname :name "FOO" :type "LISP" :case :common)
+                 (compile-file-pathname ;
+                  (make-pathname :name "FOO" :type "LISP" :case :common))
+                 (make-pathname :name "FOO-TESTS" :type "LISP" :case :common)
+                 (compile-file-pathname ;
+                  (make-pathname :name "FOO-TESTS" :type "LISP" :case :common)))))
+  t)
+
+(deftest (tangle-file-pathnames 2)
+  (let ((*default-pathname-defaults* (make-pathname)))
+    (equal (multiple-value-list
+            (tangle-file-pathnames (make-pathname :name "FOO" :case :common)
+                                   :output-file (make-pathname
+                                                 :directory '(:absolute "A" "B")
+                                                 :name "BAR"
+                                                 :type "FASL"
+                                                 :case :common)))
+           (list (make-pathname :name "FOO" :type "CLW" :case :common)
+                 (make-pathname :directory '(:absolute "A" "B")
+                                :name "BAR"
+                                :type "LISP" :case :common)
+                 (compile-file-pathname ;
+                  (make-pathname :directory '(:absolute "A" "B")
+                                 :name "BAR"
+                                 :type "LISP"
+                                 :case :common))
+                 (make-pathname :directory '(:absolute "A" "B")
+                                :name "FOO-TESTS"
+                                :type "LISP"
+                                :case :common)
+                 (compile-file-pathname ;
+                  (make-pathname :directory '(:absolute "A" "B")
+                                 :name "FOO-TESTS"
+                                 :type "LISP"
+                                 :case :common)))))
+  t)
+
+(deftest (tangle-file-pathnames 3)
+  (let ((*default-pathname-defaults* (make-pathname)))
+    (equal (multiple-value-list
+            (tangle-file-pathnames (make-pathname :name "FOO" :case :common)
+                                   :tests-file nil))
+           (list (make-pathname :name "FOO" :type "CLW" :case :common)
+                 (make-pathname :name "FOO" :type "LISP" :case :common)
+                 (compile-file-pathname ;
+                  (make-pathname :name "FOO" :type "LISP" :case :common))
+                 nil
+                 nil)))
+  t)
 
 @ During tangling, we bind |*tangle-file-pathname*| and
 |*tangle-file-truename*| in the same way that |compile-file| binds
@@ -3208,7 +3278,9 @@ If successful, |weave| returns the truename of the output file.
                      :direction :input ;
                      :external-format external-format)
       (read-sections input))
-    (let ((tests-file (apply #'tests-file-pathname output-file "TEX" args)))
+    (let ((tests-file (apply #'tests-file-pathname input-file "TEX" ;
+                             :output-file output-file ;
+                             args)))
       (when (and tests-file (> (length *test-sections*) 1))
         (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
         (multiple-value-bind (input-file output-file index-file sections-file)

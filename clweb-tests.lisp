@@ -480,9 +480,66 @@
           (MAKE-PATHNAME :NAME "FOO-TESTS" :TYPE "TEX" :CASE :COMMON))
          T)
 (DEFTEST (TESTS-FILE-PATHNAME 3)
+         (EQUAL
+          (TESTS-FILE-PATHNAME (MAKE-PATHNAME :NAME "FOO" :CASE :COMMON) "TEX"
+                               :OUTPUT-FILE
+                               (MAKE-PATHNAME :DIRECTORY '(:ABSOLUTE "A" "B")
+                                              :CASE :COMMON))
+          (MAKE-PATHNAME :DIRECTORY '(:ABSOLUTE "A" "B") :NAME "FOO-TESTS"
+                         :TYPE "TEX" :CASE :COMMON))
+         T)
+(DEFTEST (TESTS-FILE-PATHNAME 4)
          (TESTS-FILE-PATHNAME (MAKE-PATHNAME :NAME "FOO" :CASE :COMMON) "LISP"
                               :TESTS-FILE NIL)
          NIL)
+(DEFTEST (TANGLE-FILE-PATHNAMES 1)
+         (LET ((*DEFAULT-PATHNAME-DEFAULTS* (MAKE-PATHNAME)))
+           (EQUAL
+            (MULTIPLE-VALUE-LIST
+             (TANGLE-FILE-PATHNAMES (MAKE-PATHNAME :NAME "FOO" :CASE :COMMON)))
+            (LIST (MAKE-PATHNAME :NAME "FOO" :TYPE "CLW" :CASE :COMMON)
+                  (MAKE-PATHNAME :NAME "FOO" :TYPE "LISP" :CASE :COMMON)
+                  (COMPILE-FILE-PATHNAME
+                   (MAKE-PATHNAME :NAME "FOO" :TYPE "LISP" :CASE :COMMON))
+                  (MAKE-PATHNAME :NAME "FOO-TESTS" :TYPE "LISP" :CASE :COMMON)
+                  (COMPILE-FILE-PATHNAME
+                   (MAKE-PATHNAME :NAME "FOO-TESTS" :TYPE "LISP" :CASE
+                                  :COMMON)))))
+         T)
+(DEFTEST (TANGLE-FILE-PATHNAMES 2)
+         (LET ((*DEFAULT-PATHNAME-DEFAULTS* (MAKE-PATHNAME)))
+           (EQUAL
+            (MULTIPLE-VALUE-LIST
+             (TANGLE-FILE-PATHNAMES (MAKE-PATHNAME :NAME "FOO" :CASE :COMMON)
+                                    :OUTPUT-FILE
+                                    (MAKE-PATHNAME :DIRECTORY
+                                                   '(:ABSOLUTE "A" "B") :NAME
+                                                   "BAR" :TYPE "FASL" :CASE
+                                                   :COMMON)))
+            (LIST (MAKE-PATHNAME :NAME "FOO" :TYPE "CLW" :CASE :COMMON)
+                  (MAKE-PATHNAME :DIRECTORY '(:ABSOLUTE "A" "B") :NAME "BAR"
+                                 :TYPE "LISP" :CASE :COMMON)
+                  (COMPILE-FILE-PATHNAME
+                   (MAKE-PATHNAME :DIRECTORY '(:ABSOLUTE "A" "B") :NAME "BAR"
+                                  :TYPE "LISP" :CASE :COMMON))
+                  (MAKE-PATHNAME :DIRECTORY '(:ABSOLUTE "A" "B") :NAME
+                                 "FOO-TESTS" :TYPE "LISP" :CASE :COMMON)
+                  (COMPILE-FILE-PATHNAME
+                   (MAKE-PATHNAME :DIRECTORY '(:ABSOLUTE "A" "B") :NAME
+                                  "FOO-TESTS" :TYPE "LISP" :CASE :COMMON)))))
+         T)
+(DEFTEST (TANGLE-FILE-PATHNAMES 3)
+         (LET ((*DEFAULT-PATHNAME-DEFAULTS* (MAKE-PATHNAME)))
+           (EQUAL
+            (MULTIPLE-VALUE-LIST
+             (TANGLE-FILE-PATHNAMES (MAKE-PATHNAME :NAME "FOO" :CASE :COMMON)
+                                    :TESTS-FILE NIL))
+            (LIST (MAKE-PATHNAME :NAME "FOO" :TYPE "CLW" :CASE :COMMON)
+                  (MAKE-PATHNAME :NAME "FOO" :TYPE "LISP" :CASE :COMMON)
+                  (COMPILE-FILE-PATHNAME
+                   (MAKE-PATHNAME :NAME "FOO" :TYPE "LISP" :CASE :COMMON))
+                  NIL NIL)))
+         T)
 (DEFTEST PRINT-ESCAPED
          (WITH-OUTPUT-TO-STRING (S) (PRINT-ESCAPED S "foo#{bar}*baz"))
          "foo\\#$\\{$bar$\\}$*baz")
