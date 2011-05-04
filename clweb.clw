@@ -3098,19 +3098,16 @@ filename by replacing its type with the type of the defaulted output file.
 (defun tangle-file-pathnames (input-file &rest args &key ;
                               output-file tests-file &allow-other-keys)
   (declare (ignorable output-file tests-file))
-  (let* ((input-file (merge-pathnames input-file ;
-                                      (make-pathname :type "CLW" ;
-                                                     :case :common)))
-         (output-file (apply #'compile-file-pathname input-file ;
-                             :allow-other-keys t args))
-         (lisp-file (merge-pathnames (make-pathname :type "LISP" ;
-                                                    :case :common) ;
-                                     output-file))
-         (tests-file (apply #'tests-file-pathname output-file "LISP" args))
-         (tests-output-file ;
-          (merge-pathnames (make-pathname :type (pathname-type output-file)) ;
-                           tests-file)))
-    (values input-file lisp-file output-file tests-file tests-output-file)))
+  (flet ((make-type (type) (make-pathname :type type :case :common)))
+    (let* ((input-file (merge-pathnames input-file (make-type "CLW")))
+           (output-file (apply #'compile-file-pathname input-file ;
+                               :allow-other-keys t args))
+           (lisp-file (merge-pathnames (make-type "LISP") output-file))
+           (tests-file (apply #'tests-file-pathname output-file "LISP" args))
+           (tests-output-file ;
+            (merge-pathnames (make-pathname :type (pathname-type output-file)) ;
+                             tests-file)))
+      (values input-file lisp-file output-file tests-file tests-output-file))))
 
 @ During tangling, we bind |*tangle-file-pathname*| and
 |*tangle-file-truename*| in the same way that |compile-file| binds
@@ -3274,29 +3271,22 @@ by replacing its type component with~`\.{SCN}'.
 (defun weave-pathnames (input-file &key output-file ;
                         (index-file nil index-file-supplied) ;
                         &allow-other-keys)
-  (let* ((input-file (merge-pathnames input-file ;
-                                      (make-pathname :type "CLW" ;
-                                                     :case :common)))
-         (output-file (let ((output-file-defaults
-                             (merge-pathnames (make-pathname :type "TEX" ;
-                                                             :case :common) ;
-                                              input-file)))
-                        (if output-file
-                            (merge-pathnames output-file output-file-defaults)
-                            output-file-defaults)))
-         (index-file (let ((index-file-defaults
-                            (merge-pathnames (make-pathname :type "IDX" ;
-                                                            :case :common) ;
-                                             output-file)))
-                       (if index-file
-                           (merge-pathnames index-file index-file-defaults)
-                           (when (not index-file-supplied)
-                             index-file-defaults))))
-         (sections-file (when index-file
-                          (merge-pathnames (make-pathname :type "SCN" ;
-                                                          :case :common) ;
-                                           index-file))))
-    (values input-file output-file index-file sections-file)))
+  (flet ((make-type (type) (make-pathname :type type :case :common)))
+    (let* ((input-file (merge-pathnames input-file (make-type "CLW")))
+           (output-file (let ((output-file-defaults ;
+                               (merge-pathnames (make-type "TEX") input-file)))
+                          (if output-file
+                              (merge-pathnames output-file output-file-defaults)
+                              output-file-defaults)))
+           (index-file (let ((index-file-defaults ;
+                              (merge-pathnames (make-type "IDX") output-file)))
+                         (if index-file
+                             (merge-pathnames index-file index-file-defaults)
+                             (when (not index-file-supplied) ;
+                               index-file-defaults))))
+           (sections-file (when index-file ;
+                            (merge-pathnames (make-type "SCN") index-file))))
+      (values input-file output-file index-file sections-file))))
 
 @ @<Global variables@>=
 (defvar *weave-verbose* t
