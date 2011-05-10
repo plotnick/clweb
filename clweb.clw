@@ -427,16 +427,16 @@ a hash table so that we can support abbreviations (see below).
 
 @ The primary interface to the {\sc bst} is the following routine, which
 attempts to locate the node with key |item| in the tree rooted at |root|.
-If it is not already present and the |:insert-if-not-found| argument
+If it is not already present and the |insert-if-not-found| argument
 is true, a new node is created with that key and added to the tree. The
-arguments |:predicate| and |:test| should be designators for functions
-of two arguments, both of which will be node keys; |:predicate| should
+arguments |predicate| and |test| should be designators for functions
+of two arguments, both of which will be node keys; |predicate| should
 return true iff its first argument precedes its second in the total
-ordering used for the tree, and |:test| should return true iff the two
+ordering used for the tree, and |test| should return true iff the two
 keys are to be considered equivalent.
 
 Two values are returned: the node with key |item| (or |nil| if no such node
-was found and |:insert-if-not-found| is false), and a boolean representing
+was found and |insert-if-not-found| is false), and a boolean representing
 whether or not the node was already in the tree.
 
 @l
@@ -578,7 +578,7 @@ segment of the name.
 (deftest (section-name-prefix-p 3) (section-name-prefix-p "abcd...") t 4)
 
 @ Next we need some special comparison routines for section names that
-might be abbreviations. We'll use these as the |:test| and |:predicate|
+might be abbreviations. We'll use these as the |test| and |predicate|
 functions, respectively, for our {\sc bst}.
 
 @l
@@ -2961,7 +2961,7 @@ otherwise, they will replace them."
       (delete-file file))))
 
 @ Both Allegro and CCL get the wrong case for pathname components created
-using |make-pathname| with a supplied |:defaults| argument when |:case|
+using |make-pathname| with a supplied |defaults| argument when |case|
 is |:common|. This simple wrapper seems to behave correctly.
 
 @l
@@ -3067,7 +3067,7 @@ file. We compile the tests file, if any, {\it after\/} the tangled file,
 on the assumption that the tests might require a module provided by the
 output file. Note that this might cause the output file to be unintentionally
 loaded; the work-around is to disable production of the tests file by
-supplying a null |:tests-file| argument.
+supplying a null |tests-file| argument.
 
 @l
 (defun tangle-file (input-file &rest args &key output-file tests-file
@@ -6286,7 +6286,7 @@ simple function.
     (atom x)
     (t (maptree #'unsubstitute-referring-symbols x))))
 
-@ To get referring symbols in the tangled code, we'll use an |:around|
+@ To get referring symbols in the tangled code, we'll use an around
 method on |section-code| that conditions on a special variable,
 |*indexing*|, that we'll bind to true while we're tangling for the
 purposes of indexing.
@@ -6351,9 +6351,9 @@ functions and macros, so we'll work our way up from the lowest level.
 
 The function |walk-sections| takes a walker, a list of section specifiers,
 and an environment, and walks the code in the given sections as the indexer
-does. It accepts two keyword arguments as options: if |:verify-walk| is true,
+does. It accepts two keyword arguments as options: if |verify-walk| is true,
 it will assert that the walked forms are |tree-equal| to the originals, and
-the |:toplevel| argument is passed down to |walk-form|. It returns a list of
+the |toplevel| argument is passed down to |walk-form|. It returns a list of
 walked forms.
 
 @l
@@ -6377,9 +6377,9 @@ entries created by the walk with a list of expected entries. It returns a
 boolean representing the result of that comparison.
 
 Along with the keyword argument accepted by |walk-sections|, it takes
-three others: |:index-lexicals| provides the value to which
-|*index-lexical-variables*| will be bound during the walk; |:trace|
-controls whether the walk should be traced or not; and~|:print| sets the
+three others: |index-lexicals| provides the value to which
+|*index-lexical-variables*| will be bound during the walk; |trace|
+controls whether the walk should be traced or not; and~|print| sets the
 verbosity level: if it's true, the walked forms and the actual index
 entries will be printed to standard output.
 
@@ -6409,11 +6409,11 @@ The name of the test will be `(|index| \<name>)', where \<name> comes from
 the |name-and-options| argument. It behaves like the first argument to
 |defstruct|: if it's an atom, it's just a name, but if it's a list, the car
 of the list is used as the name and the cdr is interpreted as a plist of
-keyword options. Only one of those options, |:aux|, is interpreted directly
+keyword options. Only one of those options, |aux|, is interpreted directly
 by |define-indexing-test|; the rest are passed down to the helper functions
 |test-indexing-walk| and |walk-sections|.
 
-The |:aux| option, if provided, should be an unquoted list of symbols.
+The |aux| option, if provided, should be an unquoted list of symbols.
 Each of those symbols will be used as the name of a variable bound in
 the body of the test to a symbol with the same name interned in a temporary
 package. That package will be added to the |*index-packages*| list, and
