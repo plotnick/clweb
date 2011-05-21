@@ -4541,7 +4541,7 @@ which will be true if the form occurs at top level.
 it treats its car as a function name and walks its cdr.
 
 @l
-(defmethod walk-compound-form ((walker walker) (operator symbol) form env &key
+(defmethod walk-compound-form ((walker walker) (operator symbol) form env &key ;
                                toplevel)
   (declare (ignore toplevel))
   `(,(walk-name walker (car form) (make-context 'operator) env)
@@ -4620,7 +4620,7 @@ environment object.
 environment.
 
 @l
-(defmethod walk-bindings ((walker walker) names (namespace namespace)
+(defmethod walk-bindings ((walker walker) names (namespace namespace) ;
                           env &key declare)
   (declare (ignore declare))
   (values (mapcar (lambda (name) (walk-name walker name namespace env)) names)
@@ -5414,7 +5414,7 @@ declarations that can affect function bindings, so we simply ignore any
 supplied declarations.
 
 @l
-(defmethod walk-bindings ((walker walker) names (namespace function-name)
+(defmethod walk-bindings ((walker walker) names (namespace function-name) ;
                           env &key declare)
   (declare (ignore declare))
   (values names
@@ -5427,7 +5427,7 @@ supplied declarations.
       (parse-body (cddr form) :walker walker :env env)
     (let* ((bindings (cadr form))
            (context (make-context 'function-name :local t))
-           (fns (mapcar (lambda (fn)
+           (fns (mapcar (lambda (fn) ;
                           (walk-lambda-expression walker fn context env))
                         bindings)))
       (multiple-value-bind (function-names env)
@@ -5465,16 +5465,16 @@ include definitions as well as names. We need to build the expander functions
 using |parse-macro| and |enclose| before we add them to the environment.
 
 @l
-(defmethod walk-bindings ((walker walker) defs (namespace macro-definition)
+(defmethod walk-bindings ((walker walker) defs (namespace macro-definition) ;
                           env &key declare)
-  (let* ((fns (mapcar (lambda (exp)
+  (let* ((fns (mapcar (lambda (exp) ;
                         (walk-lambda-expression walker exp nil env))
                       defs))
          (defs (mapcar (lambda (def)
                          (destructuring-bind (name lambda-list &rest body) def
                            (list name
                                  (enclose (parse-macro name lambda-list ;
-                                                       body env)
+                                                       body env) ;
                                           env walker))))
                        fns)))
     (values fns (augment-environment env :macro defs :declare declare))))
@@ -5585,7 +5585,7 @@ and |labels|, which does so before walking any of its bindings.
           (push function-name function-names)
           (setq env new-env)))
       `(,(car form)
-        ,(mapcar (lambda (p)
+        ,(mapcar (lambda (p) ;
                    (walk-lambda-expression walker p context env))
                  (mapcar #'cons function-names (mapcar #'cdr bindings)))
         ,@(when decls `((declare ,@decls)))

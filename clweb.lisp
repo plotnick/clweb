@@ -281,7 +281,8 @@
         AND
         COLLECT CHAR INTO CHARS
         FINALLY (RETURN (COERCE CHARS 'STRING))))
-#-:CCL (defun whitespacep (char) (find char *whitespace* :test #'char=))
+#-:CCL 
+(defun whitespacep (char) (find char *whitespace* :test #'char=))
 (DEFUN FIND-SECTION (NAME &AUX (NAME (SQUEEZE NAME)))
   (IF (NULL *NAMED-SECTIONS*)
       (VALUES (SETQ *NAMED-SECTIONS* (MAKE-INSTANCE 'NAMED-SECTION :NAME NAME))
@@ -1155,8 +1156,8 @@ otherwise, they will replace them."
         (WITH-OPEN-FILE (STREAM FILE :DIRECTION :INPUT)
           (LOAD-WEB-FROM-STREAM STREAM T :APPEND APPEND))
       (DELETE-FILE FILE))))
-#+(:OR :ALLEGRO
-   :CCL) (defun make-pathname (&key host device directory name type version
+#+(:OR :ALLEGRO :CCL) 
+(defun make-pathname (&key host device directory name type version
                       (defaults
                        (cl:make-pathname :host (pathname-host
                                                 *default-pathname-defaults*
@@ -1708,8 +1709,10 @@ otherwise, they will replace them."
          (APPLY ,ORIG ARGS)
        (DECLARE (IGNORE LOCATIVE))
        (VALUES TYPE LOCAL DECLARATIONS))))
-#+:ALLEGRO (reorder-env-information variable-information #'sys:variable-information)
-#+:ALLEGRO (reorder-env-information function-information #'sys:function-information)
+#+:ALLEGRO 
+(reorder-env-information variable-information #'sys:variable-information)
+#+:ALLEGRO 
+(reorder-env-information function-information #'sys:function-information)
 (DEFCLASS WALK-CONTEXT NIL NIL)
 (DEFUN MAKE-CONTEXT (CONTEXT &REST ARGS) (APPLY #'MAKE-INSTANCE CONTEXT ARGS))
 (DEFCLASS NAMESPACE (WALK-CONTEXT)
