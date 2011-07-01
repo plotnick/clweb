@@ -2527,6 +2527,8 @@ otherwise, they will replace them."
                (LET ((REFSYM (COPY-SYMBOL SYMBOL)))
                  (SETF (SYMBOL-VALUE REFSYM) SYMBOL)
                  (SETF (GET REFSYM 'SECTION) SECTION)
+                 (LET ((FUNCTION (MACRO-FUNCTION SYMBOL)))
+                   (WHEN FUNCTION (SETF (MACRO-FUNCTION REFSYM) FUNCTION)))
                  (CONS SYMBOL REFSYM)))
              (SUBSTITUTE-SYMBOLS (FORM)
                (COND

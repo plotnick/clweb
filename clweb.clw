@@ -6201,7 +6201,9 @@ place, we make a special kind of copy of each form, and splice that into
 place. These copies will have each interesting symbol replaced with an
 uninterned symbol whose value cell contains the symbol it replaced and
 whose |section| property contains the section in which the original symbol
-occurred. We'll these uninterned symbols {\it referring symbols}.
+occurred. We'll call these uninterned symbols {\it referring symbols}.
+If the original symbol has a global definition as a macro, we'll copy
+that, too, so as not to break code walkers and such.
 @^referring symbols@>
 
 First, we'll need a routine that does the substitution just described.
@@ -6222,6 +6224,9 @@ care to substitute inside of commas, too.
                (let ((refsym (copy-symbol symbol)))
                  (setf (symbol-value refsym) symbol)
                  (setf (get refsym 'section) section)
+                 (let ((function (macro-function symbol)))
+                   (when function
+                     (setf (macro-function refsym) function)))
                  (cons symbol refsym)))
              (substitute-symbols (form)
                (cond ((commap form)
