@@ -704,16 +704,18 @@ to determine what characters currently have whitespace syntax.
 #-ccl
 (defun whitespacep (char) (find char *whitespace* :test #'char=))
 
-@ This list should contain the characters named `Space', `Tab', `Newline',
-`Linefeed', `Page', and~`Return', in that order. However, `Linefeed' might
-be the same character as `Newline' or `Return', and so might not appear as
-a distinct character. This is a known bug, caused by the fact that we're
-not currently overriding the character name reader.
-@^bug, known@>
+@ Only the characters named `Newline' and `Space' are required to be
+present in a conforming Common Lisp implementation, but most also
+support the semi-standard names `Tab', `Linefeed', `Return', and~`Page'.
+Any of these that are supported should be considered whitespace characters.
 
 @<Glob...@>=
 (defparameter *whitespace*
-  #.(coerce '(#\Space #\Tab #\Newline #\Linefeed #\Page #\Return) 'string))
+  #.(coerce (remove-duplicates
+             (remove nil (mapcar #'name-char
+                                 '("Newline" "Space" ;
+                                   "Tab" "Linefeed" "Return" "Page"))))
+            'string))
 
 @ The next routine is our primary interface to named sections: it looks up
 a section by name in the tree, and creates a new one if no such section
