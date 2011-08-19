@@ -2895,7 +2895,7 @@ otherwise, they will replace them."
                                        (SECTION-NUMBER (LOCATION LOC))))))))
 (SET-WEAVE-DISPATCH 'SECTION-RANGE
                     (LAMBDA (STREAM RANGE)
-                      (FORMAT STREAM "\\hbox{~D--~D}"
+                      (FORMAT STREAM "~D--~D"
                               (SECTION-NUMBER (START-SECTION RANGE))
                               (SECTION-NUMBER (END-SECTION RANGE)))))
 (SET-WEAVE-DISPATCH 'SECTION-LOCATOR

@@ -7200,7 +7200,7 @@ part of a range.
 
 (set-weave-dispatch 'section-range
   (lambda (stream range)
-    (format stream "\\hbox{~D--~D}"
+    (format stream "~D--~D"
             (section-number (start-section range))
             (section-number (end-section range)))))
 
