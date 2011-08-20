@@ -4235,15 +4235,15 @@ macro that eliminates some syntactic redundancies and sets up the
 \hbox{namespace name $\rightarrow$ namespace class} mapping.
 
 @l
-(defmacro defnamespace (class-name (&rest supers) &optional
+(defmacro defnamespace (class-name (&rest supers) &optional ;
                         namespace-name other-slot-specs)
   `(progn
      (defclass ,class-name ,(or supers '(namespace))
-       (,@(when namespace-name ;
+       (,@(when namespace-name
              `((name :initform ',namespace-name :allocation :class)))
         ,@other-slot-specs))
      ,@(when namespace-name
-         `((setf (find-namespace-class ',namespace-name)
+         `((setf (find-namespace-class ',namespace-name) ;
                  (find-class ',class-name))))))
 
 @<Define namespace classes@>
