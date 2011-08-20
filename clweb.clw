@@ -6164,8 +6164,8 @@ is {\it not\/} re-initialized on each run.
   (when *index-lexical-variables*
     (call-next-method)))
 
-@ We index special (sometimes) lexical variables, but we don't want to
-index undifferentiated variable names (e.g., as occur in declarations,
+@ We index special and (sometimes) lexical variables, but we don't want
+to index undifferentiated variable names (e.g., as occur in declarations,
 \etc.).
 
 @l
