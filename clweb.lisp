@@ -273,19 +273,20 @@
          (VALUES NODE T))
         (VALUES NODE NIL))))
 (DEFUN SQUEEZE (STRING)
-  (LOOP WITH SQUEEZING = NIL
-        FOR CHAR ACROSS (STRING-TRIM *WHITESPACE* STRING)
-        IF (NOT SQUEEZING)
-        IF (WHITESPACEP CHAR)
-        DO (SETQ SQUEEZING T)
-        AND
-        COLLECT #\  INTO CHARS ELSE
-        COLLECT CHAR INTO CHARS ELSE
-        UNLESS (WHITESPACEP CHAR)
-        DO (SETQ SQUEEZING NIL)
-        AND
-        COLLECT CHAR INTO CHARS
-        FINALLY (RETURN (COERCE CHARS 'STRING))))
+  (WITH-INPUT-FROM-STRING (*STANDARD-INPUT* STRING)
+    (WITH-OUTPUT-TO-STRING (*STANDARD-OUTPUT*)
+      (HANDLER-CASE
+       (FLET ((SNARF-WHITESPACE ()
+                (LOOP FOR CHAR = (READ-CHAR)
+                      WHILE (WHITESPACEP CHAR)
+                      FINALLY (UNREAD-CHAR CHAR))))
+         (LOOP INITIALLY (SNARF-WHITESPACE)
+               FOR CHAR = (READ-CHAR)
+               DO (WRITE-CHAR
+                   (IF (WHITESPACEP CHAR)
+                       (PROGN (SNARF-WHITESPACE) #\ )
+                       CHAR))))
+       (END-OF-FILE NIL)))))
 #-:CCL 
 (defun whitespacep (char) (find char *whitespace* :test #'char=))
 (DEFUN FIND-SECTION (NAME &AUX (NAME (SQUEEZE NAME)))

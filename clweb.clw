@@ -673,21 +673,24 @@ the same as the reason |*sections*| was: to allow incremental redefinition.
 
 @ Section names are normalized by |squeeze|, which trims leading and
 trailing whitespace and replaces all runs of one or more whitespace
-characters with a single space.
+characters with a single space. Thanks to Richard M.~Kreuter for the
+basic structure of this implementation.
 
 @l
 (defun squeeze (string)
-  (loop with squeezing = nil
-        for char across (string-trim *whitespace* string)
-        if (not squeezing)
-          if (whitespacep char)
-            do (setq squeezing t) and collect #\Space into chars
-          else
-            collect char into chars
-        else
-          unless (whitespacep char)
-            do (setq squeezing nil) and collect char into chars
-        finally (return (coerce chars 'string))))
+  (with-input-from-string (*standard-input* string)
+    (with-output-to-string (*standard-output*)
+      (handler-case
+          (flet ((snarf-whitespace ()
+                   (loop for char = (read-char)
+                         while (whitespacep char)
+                         finally (unread-char char))))
+            (loop initially (snarf-whitespace)
+                  for char = (read-char)
+                  do (write-char (if (whitespacep char)
+                                     (progn (snarf-whitespace) #\Space)
+                                     char))))
+        (end-of-file ())))))
 
 @t@l
 (deftest (squeeze 1) (squeeze "abc") "abc")
