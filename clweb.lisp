@@ -287,8 +287,7 @@
                        (PROGN (SNARF-WHITESPACE) #\ )
                        CHAR))))
        (END-OF-FILE NIL)))))
-#-:CCL 
-(defun whitespacep (char) (find char *whitespace* :test #'char=))
+(DEFUN WHITESPACEP (CHAR) (FIND CHAR *WHITESPACE* :TEST #'CHAR=))
 (DEFUN FIND-SECTION (NAME &AUX (NAME (SQUEEZE NAME)))
   (IF (NULL *NAMED-SECTIONS*)
       (VALUES (SETQ *NAMED-SECTIONS* (MAKE-INSTANCE 'NAMED-SECTION :NAME NAME))

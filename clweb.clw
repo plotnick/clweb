@@ -118,7 +118,8 @@ signaled while processing a web.
            #+allegro "ENSURE-PORTABLE-WALKING-ENVIRONMENT"
            #+allegro "FUNCTION-INFORMATION"
            #+allegro "VARIABLE-INFORMATION"
-           #+(or allegro ccl) "MAKE-PATHNAME"))
+           #+(or allegro ccl) "MAKE-PATHNAME"
+           #+ccl "WHITESPACEP"))
 @e
 (in-package "CLWEB")
 
@@ -697,15 +698,14 @@ basic structure of this implementation.
 (deftest (squeeze 2) (squeeze "ab c") "ab c")
 (deftest (squeeze 3) (squeeze (format nil " a b ~C c " #\Tab)) "a b c")
 
-@ Clozure Common Lisp provides a suitable definition for this predicate, but
-it's simple enough to define it ourselves. Note, however, that this routine
-does not---and can not, at least not portably---look at the current readtable
-to determine what characters currently have whitespace syntax.
-@^Clozure Common Lisp@>
+@ The predicate |whitespacep| determines whether or not a given character
+should be treated as whitespace. Note, however, that this routine does
+not---and can not, at least not portably---examine the current readtable
+to determine which characters currently have ${\it whitespace}_2$ syntax.
 
 @l
-#-ccl
-(defun whitespacep (char) (find char *whitespace* :test #'char=))
+(defun whitespacep (char)
+  (find char *whitespace* :test #'char=))
 
 @ Only the characters named `Newline' and `Space' are required to be
 present in a conforming Common Lisp implementation, but most also
