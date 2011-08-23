@@ -2886,8 +2886,7 @@ expanded. Like |tangle-1|, it returns the possibly-expanded form and an
 (defun tangle (form &key (expand-named-sections t))
   (labels ((expand (form expanded)
              (multiple-value-bind (new-form newly-expanded-p)
-                 (tangle-1 form
-                           :expand-named-sections expand-named-sections)
+                 (tangle-1 form :expand-named-sections expand-named-sections)
                (if newly-expanded-p
                    (expand new-form t)
                    (values new-form expanded)))))
