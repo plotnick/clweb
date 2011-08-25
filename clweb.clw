@@ -4457,11 +4457,11 @@ car is not a macro, or~a special form, we return the walked form and break
 out of the macro-expansion loop.
 
 @<Walk |form|@>=
-(cond ((atom form) @<Walk the atom |form|@>)
+(cond ((atom form)
+       @<Walk the atom |form|@>)
       ((not (symbolp (car form)))
        (return (walk-list walker form env toplevel)))
-      ((or (not expanded)
-           (walk-as-special-form-p walker (car form) form env))
+      ((or (not expanded) (walk-as-special-form-p walker (car form) form env))
        (return (walk-compound-form walker (car form) form env ;
                                    :toplevel toplevel)))
       (t form))
