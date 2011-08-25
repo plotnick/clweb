@@ -1054,8 +1054,8 @@
        FOO))))
  ("FOO local symbol macro" ((:DEF 0))))
 (DEFINE-INDEXING-TEST CATCH/THROW
- '((:SECTION :CODE ((CATCH 'FOO (THROW 'BAR :BAR))))) ("BAR catch tag" (0))
- ("FOO catch tag" ((:DEF 0))))
+ '((:SECTION :CODE ((CATCH 'FOO (THROW 'BAR (THROW (LAMBDA () 'BAZ) T))))))
+ ("BAR catch tag" (0)) ("FOO catch tag" ((:DEF 0))))
 (DEFVAR *SUPER* T)
 (DEFINE-SYMBOL-MACRO BAIT SWITCH)
 (DEFCONSTANT THE-ULTIMATE-ANSWER 42)

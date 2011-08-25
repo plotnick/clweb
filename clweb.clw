@@ -6643,7 +6643,7 @@ about one specific kind of tag: quoted symbols.
 
 @t@l
 (define-indexing-test catch/throw
-  '((:section :code ((catch 'foo (throw 'bar :bar)))))
+  '((:section :code ((catch 'foo (throw 'bar (throw (lambda () 'baz) t))))))
   ("BAR catch tag" (0))
   ("FOO catch tag" ((:def 0))))
 
