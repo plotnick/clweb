@@ -4596,9 +4596,9 @@ it treats its car as a function name and walks its cdr.
          (not (lambda-expression-p 'lambda))))
   t)
 
-@ Whenever we can recognize a form as a name---as a variable name, a function
-names, \etc.---we'll walk it using this function. The |context| argument is
-an object that describes the namespace in which the name occurs.
+@ Whenever we can recognize a form as a name---a variable name, a function
+name, \etc.---we'll walk it using this function. The |context| argument
+describes the namespace in which the name resides.
 
 @ @<Walker generic functions@>=
 (defgeneric walk-name (walker name context env &key))
