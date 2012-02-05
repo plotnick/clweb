@@ -727,13 +727,12 @@ exists.
 @l
 (defun find-section (name &aux (name (squeeze name)))
   (if (null *named-sections*)
-      (values (setq *named-sections* (make-instance 'named-section :name name));
-              nil)
+      (setq *named-sections* (make-instance 'named-section :name name))
       (multiple-value-bind (section present-p)
           (find-or-insert name *named-sections*)
         (when present-p
           @<Update the section name if the new one is better@>)
-        (values section present-p))))
+        section)))
 
 @ We only actually update the name of a section in two cases: if the new
 name is not an abbreviation but the old one was, or if they are both
