@@ -1976,10 +1976,10 @@ length abbreviation that \.{\#()} does.
                                 (readtable-for-mode mode)))
 
 @ @<Read `0's and `1's...@>=
-(loop for char = (read-char stream nil #\Space t)
-      while (or (char= char #\0) (char= char #\1))
+(loop for char = (read-char stream nil nil t)
+      while (and char (or (char= char #\0) (char= char #\1)))
       collect (ecase char (#\0 0) (#\1 1))
-      finally (unread-char char stream))
+      finally (when char (unread-char char stream)))
 
 @t@l
 (deftest read-bit-vector
