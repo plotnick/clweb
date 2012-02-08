@@ -3058,6 +3058,20 @@ the default table.
   (set-pprint-dispatch type-specifier function priority ;
                        *tangle-pprint-dispatch*))
 
+@ \ansi\ Common Lisp's |open| specification was intended to allow an
+implementation to supply semantics for the various |:if-exists| modes
+consistent with the conventions of the file system with which the program
+interacted, including, notably, allowing the default |:if-exists|
+disposition of |:new-version| to have the same semantics as some other
+opening mode. The implementors of SBCL, however, chose to needlessly
+inconvenience their users by making the default |:if-exists| disposition
+signal an error.
+@^\ansi\ Common Lisp@>
+@^SBCL@>
+
+@<|:if-exists| default disposition@>=
+#+sbcl :supersede #-sbcl :new-version
+
 @ The file tangler operates by writing out the tangled code to a Lisp source
 file and then invoking the file compiler on that file. The arguments are
 essentially the same as those to |compile-file|, except for the |tests-file|
@@ -3076,6 +3090,7 @@ supplying a null |tests-file| argument.
 (defun tangle-file (input-file &rest args &key output-file tests-file
                     (verbose *compile-verbose*)
                     (print *compile-print*)
+                    (if-exists @<|:if-exists|...@>)
                     (external-format :default) &allow-other-keys &aux
                     (*readtable* *readtable*)
                     (*package* *package*))
@@ -3098,12 +3113,14 @@ supplying a null |tests-file| argument.
              (tangle-sections *test-sections*
                               :input-file input-file
                               :output-file tests-file
+                              :if-exists if-exists
                               :external-format external-format))
             (t (setq tests-file nil)))
       (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
       (tangle-sections *sections*
                        :input-file input-file
                        :output-file lisp-file
+                       :if-exists if-exists
                        :external-format external-format)
       (multiple-value-prog1
           (compile-file lisp-file
@@ -3221,10 +3238,11 @@ to the intermediate Lisp source file. It's used for both ordinary and test
 sections.
 
 @l
-(defun tangle-sections (sections &key input-file output-file external-format)
+(defun tangle-sections (sections &key input-file output-file ;
+                        if-exists external-format)
   (with-open-file (output output-file
                    :direction :output
-                   :if-exists :supersede
+                   :if-exists if-exists
                    :external-format external-format)
     (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%" input-file)
     (let ((*evaluating* nil)
@@ -3424,12 +3442,14 @@ currently weaving the tests.
 @l
 (defun weave-sections (sections &key input-file output-file ;
                        index-file sections-file
-                       weaving-tests verbose print external-format)
+                       weaving-tests verbose print
+                       (if-exists  @<|:if-exists|...@>)
+                       external-format)
   (macrolet ((with-output-file ((stream filespec) &body body)
                `(with-open-file (,stream ,filespec
                                  :direction :output
                                  :external-format external-format
-                                 :if-exists :supersede)
+                                 :if-exists if-exists)
                   ,@body)))
     (with-output-file (out output-file)
       (format out "\\input clwebmac~%")
