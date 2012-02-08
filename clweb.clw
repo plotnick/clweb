@@ -3190,8 +3190,13 @@ filename by replacing its type with the type of the defaulted output file.
   #.(compile-file-pathname #P"clweb-test:foo-tests.lisp"))
 
 (deftest (tangle-file-pathnames 2)
-  (tangle-file-pathnames #P"clweb-test:foo"
-                         :output-file #P"clweb-test:a;b;bar.fasl")
+  (let* ((input-file #P"clweb-test:foo")
+         (fasl-type (pathname-type (compile-file-pathname input-file) ;
+                                   :case :common))
+         (output-file (make-pathname :type fasl-type
+                                     :defaults #P"clweb-test:a;b;bar"
+                                     :case :common)))
+    (tangle-file-pathnames input-file :output-file output-file))
   #P"clweb-test:foo.clw.newest"
   #P"clweb-test:a;b;bar.lisp.newest"
   #.(compile-file-pathname #P"clweb-test:a;b;bar.lisp")

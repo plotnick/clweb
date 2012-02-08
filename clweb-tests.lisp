@@ -489,8 +489,14 @@
          #P"clweb-test:foo-tests.lisp.newest"
          #.(COMPILE-FILE-PATHNAME #P"clweb-test:foo-tests.lisp"))
 (DEFTEST (TANGLE-FILE-PATHNAMES 2)
-         (TANGLE-FILE-PATHNAMES #P"clweb-test:foo" :OUTPUT-FILE
-                                #P"clweb-test:a;b;bar.fasl")
+         (LET* ((INPUT-FILE #P"clweb-test:foo")
+                (FASL-TYPE
+                 (PATHNAME-TYPE (COMPILE-FILE-PATHNAME INPUT-FILE) :CASE
+                                :COMMON))
+                (OUTPUT-FILE
+                 (MAKE-PATHNAME :TYPE FASL-TYPE :DEFAULTS
+                                #P"clweb-test:a;b;bar" :CASE :COMMON)))
+           (TANGLE-FILE-PATHNAMES INPUT-FILE :OUTPUT-FILE OUTPUT-FILE))
          #P"clweb-test:foo.clw.newest" #P"clweb-test:a;b;bar.lisp.newest"
          #.(COMPILE-FILE-PATHNAME #P"clweb-test:a;b;bar.lisp")
          #P"clweb-test:a;b;foo-tests.lisp.newest"
