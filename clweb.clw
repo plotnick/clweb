@@ -6939,7 +6939,7 @@ function object instead.
 
 @t@l
 (deftest generic-function-p
-  (values (generic-function-p 'make-instance)
+  (values (not (null (generic-function-p 'make-instance)))
           (null (generic-function-p '#:foo))
           (not (null (generic-function-p (note-generic-function '#:foo)))))
   t t t)

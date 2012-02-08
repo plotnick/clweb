@@ -1131,7 +1131,7 @@
  ("FOO around method" ((:DEF 0))) ("FOO generic function" (1 (:DEF 0)))
  ("FOO generic setf function" ((:DEF 2))) ("FOO progn method" ((:DEF 0))))
 (DEFTEST GENERIC-FUNCTION-P
-         (VALUES (GENERIC-FUNCTION-P 'MAKE-INSTANCE)
+         (VALUES (NOT (NULL (GENERIC-FUNCTION-P 'MAKE-INSTANCE)))
                  (NULL (GENERIC-FUNCTION-P '#:FOO))
                  (NOT
                   (NULL (GENERIC-FUNCTION-P (NOTE-GENERIC-FUNCTION '#:FOO)))))
