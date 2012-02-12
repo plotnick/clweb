@@ -1434,13 +1434,13 @@ otherwise, they will replace them."
           (CODE (FORMAT STREAM "~&\\B~%")))
     (WHEN NAMED-SECTION
       (PRINT-SECTION-NAME STREAM NAMED-SECTION)
-      (FORMAT STREAM "${}~:[\\mathrel+~;~]\\E{}$~%"
+      (FORMAT STREAM "${}~:[\\mathrel+~;~]\\E{}$\\6~%"
               (= (SECTION-NUMBER SECTION) (SECTION-NUMBER NAMED-SECTION))))
     (WHEN CODE
       (DOLIST (FORM CODE)
         (IF (OR (LIST-MARKER-P FORM) (LISTP FORM))
             (FORMAT STREAM "~@<\\+~@;~W~;\\cr~:>" FORM)
-            (FORMAT STREAM "~W~:[\\par~;~]" FORM (NEWLINEP FORM))))
+            (FORMAT STREAM "~W~:[\\6~;~]" FORM (NEWLINEP FORM))))
       (FORMAT STREAM "~&\\egroup~%"))
     (WHEN
         (AND (NOT NAMED-SECTION) (TYPEP SECTION 'TEST-SECTION)

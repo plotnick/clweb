@@ -3601,13 +3601,13 @@ every line unless it's atomic. Last come the cross-references and a final
           (code (format stream "~&\\B~%")))
     (when named-section
       (print-section-name stream named-section)
-      (format stream "${}~:[\\mathrel+~;~]\\E{}$~%"
+      (format stream "${}~:[\\mathrel+~;~]\\E{}$\\6~%"
               (= (section-number section) (section-number named-section))))
     (when code
       (dolist (form code)
         (if (or (list-marker-p form) (listp form))
             (format stream "~@<\\+~@;~W~;\\cr~:>" form)
-            (format stream "~W~:[\\par~;~]" form (newlinep form))))
+            (format stream "~W~:[\\6~;~]" form (newlinep form))))
       (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}
     (when (and (not named-section)
                (typep section 'test-section)

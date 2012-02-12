@@ -15,8 +15,9 @@
   \normalbaselines\rm}
 \mainfont
 
-\def\1{\hskip.5em\relax}
-\def\2{\hskip1.5em\relax}
+\def\1{\hskip.5em\relax} % indent one level
+\def\2{\hskip1.5em\relax} % indent two levels
+\def\6{\ifmmode\else\par\ignorespaces\fi} % forced break
 
 {\catcode`\(=\active \catcode`\)=\active
  \gdef({{\rm\char`\(}\kern.025em}
