@@ -1,0 +1,58 @@
+#### .gitignore file for CLWEB.
+
+## Compiled files from various Lisps.
+# SBCL, Allegro Common Lisp
+*.fasl
+# ECL
+*.fas
+*.o
+*.so
+# Clisp
+*.fas
+*.lib
+# LispWorks (probably not comprehensive)
+*.xfasl
+# CCL, nee OpenMCL
+*.dfsl
+*.pfsl
+*.d64fsl
+*.p64fsl
+*.lx64fsl
+*.lx32fsl
+*.dx64fsl
+*.dx32fsl
+*.fx64fsl
+*.fx32fsl
+*.sx64fsl
+*.sx32fsl
+*.wx64fsl
+*.wx32fsl
+# CMUCL (from the CMUCL 20c sources)
+*.axpf
+*.amd64f
+*.hpf
+*.pmaxf
+*.sgif
+*.ppcf
+*.rtf
+*.eapcf
+*.sparcf
+*.sse2f
+*.x86f
+*.bytef
+*.lbytef
+
+## Compiled Elisp files
+*.elc
+
+## TeX outputs.
+*.idx
+*.scn
+*.aux
+*.log
+*.toc
+*.dvi
+*.pdf
+
+## CLWEB's own outputs
+/*.tex
