@@ -96,10 +96,7 @@ signaled while processing a web.
   #+sbcl (require "SB-CLTL2"))
 @e
 (defpackage "CLWEB"
-  (:use "COMMON-LISP"
-        #+sbcl "SB-CLTL2"
-        #+allegro "SYS"
-        #+ccl "CCL")
+  (:use "COMMON-LISP")
   (:export "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
@@ -114,12 +111,15 @@ signaled while processing a web.
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
-  (:shadow "ENCLOSE"
-           #+allegro "ENSURE-PORTABLE-WALKING-ENVIRONMENT"
-           #+allegro "FUNCTION-INFORMATION"
-           #+allegro "VARIABLE-INFORMATION"
-           #+(or allegro ccl) "MAKE-PATHNAME"
-           #+ccl "WHITESPACEP"))
+  (:shadow #+(or allegro ccl) "MAKE-PATHNAME")
+  #+(or sbcl ccl allegro)
+  (:import-from #+sbcl "SB-CLTL2"
+                #+ccl "CCL"
+                #+allegro "SYS"
+                #-allegro "FUNCTION-INFORMATION"
+                #-allegro "VARIABLE-INFORMATION"
+                #-allegro "PARSE-MACRO"
+                "AUGMENT-ENVIRONMENT"))
 @e
 (in-package "CLWEB")
 
@@ -3023,6 +3023,7 @@ host `\.{CLWEB-TEST}'. In the extremely unlikely event that this conflicts
 with a logical pathname host in your environment, please notify the author.
 
 @l
+@e
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (setf (logical-pathname-translations "clweb-test") '(("**;*.*.*" ""))))
 
@@ -4125,13 +4126,13 @@ a trivial definition for other Lisps.
   #-allegro env)
 
 @ Allegro doesn't define |parse-macro| or |enclose|, so we'll need
-to provide our own definitions. In fact, we'll use our own version
-of |enclose| on all implementations (note that it's shadowed in
-the package definition at the beginning of the program). Thanks
-to Duane Rettig of Franz,~Inc.\ for the idea behind this trivial
-implementation (post to comp.lang.lisp of 18~Oct, 2004, message-id
-\<4is97u4vv.fsf@@franz.com>).
+to provide our own definitions.
 @^Allegro Common Lisp@>
+
+We'll use our own version of |enclose| on all implementations.
+Thanks to Duane Rettig of Franz,~Inc.\ for the idea behind this
+implementation (post to {\it comp.lang.lisp}, message-id
+\<4is97u4vv.fsf@@franz.com>, 2004-10-18).
 
 @l
 (defun enclose (lambda-expression &optional env ;
@@ -4143,12 +4144,10 @@ implementation-specific; a portable version would be much more complex.
 @^Allegro Common Lisp@>
 
 @l
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (unless (fboundp 'parse-macro)
-    (defun parse-macro (name lambda-list body &optional env)
-      (declare (ignorable name lambda-list body env))
-      #+allegro (excl::defmacro-expander `(,name ,lambda-list ,@body) env)
-      #-allegro (error "PARSE-MACRO not implemented"))))
+#+allegro
+(defun parse-macro (name lambda-list body &optional env)
+  (declare (ignorable name lambda-list body env))
+  (excl::defmacro-expander `(,name ,lambda-list ,@body) env))
 
 @ The good people at Franz also decided that they needed an extra value
 returned from both |variable-information| and |function-information|.

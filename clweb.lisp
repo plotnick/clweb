@@ -7,7 +7,7 @@
 (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
   #+:SBCL (require "SB-CLTL2"))
 (DEFPACKAGE "CLWEB"
-  (:USE "COMMON-LISP" #+:SBCL "SB-CLTL2" #+:ALLEGRO "SYS" #+:CCL "CCL")
+  (:USE "COMMON-LISP")
   (:EXPORT "TANGLE-FILE"
            "LOAD-WEB"
            "WEAVE"
@@ -22,12 +22,15 @@
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
-  (:SHADOW "ENCLOSE"
-           #+:ALLEGRO "ENSURE-PORTABLE-WALKING-ENVIRONMENT"
-           #+:ALLEGRO "FUNCTION-INFORMATION"
-           #+:ALLEGRO "VARIABLE-INFORMATION"
-           #+(:OR :ALLEGRO :CCL) "MAKE-PATHNAME"
-           #+:CCL "WHITESPACEP"))
+  (:SHADOW #+(:OR :ALLEGRO :CCL) "MAKE-PATHNAME")
+  #+(:OR :SBCL :CCL :ALLEGRO) 
+  (:import-from #+sbcl "SB-CLTL2"
+                #+ccl "CCL"
+                #+allegro "SYS"
+                #-allegro "FUNCTION-INFORMATION"
+                #-allegro "VARIABLE-INFORMATION"
+                #-allegro "PARSE-MACRO"
+                "AUGMENT-ENVIRONMENT"))
 (IN-PACKAGE "CLWEB")
 (DEFVAR *SECTIONS* (MAKE-ARRAY 128 :ADJUSTABLE T :FILL-POINTER 0))
 (DEFVAR *CURRENT-SECTION* NIL)
@@ -1707,12 +1710,10 @@ otherwise, they will replace them."
 (DEFUN ENCLOSE
        (LAMBDA-EXPRESSION &OPTIONAL ENV (WALKER (MAKE-INSTANCE 'WALKER)))
   (COERCE (WALK-LAMBDA-EXPRESSION WALKER LAMBDA-EXPRESSION NIL ENV) 'FUNCTION))
-(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
-  (UNLESS (FBOUNDP 'PARSE-MACRO)
-    (DEFUN PARSE-MACRO (NAME LAMBDA-LIST BODY &OPTIONAL ENV)
-      (DECLARE (IGNORABLE NAME LAMBDA-LIST BODY ENV))
-      #+:ALLEGRO (excl::defmacro-expander `(,name ,lambda-list ,@body) env)
-      #-:ALLEGRO (error "PARSE-MACRO not implemented"))))
+#+:ALLEGRO 
+(defun parse-macro (name lambda-list body &optional env)
+  (declare (ignorable name lambda-list body env))
+  (excl::defmacro-expander `(,name ,lambda-list ,@body) env))
 (DEFMACRO REORDER-ENV-INFORMATION (FN ORIG)
   `(DEFUN ,FN (&REST ARGS)
      (MULTIPLE-VALUE-BIND (TYPE LOCATIVE DECLARATIONS LOCAL)
