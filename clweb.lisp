@@ -23,7 +23,7 @@
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
   (:SHADOW #+(:OR :ALLEGRO :CCL) "MAKE-PATHNAME")
-  #+(:OR :SBCL :CCL :ALLEGRO) 
+  #+(:OR :SBCL :CCL :ALLEGRO)
   (:import-from #+sbcl "SB-CLTL2"
                 #+ccl "CCL"
                 #+allegro "SYS"
@@ -833,7 +833,7 @@
            (FORM :READER READ-TIME-CONDITIONAL-FORM :INITARG :FORM)))
 (SET-TANGLE-DISPATCH 'READ-TIME-CONDITIONAL
                      (LAMBDA (STREAM OBJ)
-                       (FORMAT STREAM "#~:[-~;+~]~S ~A"
+                       (FORMAT STREAM "#~:[-~;+~]~S~A"
                                (READ-TIME-CONDITIONAL-PLUSP OBJ)
                                (READ-TIME-CONDITIONAL-TEST OBJ)
                                (READ-TIME-CONDITIONAL-FORM OBJ))))
@@ -860,9 +860,6 @@
           (IF PLUSP
               (NOT (FEATUREP TEST))
               (FEATUREP TEST))))
-    (CASE (PEEK-CHAR NIL STREAM T NIL T)
-      (#\Newline NIL)
-      (T (PEEK-CHAR T STREAM T NIL T)))
     (READ-WITH-ECHO (STREAM VALUE FORM)
       (APPLY #'MAKE-INSTANCE 'READ-TIME-CONDITIONAL-MARKER :PLUSP PLUSP :TEST
              TEST :FORM FORM (AND (NOT *READ-SUPPRESS*) (LIST :VALUE VALUE))))))
@@ -1164,7 +1161,7 @@ otherwise, they will replace them."
         (WITH-OPEN-FILE (STREAM FILE :DIRECTION :INPUT)
           (LOAD-WEB-FROM-STREAM STREAM T :APPEND APPEND))
       (DELETE-FILE FILE))))
-#+(:OR :ALLEGRO :CCL) 
+#+(:OR :ALLEGRO :CCL)
 (defun make-pathname (&key host device directory name type version
                       (defaults
                        (cl:make-pathname :host (pathname-host
@@ -1441,9 +1438,9 @@ otherwise, they will replace them."
               (= (SECTION-NUMBER SECTION) (SECTION-NUMBER NAMED-SECTION))))
     (WHEN CODE
       (DOLIST (FORM CODE)
-        (IF (OR (LIST-MARKER-P FORM) (LISTP FORM))
-            (FORMAT STREAM "~@<\\+~@;~W~;\\cr~:>" FORM)
-            (FORMAT STREAM "~W~:[\\6~;~]" FORM (NEWLINEP FORM))))
+        (IF (NEWLINEP FORM)
+            (TERPRI STREAM)
+            (FORMAT STREAM "~@<\\+~@;~W~;\\cr~:>" FORM)))
       (FORMAT STREAM "~&\\egroup~%"))
     (WHEN
         (AND (NOT NAMED-SECTION) (TYPEP SECTION 'TEST-SECTION)
@@ -1697,20 +1694,54 @@ otherwise, they will replace them."
                       (FORMAT STREAM "\\#S~W" (STRUCTURE-MARKER-FORM OBJ))))
 (SET-WEAVE-DISPATCH 'READ-TIME-CONDITIONAL-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (LET ((*PRINT-ESCAPE-LIST*
-                             (ACONS " " " " *PRINT-ESCAPE-LIST*)))
-                        (FORMAT STREAM
-                                "\\#~:[--~;+~]~S{\\RC ~/clweb::print-escaped/}"
-                                (READ-TIME-CONDITIONAL-PLUSP OBJ)
-                                (READ-TIME-CONDITIONAL-TEST OBJ)
-                                (READ-TIME-CONDITIONAL-FORM OBJ)))))
+                      (LET* ((FORM (READ-TIME-CONDITIONAL-FORM OBJ))
+                             (LINES
+                              (LOOP WITH INDENT = (IF (CHAR= (ELT FORM 0)
+                                                             #\Newline)
+                                                      (1-
+                                                       (POSITION-IF-NOT
+                                                        #'WHITESPACEP FORM
+                                                        :START 1))
+                                                      0)
+                                    FOR LAST = 0 THEN (+ INDENT NEWLINE 1)
+                                    FOR NEWLINE = (POSITION #\Newline FORM
+                                                            :START
+                                                            LAST) AS LINE = (SUBSEQ
+                                                                             FORM
+                                                                             LAST
+                                                                             NEWLINE)
+                                    COLLECT LINE
+                                    WHILE NEWLINE))
+                             (*PRINT-ESCAPE-LIST*
+                              `((" " . " ") ,@*PRINT-ESCAPE-LIST*)))
+                        (FLET ((PRINT-RC-PREFIX ()
+                                 (FORMAT STREAM "\\#$~:[-~;+~]$~S"
+                                         (READ-TIME-CONDITIONAL-PLUSP OBJ)
+                                         (READ-TIME-CONDITIONAL-TEST OBJ)))
+                               (PRINT-RC-LINE (LINE)
+                                 (FORMAT STREAM "\\RC{~/clweb::print-escaped/}"
+                                         LINE)))
+                          (COND
+                           ((= (LENGTH LINES) 1) (PRINT-RC-PREFIX)
+                            (PRINT-RC-LINE (FIRST LINES)))
+                           (T (WRITE-STRING "\\!" STREAM)
+                            (PPRINT-LOGICAL-BLOCK
+                                (STREAM LINES :PER-LINE-PREFIX "&")
+                              (PRINT-RC-PREFIX)
+                              (PPRINT-EXIT-IF-LIST-EXHAUSTED)
+                              (LOOP FOR LINE = (PPRINT-POP)
+                                    WHEN (PLUSP (LENGTH LINE))
+                                    DO (PRINT-RC-LINE LINE)
+                                    DO (PPRINT-EXIT-IF-LIST-EXHAUSTED) (FORMAT
+                                                                        STREAM
+                                                                        "\\cr~:@_")))))))))
 (DEFUN ENSURE-PORTABLE-WALKING-ENVIRONMENT (ENV)
   #+:ALLEGRO (sys:ensure-portable-walking-environment env)
   #-:ALLEGRO env)
 (DEFUN ENCLOSE
        (LAMBDA-EXPRESSION &OPTIONAL ENV (WALKER (MAKE-INSTANCE 'WALKER)))
   (COERCE (WALK-LAMBDA-EXPRESSION WALKER LAMBDA-EXPRESSION NIL ENV) 'FUNCTION))
-#+:ALLEGRO 
+#+:ALLEGRO
 (defun parse-macro (name lambda-list body &optional env)
   (declare (ignorable name lambda-list body env))
   (excl::defmacro-expander `(,name ,lambda-list ,@body) env))
@@ -1720,9 +1751,9 @@ otherwise, they will replace them."
          (APPLY ,ORIG ARGS)
        (DECLARE (IGNORE LOCATIVE))
        (VALUES TYPE LOCAL DECLARATIONS))))
-#+:ALLEGRO 
+#+:ALLEGRO
 (reorder-env-information variable-information #'sys:variable-information)
-#+:ALLEGRO 
+#+:ALLEGRO
 (reorder-env-information function-information #'sys:function-information)
 (DEFCLASS WALK-CONTEXT NIL NIL)
 (DEFUN MAKE-CONTEXT (CONTEXT &REST ARGS) (APPLY #'MAKE-INSTANCE CONTEXT ARGS))

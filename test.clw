@@ -115,6 +115,20 @@ newlines and such are ignored:
     (when (endp (cdr fast)) (return (+ n 1)))
     (when (and (eq fast slow) (> n 0)) (return nil))))
 
+@ @l
+"Here's a top-level string
+split over two lines."
+
+@ Read-time conditionals are also tricky, especially when they span
+multiple lines.
+
+@l
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  #+(or foo bar baz)
+  (frob this
+        that
+        and-another))
+
 @*Index tests.
 
 @ @l

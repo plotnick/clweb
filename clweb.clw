@@ -2230,7 +2230,7 @@ characters that the reader scans, and use that to reconstruct the form.
 
 (set-tangle-dispatch 'read-time-conditional
   (lambda (stream obj)
-    (format stream "#~:[-~;+~]~S ~A"
+    (format stream "#~:[-~;+~]~S~A"
             (read-time-conditional-plusp obj)
             (read-time-conditional-test obj)
             (read-time-conditional-form obj))))
@@ -2258,9 +2258,6 @@ characters that the reader scans, and use that to reconstruct the form.
                      (*read-suppress* nil))
                  (read stream t nil t)))
          (*read-suppress* (if plusp (not (featurep test)) (featurep test))))
-    (case (peek-char nil stream t nil t)
-      (#\Newline nil) ; preserve newline as part of the form
-      (t (peek-char t stream t nil t)))
     (read-with-echo (stream value form)
       (apply #'make-instance 'read-time-conditional-marker
              :plusp plusp :test test :form form
@@ -2280,7 +2277,7 @@ characters that the reader scans, and use that to reconstruct the form.
     (values (read-time-conditional-plusp conditional)
             (read-time-conditional-test conditional)
             (read-time-conditional-form conditional)))
-  nil :foo "1")
+  nil :foo " 1")
 
 (deftest (read-time-conditional 2)
   (let ((*features* '(:a))
@@ -3583,9 +3580,9 @@ or \.{\\N} depending on whether the section is unstarred or starred. Then
 comes the commentary, which is separated from the code part by a bit of
 vertical space using the \.{\\Y} macro if both are present. The code part
 always starts with \.{\\B}, followed by the name if it's a named section.
-Then comes the code, which we output one form at a time, using tabs for
-every line unless it's atomic. Last come the cross-references and a final
-\.{\\fi} that matches the \.{\\ifon} in \.{\\M} and \.{\\N}.
+Then comes the code, which we output one form at a time, using alignment
+tabs (\.{\\+}). Last come the cross-references and a final \.{\\fi} that
+matches the \.{\\ifon} in \.{\\M} and \.{\\N}.
 
 @l
 (defun print-section (stream section)
@@ -3606,9 +3603,9 @@ every line unless it's atomic. Last come the cross-references and a final
               (= (section-number section) (section-number named-section))))
     (when code
       (dolist (form code)
-        (if (or (list-marker-p form) (listp form))
-            (format stream "~@<\\+~@;~W~;\\cr~:>" form)
-            (format stream "~W~:[\\6~;~]" form (newlinep form))))
+        (if (newlinep form)
+            (terpri stream)
+            (format stream "~@<\\+~@;~W~;\\cr~:>" form)))
       (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}
     (when (and (not named-section)
                (typep section 'test-section)
@@ -3901,8 +3898,8 @@ markers and the logical block structure.
 
 As an optimization, if we build a block that doesn't directly contain any
 newlines---a trivial logical block---we simply return a list of sub-forms
-instead of a logical block structure. This allows the printer to elide the
-alignment tabs, and makes the resulting \TeX\ much simpler.
+instead of a logical block structure. This can make the resulting \TeX\
+somewhat simpler.
 
 @<Build a logical block...@>=
 (do* ((block '())
@@ -4084,14 +4081,43 @@ which see.
   (lambda (stream obj)
     (format stream "\\#S~W" (structure-marker-form obj))))
 
-@ @l
+@ Read-time conditionals, like literal strings, must be printed one line at
+a time so as to respect the alignment tabs. Since the \.{\\RC} macro switches
+to a monospaced font and activates \.{\\obeyspaces}, dealing with indentation
+is straightforward.
+
+@l
 (set-weave-dispatch 'read-time-conditional-marker
   (lambda (stream obj)
-    (let ((*print-escape-list* (acons " " " " *print-escape-list*)))
-      (format stream "\\#~:[--~;+~]~S{\\RC ~/clweb::print-escaped/}"
-              (read-time-conditional-plusp obj)
-              (read-time-conditional-test obj)
-              (read-time-conditional-form obj)))))
+    (let* ((form (read-time-conditional-form obj))
+           (lines @<Split |form| into lines, eliding any initial indentation@>)
+           (*print-escape-list* `((" " . " ") ,@*print-escape-list*)))
+      (flet ((print-rc-prefix ()
+               (format stream "\\#$~:[-~;+~]$~S"
+                       (read-time-conditional-plusp obj)
+                       (read-time-conditional-test obj)))
+             (print-rc-line (line)
+               (format stream "\\RC{~/clweb::print-escaped/}" line)))
+        (cond ((= (length lines) 1)
+               (print-rc-prefix)
+               (print-rc-line (first lines)))
+              (t (write-string "\\!" stream)
+                 (pprint-logical-block (stream lines :per-line-prefix "&")
+                   (print-rc-prefix)
+                   (pprint-exit-if-list-exhausted)
+                   (loop for line = (pprint-pop)
+                         when (plusp (length line)) do (print-rc-line line)
+                         do (pprint-exit-if-list-exhausted)
+                            (format stream "\\cr~:@_")))))))))
+
+@ @<Split |form| into lines...@>=
+(loop with indent = (if (char= (elt form 0) #\Newline)
+                        (1- (position-if-not #'whitespacep form :start 1))
+                        0)
+      for last = 0 then (+ indent newline 1)
+      for newline = (position #\Newline form :start last)
+      as line = (subseq form last newline)
+      collect line while newline)
 
 @*Code walking. Our last major task is to produce an index of every
 interesting symbol that occurs in a web (we'll define what makes a
