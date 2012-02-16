@@ -543,7 +543,12 @@ the sections that reference this named section.
   (mapappend #'section-code (named-section-sections section)))
 
 (defmethod section-number ((section named-section))
-  (section-number (first (named-section-sections section))))
+  (let ((sections (named-section-sections section)))
+    (when (null sections)
+      (error 'undefined-named-section-error
+             :format-control "Undefined named section <~A>."
+             :format-arguments (list (section-name section))))
+    (section-number (first sections))))
 
 @t@l
 (deftest named-section-number/code
@@ -556,6 +561,14 @@ the sections that reference this named section.
               (section-number section))))
   (1 2 3)
   0)
+
+(deftest undefined-named-section
+  (handler-case (section-number (make-instance 'named-section :name "foo"))
+    (undefined-named-section-error () :error))
+  :error)
+
+@ @<Condition classes@>=
+(define-condition undefined-named-section-error (simple-error) ())
 
 @ Section names in the input file can be abbreviated by giving a prefix of
 the full name followed by `$\ldots$': e.g., \.{@@<Frob...@@>} might refer
@@ -3106,6 +3119,7 @@ supplying a null |tests-file| argument.
                              :external-format external-format)
         (read-sections input))
       @<Complain about any unused named sections@>
+      @<Ensure that every referenced named section is defined@>
       (cond ((and tests-file (> (length *test-sections*) 1))
              (when verbose (format t "~&; writing tests to ~A~%" tests-file))
              (tangle-sections *test-sections*
@@ -3235,6 +3249,13 @@ warnings about unused named sections.
 
 @ @<Condition classes@>=
 (define-condition unused-named-section-warning (simple-warning) ())
+
+@ Named sections that are referenced but never defined are assumed to be
+errors. Here we'll rely on the fact that |section-number| detects this
+condition and signals an error if it occurs.
+
+@<Ensure that every referenced...@>=
+(map-bst #'section-number *named-sections*)
 
 @ |tangle-file| uses this helper function to actually write the tangled forms
 to the intermediate Lisp source file. It's used for both ordinary and test
