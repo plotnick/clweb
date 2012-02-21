@@ -7124,11 +7124,11 @@ options.
               ,@(loop for (opt-name opt-value) on options by #'cddr
                       if (member opt-name '(:reader :writer :accessor))
                         append `(,opt-name
-                                  ,(walk-name walker opt-value
-                                              (make-context 'method-name ;
-                                                            :qualifiers ;
-                                                            (list opt-name))
-                                              env :def t))
+                                 ,(walk-name walker opt-value
+                                             (make-context 'method-name ;
+                                                           :qualifiers ;
+                                                           (list opt-name))
+                                             env :def t))
                       else
                         append `(,opt-name ,opt-value)))))))
 
