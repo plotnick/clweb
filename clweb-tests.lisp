@@ -906,6 +906,7 @@
          "foo" "foo bar" "FOO,BAR,BAZ")
 (DEFCLASS DEAD-BEEF NIL NIL)
 (DEFCLASS KOBE-BEEF (DEAD-BEEF) NIL)
+(DEFCLASS ROTTEN-BEEF (DEAD-BEEF) NIL)
 (DEFGENERIC DESCRIBE-BEEF
     (BEEF)
   (:METHOD-COMBINATION JOIN-STRINGS ", ")
@@ -914,12 +915,14 @@
   (:METHOD :SUFFIX ((BEEF DEAD-BEEF)) "yum!")
   (:METHOD :PREFIX ((BEEF KOBE-BEEF)) "delicious")
   (:METHOD ((BEEF KOBE-BEEF)) "Kobe")
-  (:METHOD :SUFFIX ((BEEF KOBE-BEEF)) "from Japan"))
+  (:METHOD :SUFFIX ((BEEF KOBE-BEEF)) "from Japan")
+  (:METHOD :OVERRIDE ((BEEF ROTTEN-BEEF)) "Yuck!"))
 (DEFTEST JOIN-STRINGS-METHOD-COMBINATION
          (VALUES (DESCRIBE-BEEF (MAKE-INSTANCE 'DEAD-BEEF))
-                 (DESCRIBE-BEEF (MAKE-INSTANCE 'KOBE-BEEF)))
+                 (DESCRIBE-BEEF (MAKE-INSTANCE 'KOBE-BEEF))
+                 (DESCRIBE-BEEF (MAKE-INSTANCE 'ROTTEN-BEEF)))
          "big, fat, juicy, steak, yum!"
-         "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan")
+         "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan" "Yuck!")
 (DEFTEST FUNCTION-HEADING-NAME
          (VALUES (HEADING-NAME (MAKE-CONTEXT 'FUNCTION-NAME))
                  (HEADING-NAME (MAKE-CONTEXT 'FUNCTION-NAME :LOCAL T))

@@ -2441,18 +2441,25 @@ otherwise, they will replace them."
           WHEN MORE
           DO (WRITE-STRING DELIMITER OUT))))
 (DEFINE-METHOD-COMBINATION JOIN-STRINGS (&OPTIONAL (DELIMITER #\ ))
-                           ((PREFIX (:PREFIX)) (PRIMARY NIL :REQUIRED T)
-                            (SUFFIX (:SUFFIX)))
+                           ((OVERRIDE (:OVERRIDE)) (PREFIX (:PREFIX))
+                            (PRIMARY NIL :REQUIRED T) (SUFFIX (:SUFFIX)))
                            (FLET ((CALL-METHODS (METHODS)
                                     (MAPCAR
                                      (LAMBDA (METHOD)
                                        `(ENSURE-LIST (CALL-METHOD ,METHOD)))
                                      METHODS)))
-                             `(JOIN-STRINGS
-                               (APPEND ,@(CALL-METHODS PREFIX)
-                                       ,@(CALL-METHODS PRIMARY)
-                                       ,@(CALL-METHODS (REVERSE SUFFIX)))
-                               ,DELIMITER)))
+                             (LET ((FORM
+                                    `(JOIN-STRINGS
+                                      (APPEND ,@(CALL-METHODS PREFIX)
+                                              ,@(CALL-METHODS PRIMARY)
+                                              ,@(CALL-METHODS
+                                                 (REVERSE SUFFIX)))
+                                      ,DELIMITER)))
+                               (IF OVERRIDE
+                                   `(CALL-METHOD ,(FIRST OVERRIDE)
+                                                 (,@(REST OVERRIDE)
+                                                  (MAKE-METHOD ,FORM)))
+                                   FORM))))
 (DEFGENERIC HEADING-NAME
     (HEADING)
   (:METHOD-COMBINATION JOIN-STRINGS))

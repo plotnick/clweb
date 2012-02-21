@@ -5981,16 +5981,21 @@ it for |heading-name|.
             and when more do (write-string delimiter out))))
 
 (define-method-combination join-strings (&optional (delimiter #\Space))
-    ((prefix (:prefix))
+    ((override (:override))
+     (prefix (:prefix))
      (primary () :required t)
      (suffix (:suffix)))
   (flet ((call-methods (methods)
            (mapcar (lambda (method) `(ensure-list (call-method ,method))) ;
                    methods)))
-    `(join-strings (append ,@(call-methods prefix)
-                           ,@(call-methods primary)
-                           ,@(call-methods (reverse suffix)))
-                   ,delimiter)))
+    (let ((form `(join-strings (append ,@(call-methods prefix)
+                                       ,@(call-methods primary)
+                                       ,@(call-methods (reverse suffix)))
+                               ,delimiter)))
+      (if override
+          `(call-method ,(first override) ;
+                        (,@(rest override) (make-method ,form)))
+          form))))
 
 (defgeneric heading-name (heading)
   (:method-combination join-strings))
@@ -6006,6 +6011,7 @@ it for |heading-name|.
 
 (defclass dead-beef () ())
 (defclass kobe-beef (dead-beef) ())
+(defclass rotten-beef (dead-beef) ())
 (defgeneric describe-beef (beef)
   (:method-combination join-strings ", ")
   (:method ((beef dead-beef)) "steak")
@@ -6013,13 +6019,16 @@ it for |heading-name|.
   (:method :suffix ((beef dead-beef)) "yum!")
   (:method :prefix ((beef kobe-beef)) "delicious")
   (:method ((beef kobe-beef)) "Kobe")
-  (:method :suffix ((beef kobe-beef)) "from Japan"))
+  (:method :suffix ((beef kobe-beef)) "from Japan")
+  (:method :override ((beef rotten-beef)) "Yuck!"))
 
 (deftest join-strings-method-combination
   (values (describe-beef (make-instance 'dead-beef))
-          (describe-beef (make-instance 'kobe-beef)))
+          (describe-beef (make-instance 'kobe-beef))
+          (describe-beef (make-instance 'rotten-beef)))
   "big, fat, juicy, steak, yum!"
-  "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan")
+  "delicious, big, fat, juicy, Kobe, steak, yum!, from Japan"
+  "Yuck!")
 
 @ Every namespace has a name associated with it, and we'll derive our
 primary heading name from that.
