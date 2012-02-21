@@ -6529,7 +6529,7 @@ exist for the dynamic extent of the walk.
           (copy-list name-and-options) ; so we can safely use |remf| below
           (list name-and-options))
     (remf options :aux)
-    `(deftest (index ,name)
+    `(deftest (index ,@(ensure-list name))
        (with-unique-indexing-names ,aux
          (test-indexing-walk ,sections ',expected-entries nil ,@options))
        t)))
