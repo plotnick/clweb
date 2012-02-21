@@ -6192,7 +6192,10 @@ ordinary ones.
               (orf (locator-definition-p old-locator) def)
               (push (make-locator) (entry-locators entry)))))))
 
-@t@l
+@ And this function looks up a specific heading in an index, and returns
+any locators that it finds.
+
+@l
 (defun find-index-entries (index heading)
   (let ((entries (index-entries index)))
     (when entries
@@ -6201,6 +6204,7 @@ ordinary ones.
         (when present-p
           (entry-locators entry))))))
 
+@t@l
 (deftest (add-index-entry 1)
   (let ((index (make-index))
         (heading 'foo))
@@ -6847,29 +6851,331 @@ the global environment.
     (:section :code (,foo-bar-baz)))
   ("FOO-BAR-BAZ symbol macro" (1 (:def 0))))
 
-@ Structure definitions also get indexed, although we won't bother to
-grovel through all of the options. We'll let them expand, since we can
-often pick up at least the constructor definitions that way.
+@ Structure definitions get walked to pick up the structure name as well as
+any automatically defined functions. We'll let the walk continue with the
+expansion so that the compiler can pick up the structure definition, too.
 
 @l
+@<Declare |structure-description| structure@>
+@<Define |defstruct| parsing routines@>
+
 (define-special-form-walker defstruct ((walker indexing-walker) form env &key ;
                                        toplevel)
   (declare (ignore toplevel))
-  (let ((name (typecase (cadr form)
-                (symbol (cadr form))
-                (cons (caadr form)))))
-    (walk-name walker name (make-context 'structure-name) env :def t)
-    (throw 'continue-walk form)))
+  (let ((structure-description)
+        (name-and-options))
+    (throw 'continue-walk
+      `(,(pop form)
+        ,(multiple-value-setq (name-and-options structure-description)
+                              (walk-defstruct-name-and-options walker ;
+                                                               (pop form) ;
+                                                               env))
+        ,@(and (stringp (car form)) (list (pop form)))
+        ,@(mapcar (lambda (slot-description)
+                    (walk-defstruct-slot-description walker ;
+                                                     slot-description ;
+                                                     structure-description ;
+                                                     env))
+                  form)))))
+
+@ We'll use an auxiliary data structure, called a {\it structure description},
+to handle most of the bookkeeping as we walk a |defstruct| form. (Some of this
+code was inspired by SBCL's |defstruct| processing, although it is simplified
+in many ways.)
+
+@<Declare |structure-description|...@>=
+(defun symbolicate (&rest strings)
+  (values (intern (join-strings strings ""))))
+
+(defstruct (structure-description
+            (:conc-name "STRUCT-")
+            (:constructor make-structure-description
+                          (name &aux
+                           (conc-name (symbolicate name "-"))
+                           (copier-name (symbolicate "COPY-" name))
+                           (predicate-name (symbolicate name "-P")))))
+  (name nil :type symbol :read-only t)
+  (conc-name nil :type (or symbol null))
+  (constructors () :type list)
+  (copier-name nil :type (or symbol null))
+  (predicate-name nil :type (or symbol null))
+  (include nil :type list))
+
+@ We'll need several subroutines to do the work of parsing and walking a
+|defstruct| form. We'll start with the processing of the name and options.
+
+Notice that |walk-defstruct-name-and-options| returns two values: the
+walked name and options (a form), and the structure description that will
+be passed down to the slot description parsing routines.
+
+The recursion in |walk-defstruct-option| is just a lazy way of canonicalizing
+options supplied as atoms that are equivalent to one-element lists; it will
+never go more than one level deep.
+
+@<Define |defstruct| parsing routines@>=
+(defun walk-defstruct-name-and-options (walker name-and-options env)
+  (destructuring-bind (name &rest options) (ensure-list name-and-options)
+    (let* ((struct-name (walk-name walker name (make-context 'struct-name) ;
+                                   env :def t))
+           (struct-description (make-structure-description struct-name)))
+      (values `(,struct-name
+                ,@(loop for option in options
+                        collect (walk-defstruct-option walker option ;
+                                                       struct-description env)
+                        finally @<Index auto-generated structure function...@>))
+              struct-description))))
+
+(defun walk-defstruct-option (walker option description env)
+  (cond ((member option '(:conc-name :constructor :copier :predicate))
+         (walk-defstruct-option walker (list option) description env))
+        ((atom option)
+         option)
+        (t `(,(first option)
+             ,@(ensure-list @<Walk one |defstruct| option@>)))))
+
+@ We only care about specifically about a handful of |defstruct| options.
+At this point, |option| will have been converted to list form; we'll walk
+it and record relevant information in |description| as we go.
+
+@<Walk one |defstruct| option@>=
+(let ((args (rest option))
+      (struct-name (struct-name description)))
+  (case (first option)
+    (:conc-name
+     (destructuring-bind (&optional conc-name) args
+       (setf (struct-conc-name description)
+             (if (symbolp conc-name)
+                 (walk-atomic-form walker conc-name nil env)
+                 (make-symbol (string conc-name))))))
+    (:constructor
+     (destructuring-bind ;
+           (&optional (name (symbolicate "MAKE-" struct-name)) &rest arglist) ;
+         args
+       (let* ((context (make-context (if arglist ;
+                                         'struct-boa-constructor ;
+                                         'struct-constructor-name)))
+              (name (walk-name walker name context env :def t)))
+         (car (push (cons name arglist) (struct-constructors description))))))
+    (:copier
+     (destructuring-bind (&optional (name (symbolicate "COPY-" struct-name))) ;
+         args
+       (setf (struct-copier-name description)
+             (walk-name walker name (make-context 'struct-copier-name) ;
+                        env :def t))))
+    (:predicate
+     (destructuring-bind (&optional (name (symbolicate struct-name "-P"))) ;
+         args
+       (setf (struct-predicate-name description)
+             (walk-name walker name (make-context 'struct-predicate-name) ;
+                        env :def t))))
+    (:include
+     (destructuring-bind (name &rest slot-descriptions) args
+       (setf (struct-include description)
+             `(,(walk-name walker name (make-context 'struct-name) env)
+               ,@(mapcar (lambda (slot-description)
+                           (walk-defstruct-slot-description walker ;
+                                                            slot-description ;
+                                                            description ;
+                                                            env))
+                         slot-descriptions)))))
+    (t (walk-list walker args env))))
+
+@ Explicitly named constructor functions, copiers, and predicates are
+indexed during the walk of the corresponding options. But if the options
+are not given, we still need to index the default generated names.
+
+@<Index auto-generated structure function names@>=
+(let ((section (nth-value 1 (symbol-provenance name))))
+  (flet ((index (name context-type)
+           (when name
+             (index (walker-index walker) name section ;
+                    (make-context context-type) t))))
+    (loop for (name . arglist) in (or (struct-constructors struct-description)
+                                      `((,(symbolicate "MAKE-" struct-name))))
+          do (index name (if arglist ;
+                             'struct-boa-constructor ;
+                             'struct-constructor-name)))
+    (index (struct-copier-name struct-description) 'struct-copier-name)
+    (index (struct-predicate-name struct-description) 'struct-predicate-name)))
+
+@ Structure slot descriptions are straightforward: they're either a symbol
+naming the slot, or a list containing the slot name, an optional initform,
+and~possibly the keyword options |:type| and |:read-only|. We don't care
+about the type, but the |:read-only| option determines whether a reader
+or an accessor is defined, which we do care about.
+
+@<Define |defstruct| parsing routines@>=
+(defun walk-defstruct-slot-description ;
+    (walker slot-description struct-description env)
+  (typecase slot-description
+    (symbol
+     (walk-defstruct-slot-name walker slot-description nil ;
+                               struct-description env))
+    (cons
+     (destructuring-bind (slot-name &optional (initform nil initform-supplied)
+                          &rest args &key read-only &allow-other-keys)
+         slot-description
+       `(,(walk-defstruct-slot-name walker slot-name read-only ;
+                                    struct-description env)
+          ,@(when initform-supplied `(,(walk-form walker initform env)))
+          ,@args)))
+    (t slot-description)))
+
+@ As we walk structure slot names, we'll index the automatically created
+reader or accessor functions.
+
+In the case of a conflict with an inherited reader or accessor function name,
+the definition is inherited from the included structure. Because we don't
+keep structure descriptions around, we can't detect this case directly.
+But we {\it can\/} check to see if there's already a definition in the
+index for the proposed name, either as a reader or an accessor; if there
+is, we'll assume it will be inherited and that we should not index it as
+a definition here.
+
+@<Define |defstruct| parsing routines@>=
+(defun walk-defstruct-slot-name ;
+    (walker slot-name read-only-p struct-description env)
+  (declare (ignore env))
+  (multiple-value-bind (symbol section) (symbol-provenance slot-name)
+    (let ((name (symbolicate (struct-conc-name struct-description) symbol))
+          (reader (make-context 'struct-slot-reader))
+          (accessor (make-context 'struct-slot-accessor))
+          (index (walker-index walker)))
+      (unless (and (struct-include struct-description)
+                   (some #'locator-definition-p
+                         (or (find-index-entries index ;
+                                                 (make-heading name accessor))
+                             (find-index-entries index ;
+                                                 (make-heading name reader)))))
+        (index index name section (if read-only-p reader accessor) t)))
+    symbol))
 
 @ @<Define namespace...@>=
-(defnamespace structure-name () :structure)
+(defnamespace struct-name () :structure)
+(defnamespace struct-constructor-name (function-name) :constructor-function)
+(defnamespace struct-boa-constructor (function-name) :boa-constructor)
+(defnamespace struct-copier-name (function-name) :copier-function)
+(defnamespace struct-predicate-name (function-name) :type-predicate)
+(defnamespace struct-slot-reader (function-name) :slot-reader)
+(defnamespace struct-slot-accessor (function-name) :slot-accessor)
 
-@t@l
-(define-indexing-test (defstruct :verify-walk nil)
-  '((:section :code ((defstruct foo)))
-    (:section :code ((defstruct (bar (:type list)) a b c))))
-  ("BAR structure" ((:def 1)))
-  ("FOO structure" ((:def 0))))
+@ Even puns deserve to be properly typeset.
+
+@l
+(defmethod heading-name :override ((heading struct-boa-constructor))
+  "{\\sc boa} constructor")
+
+@t Even the simplest structure definition generates four index entries:
+the structure itself, a constructor function, a copy function, and a type
+predicate.
+
+@l
+(define-indexing-test (defstruct :verify-walk nil :toplevel t
+                                 :aux (foo))
+  `((:section :code ((defstruct ,foo))))
+  ("COPY-FOO copier function" ((:def 0)))
+  ("FOO structure" ((:def 0)))
+  ("FOO-P type predicate" ((:def 0)))
+  ("MAKE-FOO constructor function" ((:def 0))))
+
+@t The |:constructor|, |:copier|, and |:predicate| options each have
+three variants: keyword only, keyword with null argument, and~keyword
+with non-null argument.
+
+@l
+(define-indexing-test ((defstruct functions) :verify-walk nil :toplevel t
+                                             :aux (a b c cons-c dup-c cp))
+  `((:section :code ((defstruct (,a :constructor
+                                    (:predicate nil)))))
+    (:section :code ((defstruct (,b (:constructor nil)
+                                    (:predicate)))))
+    (:section :code ((defstruct (,c (:constructor ,cons-c)
+                                    (:copier ,dup-c)
+                                    (:predicate ,cp))))))
+  ("A structure" ((:def 0)))
+  ("B structure" ((:def 1)))
+  ("B-P type predicate" ((:def 1)))
+  ("C structure" ((:def 2)))
+  ("CONS-C constructor function" ((:def 2)))
+  ("COPY-A copier function" ((:def 0)))
+  ("COPY-B copier function" ((:def 1)))
+  ("CP type predicate" ((:def 2)))
+  ("DUP-C copier function" ((:def 2)))
+  ("MAKE-A constructor function" ((:def 0))))
+
+@t Included structure names are indexed as uses.
+
+@l
+(define-indexing-test ((defstruct :include) :verify-walk nil :toplevel t
+                                            :aux (base derived))
+  `((:section :code ((defstruct (,base (:constructor nil)
+                                       (:copier nil)
+                                       (:predicate nil)))))
+    (:section :code ((defstruct (,derived (:include ,base)
+                                          (:constructor nil)
+                                          (:copier nil)
+                                          (:predicate nil))))))
+  ("BASE structure" (1 (:def 0)))
+  ("DERIVED structure" ((:def 1))))
+
+@t Structure slot readers and accessors are indexed. Their names are
+prefixed by the |:conc-name| option, which defaults to the structure
+name followed by a hyphen. Neither constructor nor predicate functions
+are affected by |:conc-name|.
+
+@l
+(define-indexing-test ((defstruct accessors) :verify-walk nil :toplevel t
+                                             :aux (town))
+  `((:section :code ((defstruct ,town
+                       area
+                       watertowers
+                       (firetrucks 1 :type fixnum) ; an initialized slot
+                       population
+                       (elevation 5128 :read-only t)))))
+  ("COPY-TOWN copier function" ((:def 0)))
+  ("MAKE-TOWN constructor function" ((:def 0)))
+  ("TOWN structure" ((:def 0)))
+  ("TOWN-AREA slot accessor" ((:def 0)))
+  ("TOWN-ELEVATION slot reader" ((:def 0)))
+  ("TOWN-FIRETRUCKS slot accessor" ((:def 0)))
+  ("TOWN-P type predicate" ((:def 0)))
+  ("TOWN-POPULATION slot accessor" ((:def 0)))
+  ("TOWN-WATERTOWERS slot accessor" ((:def 0))))
+
+(define-indexing-test ((defstruct conc-name) :verify-walk nil :toplevel t
+                                             :aux (clown))
+  `((:section :code ((defstruct (,clown (:conc-name bozo-))
+                       (nose-color 'red)
+                       frizzy-hair-p
+                       polkadots))))
+  ("BOZO-FRIZZY-HAIR-P slot accessor" ((:def 0)))
+  ("BOZO-NOSE-COLOR slot accessor" ((:def 0)))
+  ("BOZO-POLKADOTS slot accessor" ((:def 0)))
+  ("CLOWN structure" ((:def 0)))
+  ("CLOWN-P type predicate" ((:def 0)))
+  ("COPY-CLOWN copier function" ((:def 0)))
+  ("MAKE-CLOWN constructor function" ((:def 0))))
+
+@t Inherited slot accessors don't get indexed.
+
+@l
+(define-indexing-test ((defstruct inherited-accessor)
+                       :verify-walk nil :toplevel t
+                       :aux (a b))
+  `((:section :code ((defstruct (,a (:conc-name nil)
+                                    (:constructor nil)
+                                    (:copier nil)
+                                    (:predicate nil))
+                       a-b)))
+    (:section :code ((defstruct (,b (:include ,a)
+                                    (:conc-name a-)
+                                    (:constructor nil)
+                                    (:copier nil)
+                                    (:predicate nil))
+                       (b nil :read-only t)))))
+  ("A structure" (1 (:def 0)))
+  ("A-B slot accessor" ((:def 0)))
+  ("B structure" ((:def 1))))
 
 @ |defvar| and |defparameter| must be walked as if they were special forms
 in order to pick up the definitions of the names. We still have to let them

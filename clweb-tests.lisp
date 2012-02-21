@@ -946,12 +946,6 @@
                (LAMBDA (X) (SECTION-NUMBER (LOCATION X)))))
       (FORMAT STREAM " ~:[~D~;[~D]~]" (LOCATOR-DEFINITION-P LOCATOR)
               (SECTION-NUMBER (LOCATION LOCATOR))))))
-(DEFUN FIND-INDEX-ENTRIES (INDEX HEADING)
-  (LET ((ENTRIES (INDEX-ENTRIES INDEX)))
-    (WHEN ENTRIES
-      (MULTIPLE-VALUE-BIND (ENTRY PRESENT-P)
-          (FIND-OR-INSERT HEADING ENTRIES :INSERT-IF-NOT-FOUND NIL)
-        (WHEN PRESENT-P (ENTRY-LOCATORS ENTRY))))))
 (DEFTEST (ADD-INDEX-ENTRY 1)
          (LET ((INDEX (MAKE-INDEX)) (HEADING 'FOO))
            (ADD-INDEX-ENTRY INDEX HEADING 1)
@@ -1116,10 +1110,77 @@
  `((:SECTION :CODE ((DEFINE-SYMBOL-MACRO ,FOO-BAR-BAZ (:BAR :BAZ))))
    (:SECTION :CODE (,FOO-BAR-BAZ)))
  ("FOO-BAR-BAZ symbol macro" (1 (:DEF 0))))
-(DEFINE-INDEXING-TEST (DEFSTRUCT :VERIFY-WALK NIL)
- '((:SECTION :CODE ((DEFSTRUCT FOO)))
-   (:SECTION :CODE ((DEFSTRUCT (BAR (:TYPE LIST)) A B C))))
- ("BAR structure" ((:DEF 1))) ("FOO structure" ((:DEF 0))))
+(DEFINE-INDEXING-TEST (DEFSTRUCT :VERIFY-WALK NIL :TOPLEVEL T :AUX (FOO))
+ `((:SECTION :CODE ((DEFSTRUCT ,FOO)))) ("COPY-FOO copier function" ((:DEF 0)))
+ ("FOO structure" ((:DEF 0))) ("FOO-P type predicate" ((:DEF 0)))
+ ("MAKE-FOO constructor function" ((:DEF 0))))
+(DEFINE-INDEXING-TEST
+ ((DEFSTRUCT FUNCTIONS) :VERIFY-WALK NIL :TOPLEVEL T :AUX
+  (A B C CONS-C DUP-C CP))
+ `((:SECTION :CODE ((DEFSTRUCT (,A :CONSTRUCTOR (:PREDICATE NIL)))))
+   (:SECTION :CODE ((DEFSTRUCT (,B (:CONSTRUCTOR NIL) (:PREDICATE)))))
+   (:SECTION :CODE
+    ((DEFSTRUCT
+         (,C (:CONSTRUCTOR ,CONS-C) (:COPIER ,DUP-C) (:PREDICATE ,CP))))))
+ ("A structure" ((:DEF 0))) ("B structure" ((:DEF 1)))
+ ("B-P type predicate" ((:DEF 1))) ("C structure" ((:DEF 2)))
+ ("CONS-C constructor function" ((:DEF 2)))
+ ("COPY-A copier function" ((:DEF 0))) ("COPY-B copier function" ((:DEF 1)))
+ ("CP type predicate" ((:DEF 2))) ("DUP-C copier function" ((:DEF 2)))
+ ("MAKE-A constructor function" ((:DEF 0))))
+(DEFINE-INDEXING-TEST
+ ((DEFSTRUCT :INCLUDE) :VERIFY-WALK NIL :TOPLEVEL T :AUX (BASE DERIVED))
+ `((:SECTION :CODE
+    ((DEFSTRUCT (,BASE (:CONSTRUCTOR NIL) (:COPIER NIL) (:PREDICATE NIL)))))
+   (:SECTION :CODE
+    ((DEFSTRUCT
+         (,DERIVED (:INCLUDE ,BASE) (:CONSTRUCTOR NIL) (:COPIER NIL)
+          (:PREDICATE NIL))))))
+ ("BASE structure" (1 (:DEF 0))) ("DERIVED structure" ((:DEF 1))))
+(DEFINE-INDEXING-TEST
+ ((DEFSTRUCT ACCESSORS) :VERIFY-WALK NIL :TOPLEVEL T :AUX (TOWN))
+ `((:SECTION :CODE
+    ((DEFSTRUCT ,TOWN
+       AREA
+       WATERTOWERS
+       (FIRETRUCKS 1 :TYPE FIXNUM)
+       POPULATION
+       (ELEVATION 5128 :READ-ONLY T)))))
+ ("COPY-TOWN copier function" ((:DEF 0)))
+ ("MAKE-TOWN constructor function" ((:DEF 0))) ("TOWN structure" ((:DEF 0)))
+ ("TOWN-AREA slot accessor" ((:DEF 0)))
+ ("TOWN-ELEVATION slot reader" ((:DEF 0)))
+ ("TOWN-FIRETRUCKS slot accessor" ((:DEF 0)))
+ ("TOWN-P type predicate" ((:DEF 0)))
+ ("TOWN-POPULATION slot accessor" ((:DEF 0)))
+ ("TOWN-WATERTOWERS slot accessor" ((:DEF 0))))
+(DEFINE-INDEXING-TEST
+ ((DEFSTRUCT CONC-NAME) :VERIFY-WALK NIL :TOPLEVEL T :AUX (CLOWN))
+ `((:SECTION :CODE
+    ((DEFSTRUCT (,CLOWN (:CONC-NAME BOZO-))
+       (NOSE-COLOR 'RED)
+       FRIZZY-HAIR-P
+       POLKADOTS))))
+ ("BOZO-FRIZZY-HAIR-P slot accessor" ((:DEF 0)))
+ ("BOZO-NOSE-COLOR slot accessor" ((:DEF 0)))
+ ("BOZO-POLKADOTS slot accessor" ((:DEF 0))) ("CLOWN structure" ((:DEF 0)))
+ ("CLOWN-P type predicate" ((:DEF 0)))
+ ("COPY-CLOWN copier function" ((:DEF 0)))
+ ("MAKE-CLOWN constructor function" ((:DEF 0))))
+(DEFINE-INDEXING-TEST
+ ((DEFSTRUCT INHERITED-ACCESSOR) :VERIFY-WALK NIL :TOPLEVEL T :AUX (A B))
+ `((:SECTION :CODE
+    ((DEFSTRUCT
+         (,A (:CONC-NAME NIL) (:CONSTRUCTOR NIL) (:COPIER NIL)
+          (:PREDICATE NIL))
+       A-B)))
+   (:SECTION :CODE
+    ((DEFSTRUCT
+         (,B (:INCLUDE ,A) (:CONC-NAME A-) (:CONSTRUCTOR NIL) (:COPIER NIL)
+          (:PREDICATE NIL))
+       (B NIL :READ-ONLY T)))))
+ ("A structure" (1 (:DEF 0))) ("A-B slot accessor" ((:DEF 0)))
+ ("B structure" ((:DEF 1))))
 (DEFINE-INDEXING-TEST (DEFVAR :VERIFY-WALK NIL :TOPLEVEL T :AUX (SUPER DUPER))
  `((:SECTION :CODE ((DEFVAR ,SUPER 450)))
    (:SECTION :CODE ((DEFPARAMETER ,DUPER (1+ ,SUPER)))))
