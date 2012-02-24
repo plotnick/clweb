@@ -2112,17 +2112,25 @@ otherwise, they will replace them."
       (OPTIMIZE `(OPTIMIZE ,@DATA)))))
 (DEFMETHOD WALK-BINDINGS
            ((WALKER WALKER) NAMES (NAMESPACE VARIABLE-NAME) ENV &KEY DECLARE)
-  (VALUES NAMES
-          (AUGMENT-ENVIRONMENT ENV :VARIABLE NAMES :DECLARE
-                               (MAPCAN
-                                (LAMBDA (DECL)
-                                  (CASE (CAR DECL)
-                                    ((IGNORE IGNORABLE SPECIAL)
-                                     (LET ((VARS
-                                            (INTERSECTION (CDR DECL) NAMES)))
-                                       (WHEN VARS
-                                         (LIST `(,(CAR DECL) ,@VARS)))))))
-                                DECLARE))))
+  (LET ((DECLS
+         (NCONC
+          (MAPCAN
+           (LAMBDA (DECL)
+             (AND (MEMBER (CAR DECL) '(IGNORE IGNORABLE SPECIAL))
+                  (LET ((VARS (INTERSECTION (CDR DECL) NAMES)))
+                    (AND VARS (LIST `(,(CAR DECL) ,@VARS))))))
+           DECLARE)
+          (LIST
+           `(SPECIAL
+             ,@(REMOVE-IF-NOT
+                (LAMBDA (NAME)
+                  (AND (EQ (VARIABLE-INFORMATION NAME NIL) :SPECIAL) #+:SBCL
+                          (not (sb-ext:package-locked-p (symbol-package name)))
+                       (NOT
+                        (EQ (SYMBOL-PACKAGE NAME)
+                            (FIND-PACKAGE "COMMON-LISP")))))
+                NAMES))))))
+    (VALUES NAMES (AUGMENT-ENVIRONMENT ENV :VARIABLE NAMES :DECLARE DECLS))))
 (DEFUN WALK-LAMBDA-LIST (WALKER LAMBDA-LIST DECLS ENV)
   (LET ((NEW-LAMBDA-LIST 'NIL) (STATE :REQVARS))
     (LABELS ((WALK-VAR (VAR)

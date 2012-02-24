@@ -710,6 +710,21 @@
           '((SPECIAL X Y) (IGNORE Z) (IGNORABLE #'F)
             (OPTIMIZE (SPEED 3) (SAFETY 0))))
          T)
+(DEFVAR *FOO* NIL "A global special variable.")
+(DEFTEST WALK-BINDINGS
+         (LET ((NAMES '(*FOO* BAR BAZ))
+               (WALKER (MAKE-INSTANCE 'WALKER))
+               (CONTEXT (MAKE-CONTEXT 'VARIABLE-NAME))
+               (ENV (ENSURE-PORTABLE-WALKING-ENVIRONMENT NIL)))
+           (MULTIPLE-VALUE-BIND (WALKED-NAMES NEW-ENV)
+               (WALK-BINDINGS WALKER NAMES CONTEXT ENV :DECLARE
+                              '((SPECIAL BAR)))
+             (AND (EQUAL WALKED-NAMES NAMES)
+                  (EQUAL
+                   (MAPCAR (LAMBDA (VAR) (VARIABLE-INFORMATION VAR NEW-ENV))
+                           NAMES)
+                   '(:SPECIAL :SPECIAL :LEXICAL)))))
+         T)
 (DEFINE-SPECIAL-FORM-WALKER CHECK-BINDING
     ((WALKER TEST-WALKER) FORM ENV &KEY TOPLEVEL)
   (DECLARE (IGNORE TOPLEVEL))

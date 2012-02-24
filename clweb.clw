@@ -5147,10 +5147,9 @@ bindings.
 @l
 (defmethod walk-bindings ((walker walker) names (namespace variable-name) ;
                           env &key declare)
-  (values names
-          (augment-environment env
-                               :variable names
-                               :declare @<Find the declarations...@>)))
+  (let ((decls (nconc @<Find declarations...@>
+                      (list @<Construct a declaration spec...@>))))
+    (values names (augment-environment env :variable names :declare decls))))
 
 @ SBCL's environment handling is extremely picky, and signals warnings
 about declarations for variables it doesn't know about. To shut it up,
@@ -5158,13 +5157,61 @@ we'll supply only declarations that apply to the variable names currently
 being added to the environment.
 @^SBCL@>
 
-@<Find the declarations in |declare| that apply to the variables in |names|@>=
+@<Find declarations in |declare| that apply to variables in |names|@>=
 (mapcan (lambda (decl)
-          (case (car decl)
-            ((ignore ignorable special)
-             (let ((vars (intersection (cdr decl) names)))
-               (when vars (list `(,(car decl) ,@vars)))))))
+          (and (member (car decl) '(ignore ignorable special))
+               (let ((vars (intersection (cdr decl) names)))
+                 (and vars (list `(,(car decl) ,@vars))))))
         declare)
+
+@ Lexical bindings in Common Lisp shadow special bindings, {\it unless\/}
+the special declaration is global. However, on all of the implmentations
+tested so far, |augment-environment| {\it always\/} interprets bindings as
+lexical unless a |special| declaration is provided, regardless of whether
+the binding has been proclaimed special in the global environment. This
+seems to just be a pervasive bug: the specification for |augment-environment|
+says that ``[w]hether each [variable] binding is to be interpreted as
+special or lexical depends on |special| declarations recorded in the
+environment or provided in the |:declare| argument'' (\cltl, p.~212).
+@^\cltl@>
+
+We can work around this by checking if a variable was proclaimed special in
+the global environment, and adding a |special| declaration for the new
+binding if so. We need to special-case symbols in the \.{COMMON-LISP}
+package, because it is an error for a conforming program to declare
+bindings of such variables |special|. Moreover, SBCL has the notion of a
+`package lock' that applies not only to the \.{COMMON-LISP} package, but to
+several other implementation-specific packages as well. Symbols in locked
+packages include the same prohibition on |special| declarations, so we'll
+omit them from our new declaration as well.
+@^SBCL@>
+
+@<Construct a declaration specifier for special variables in |names|@>=
+`(special ;
+  ,@(remove-if-not (lambda (name)
+                     (and (eq (variable-information name nil) :special)
+                          #+sbcl
+                          (not (sb-ext:package-locked-p (symbol-package name)))
+                          (not (eq (symbol-package name) ;
+                                   (find-package "COMMON-LISP")))))
+                   names))
+
+@t@l
+(defvar *foo* nil "A global special variable.")
+
+(deftest walk-bindings
+  (let ((names '(*foo* bar baz))
+        (walker (make-instance 'walker))
+        (context (make-context 'variable-name))
+        (env (ensure-portable-walking-environment nil)))
+    (multiple-value-bind (walked-names new-env)
+        (walk-bindings walker names context env :declare '((special bar)))
+      (and (equal walked-names names)
+           (equal (mapcar (lambda (var) ;
+                            (variable-information var new-env)) ;
+                          names)
+                  '(:special :special :lexical)))))
+  t)
 
 @ The syntax of \L-lists is given in section~3.4 of the \ansi\ standard.
 We accept the syntax of macro \L-lists, since they are the most general,
