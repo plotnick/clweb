@@ -6336,8 +6336,6 @@ place. These copies will have each interesting symbol replaced with an
 uninterned symbol whose value cell contains the symbol it replaced and
 whose |section| property contains the section in which the original symbol
 occurred. We'll call these uninterned symbols {\it referring symbols}.
-If the original symbol has a global definition as a macro, we'll copy
-that, too, so as not to break code walkers and such.
 @^referring symbols@>
 
 First, we'll need a routine that does the substitution just described.
@@ -6358,9 +6356,8 @@ care to substitute inside of commas, too.
                (let ((refsym (copy-symbol symbol)))
                  (setf (symbol-value refsym) symbol)
                  (setf (get refsym 'section) section)
-                 (let ((function (macro-function symbol)))
-                   (when function
-                     (setf (macro-function refsym) function)))
+                 @<Copy any macro function associated with |symbol|...@>
+                 @<Make |refsym| an alias for any class...@>
                  (cons symbol refsym)))
              (substitute-symbols (form)
                (cond ((commap form)
@@ -6376,19 +6373,69 @@ care to substitute inside of commas, too.
       (setq refsyms (mapcar #'make-referring-symbol symbols))
       (maptree #'substitute-symbols form))))
 
-@ This next function goes the other way: given a symbol, it determines
-whether it is a referring symbol, and if so, it returns the symbol referred
-to and the section it came from. Otherwise, it just returns the given
-symbol. This interface makes it convenient to use in a |multiple-value-bind|
-form without having to apply a predicate first.
+@ If the original symbol has a global definition as a macro, we'll copy
+that, too, so as not to break code walkers and such.
+
+@<Copy any macro function associated with |symbol| to |refsym|@>=
+(let ((function (macro-function symbol)))
+  (when function
+    (setf (macro-function refsym) function)))
+
+@ And if the original symbol names a class, we'll make the referring symbol
+an alias for that class. This is necessary, for instance, when a referring
+symbol replaces a symbol naming a class in a type specification that is
+used before we have a chance to swap it back out.
+
+The association between symbols and classes named by those symbols is
+not stored in the symbols themselves, which means that we need to manually
+remove the associations when we no longer need them. So whenever we alias
+a class with a referring symbol, we'll push that symbol onto the global
+|*referring-classes*| list, and we'll remove the association when we're
+finished indexing.
+
+@<Make |refsym| an alias for any class named by |symbol|@>=
+(let ((class (find-class symbol nil)))
+  (when class
+    (setf (find-class refsym) class)
+    (push refsym *referring-classes*)))
+
+@ @<Global variables@>=
+(defvar *referring-classes* '())
+
+@ @<Initialize global variables@>=
+(setq *referring-classes* '())
+
+@ Unfortunately, on most implementations simply removing the association
+between a symbol and a class is not enough to actually free the storage
+allocated to that association. Since we're potentially generating many
+such associations (hundreds are created during the indexing of this
+program, for instance), this could leak non-trivial amounts of memory,
+especially with repeated runs.
+@^memory leak@>
+
+Perhaps even more unfortunate is the fact that SBCL's compiler can't
+seem to handle removing aliases for defined classes at all. And so on
+that platform, we'll just leave the associations lying around.
+@^SBCL@>
+
+@<Clean up after indexing@>=
+(dolist (symbol *referring-classes* (setq *referring-classes* '()))
+  #+sbcl (declare (ignore symbol))
+  #-sbcl (setf (find-class symbol) nil))
+
+@ Given a symbol, this next function first determines whether it is a
+referring symbol, and if so, it returns the referenced symbol and the
+section from whence it came. Otherwise, it just returns the given symbol.
+This interface makes it convenient to use in a |multiple-value-bind| form
+without having to apply a predicate first.
 @^referring symbols@>
 
 @l
 (defun symbol-provenance (symbol)
-  (let ((section (get symbol 'section)))
-    (if (and (null (symbol-package symbol))
+  (let (section)
+    (if (and (not (symbol-package symbol))
              (boundp symbol)
-             section)
+             (setq section (get symbol 'section)))
         (values (symbol-value symbol) section)
         symbol)))
 
@@ -6417,6 +6464,7 @@ form without having to apply a predicate first.
 
 @ To replace all of the referring symbols in a form, we'll use the following
 simple function.
+@^referring symbols@>
 
 @l
 (defun unsubstitute-referring-symbols (x)
@@ -7539,8 +7587,11 @@ of all of the interesting symbols so encountered.
                        (walker (make-instance 'indexing-walker :index index)))
   (let ((*evaluating* t))
     (index-package *package*)
-    (dolist (form (tangle-code-for-indexing sections) (walker-index walker))
-      (walk-form walker form nil t))))
+    (unwind-protect
+         (dolist ;
+             (form (tangle-code-for-indexing sections) (walker-index walker))
+           (walk-form walker form nil t))
+      @<Clean up after indexing@>)))
 
 @1*Writing the index. All that remains now is to write the index entries
 out to the index file. We'll be extra fancy and try to coalesce adjacent
