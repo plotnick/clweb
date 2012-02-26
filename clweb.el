@@ -143,3 +143,5 @@ any existing code for that section; otherwise, it will be replaced."
                       (clweb:tangle-file
                        ,(slime-to-lisp-filename filename))))))
        (:one-liner "Tangle and load a web."))))
+
+(provide 'clweb)
