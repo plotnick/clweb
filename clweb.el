@@ -1,7 +1,7 @@
 ;;;; A major-mode for editing CLWEB programs.
 
-(defvar start-section-regexp "^@[0-9]*[ *\nTt]")
-(defvar start-non-test-section-regexp "^@[0-9]*[ *\n]")
+(defvar start-section-regexp "^@\\([0-9]*\\)\\([ *\nTt]\\)")
+(defvar start-non-test-section-regexp "^@\\([0-9]*\\)\\([ *\n]\\)")
 
 (defun move-by-sections (arg &optional skip-test-sections)
   "Move forward or backward ARG sections."
@@ -87,6 +87,8 @@ any existing code for that section; otherwise, it will be replaced."
 \\{clweb-mode-map}"
   (setq fill-paragraph-function nil)
   (set (make-local-variable 'parse-sexp-lookup-properties) t)
+  (set (make-local-variable 'outline-regexp) start-non-test-section-regexp)
+  (set (make-local-variable 'outline-level) 'clweb-outline-level)
   (setq font-lock-defaults
 	'((lisp-font-lock-keywords
 	   lisp-font-lock-keywords-1
@@ -104,6 +106,13 @@ any existing code for that section; otherwise, it will be replaced."
               ("\\(^\\|[^@]\\)\\(@\\)[<^.]" 2 "< bn")
               ("\\(^\\|[^@]\\)@\\(>\\)[^=]" 2 "> bn")
               ("\\(^\\|[^@]\\)@\\(>\\)\\+?\\(=\\)" (2 "> bn") (3 "> b")))))))
+
+(defun clweb-outline-level ()
+  "CLWEB mode `outline-level' function."
+  (if (string= (match-string 2) "*")
+      (1+ (string-to-number (match-string 1)))
+      ;; Searching backward for the last starred section seems silly.
+      1000))
 
 (define-key clweb-mode-map "\C-c\C-n" 'forward-section)
 (define-key clweb-mode-map "\C-c\C-p" 'backward-section)
