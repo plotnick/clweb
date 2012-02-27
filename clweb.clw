@@ -5814,20 +5814,42 @@ the walker classes defined in this program.
   (format *trace-output*
           "~&~@<; ~@;walking bindings ~S ~S~:>~%" names context))
 
-@*Indexing. Having constructed our code walker, we can now use it to
-produce an index of the symbols in a web. By default, we'll say a symbol
-is {\it interesting\/} if it is interned in one of the packages listed
-in |*index-packages*|. The user can add packages to this list using
-the \.{@@x} control code, which calls the following function. It takes
-a designator for a list of package designators, and adds each package
-to |*index-packages*|.
+@*Indexing. Formally, an {\it index\/} is an ordered collection of
+{\it entries}, each of which is a (\<heading>, \<locator>) pair:
+the {\it locator\/} indicates where the object denoted by the
+{\it heading\/} may be found. A list of entries with the same heading
+is called an {\it entry list}, or sometimes just an {\it entry\/};
+the latter is an abuse of terminology, but useful and usually clear
+in context.
+
+In this program, our main job in indexing is to automatically produce
+entries whose headings are names (symbols, generally) together with the
+namespace in which the name is bound, and whose locators are the sections
+in which that binding is defined or used. E.g., given a definition of a
+function named |foo| in some section $m$ and a use of that function in
+section $n$, we'd like to produce an entry list like `|foo|~function:
+$\underline{m}, n$'. If there were also a class named |foo|, that would
+have a separate entry.
+
+The basic idea is to use a specialized walker class to perform a code walk
+of all the code parts in a web, and to build the index as we go. Because
+the code walker knows about all of the standard namespaces and how the
+various special forms introduce new bindings, we can use the context it
+provides during a walk to construct our headings. We'll have to use a
+trick to get the locations right, but we'll come to that in a bit.
+
+@ Of course, we don't want to index {\it all\/} of the symbols in a web:
+nobody really cares about all of the uses of |let|, for instance---or
+indeed any (or at least most) of the symbols in the \.{COMMON-LISP}
+package. Instead, we'll have the notion of an {\it interesting\/} symbol;
+if a symbol is interesting, we'll index it, and if not, then we won't.
+
+By default, we'll say a symbol is interesting if its home package in one
+of the packages listed in |*index-packages*|. By adding methods to the
+{\sc gf} |interesting-symbol-p|, the user can extend this notion in
+essentially arbitrary ways.
 
 @l
-(defun index-package (packages &aux (packages (ensure-list packages)))
-  "Inform the weaver that it should index the symbols in PACKAGES."
-  (dolist (package packages)
-    (pushnew (find-package package) *index-packages*)))
-
 (defgeneric interesting-symbol-p (object))
 (defmethod interesting-symbol-p (object)
   (declare (ignore object)))
@@ -5841,12 +5863,21 @@ to |*index-packages*|.
 @ @<Initialize global...@>=
 (setq *index-packages* nil)
 
+@ The user can add packages to the |*index-packages*| list using the
+\.{@@x} control code, which calls the following function.
+
+@l
+(defun index-package (packages &aux (packages (ensure-list packages)))
+  "Inform the weaver that it should index the symbols in PACKAGES."
+  (dolist (package packages)
+    (pushnew (find-package package) *index-packages*)))
+
 @t@l
 (deftest index-package
   (let ((*index-packages* nil))
     (index-package "KEYWORD")
-    (values (interesting-symbol-p nil)
-            (not (null (interesting-symbol-p :foo)))))
+    (values (interesting-symbol-p 'nil)
+            (not (null (interesting-symbol-p ':foo)))))
   nil t)
 
 @t We need to make sure that the \CLWEB\ package is in |*index-packages*|
@@ -5855,17 +5886,9 @@ when testing the indexer.
 @l
 (index-package "CLWEB")
 
-@ Before we proceed, let's establish some terminology. Formally, an
-{\it index\/} is an ordered collection of {\it entries}, each of which
-is a (\<heading>, \<locator>) pair: the {\it locator\/} indicates where the
-object referred to by the {\it heading\/} may be found. A list of entries
-with the same heading is called an {\it entry list}, or sometimes just an
-{\it entry\/}; the latter is an abuse of terminology, but useful and
-usually clear in context.
-
-@1*Headings. In this program, headings are usually represented by instances
-of the class |heading|. Headings may in general be multi-leveled, and are
-sorted lexicographically. Any object with applicable methods for
+@1*Headings. In this program, headings will generally be represented by
+instances of the class |heading|. Headings may in general be multi-leveled,
+and are sorted lexicographically. Any object with applicable methods for
 |heading-name| and |sub-heading| is treated as a valid heading; the former
 should always return a string designator, and the latter should return the
 next sub-heading or |nil| if there is none.
@@ -6505,8 +6528,24 @@ we'll walk.
 @ @<Global variables@>=
 (defvar *indexing* nil)
 
-@1*The indexing walker. Now we're ready to define a specialized walker that
-does the actual indexing.
+@ So here, finally, is the top-level indexing routine: it walks the
+tangled, symbol-replaced code of the given sections and returns an index
+of all of the interesting symbols so encountered.
+
+@l
+(defun index-sections (sections &key
+                       (index *index*)
+                       (walker (make-instance 'indexing-walker :index index)))
+  (let ((*evaluating* t))
+    (index-package *package*)
+    (unwind-protect
+         (dolist ;
+             (form (tangle-code-for-indexing sections) (walker-index walker))
+           (walk-form walker form nil t))
+      @<Clean up after indexing@>)))
+
+@1*The indexing walker. Now we're ready to define the specialized walker
+class that does the actual indexing.
 
 @l
 (defclass indexing-walker (walker)
@@ -6633,17 +6672,32 @@ exist for the dynamic extent of the walk.
          (test-indexing-walk ,sections ',expected-entries nil ,@options))
        t)))
 
+@ We'll start with a method that undoes the substitution of referring
+symbols inside quoted forms.
+@^referring symbols@>
+
+@l
+(defmethod walk-compound-form ;
+    ((walker indexing-walker) (operator (eql 'quote)) form env &key toplevel)
+  (declare (ignore env toplevel))
+  `(quote ,(unsubstitute-referring-symbols (cadr form))))
+
+@t@l
+(define-indexing-test quoted-form
+  '((:section :code ((quote foo)))
+    (:section :code ((quote (foo bar))))))
+
 @ We have to override the walker's macro expansion function, since the
 forms that we're considering might be or contain referring symbols, which
-won't have macro definitions. There are two important cases here:
-  (1)~a form that is a referring symbol whose referent is a symbol macro
-  in the local or global environment; and
-  (2)~a compound form, the operator of which is a referring symbol whose
-  referent has a macro definition in the local environment.
-The first case is handled via the call to |walk-variable-name| in |walk-form|
-for symbol macros; we handle the second case here. We index the use of the
-macro, then hand off control to the next method (which will perform the
-actual expansion), passing the referent of the referring symbol.
+might not have the appropriate definition as macros. There are two
+important cases here: (1)~a form that is a referring symbol whose referent
+is a symbol macro in the local or global environment; and (2)~a compound
+form, the operator of which is a referring symbol whose referent has a
+macro definition in the local environment. The first case is handled via
+the call to |walk-variable-name| in |walk-form| for symbol macros.
+We handle the second case here: we'll index the use of the macro, then hand
+off control to the next method (which will perform the actual expansion),
+passing the referent of the referring symbol.
 @^referring symbols@>
 
 @l
@@ -6714,7 +6768,7 @@ symbol; |construct-name| goes the other way.
 @ We'll use the same auxiliary routines for walking bindings. It's slightly
 complicated because we have to be able to handle multiple bindings
 simultaneously, and we need to wait for the indexing until we have the
-augmented environment. So we hold onto the referred-to symbols and their
+augmented environment. So we hold on to the referred-to symbols and their
 provenances while we call up to the next method to perform the actual
 bindings, and then index them one at a time.
 
@@ -6862,26 +6916,22 @@ that the walker sees definitions in the current global environment.
   ("FOO local function" ((:def 0)))
   ("FOO local setf function" ((:def 1))))
 
-@ Now we come to the form-specific walkers. We'll start with the special
-operator |quote|: it's important that we replace even quoted referring
-symbols.
-@^referring symbols@>
+@2*Indexing defining forms. Now we can turn our attention to walking
+defining forms such as |defun| and |defparameter|. The idea here is
+to index the name being defined before macro expansion robs us of the
+opportunity. We'll do that by pretending that the defining forms are
+actually special forms, which stops the walker from expanding them.
+After we're finished indexing, we can let the expansion continue via a
+|throw| to the |continue-walk| tag. But sometimes we won't even bother
+with the expansions; we don't care about getting an accurate and complete
+walk here, but rather only about indexing all of the interesting names.
 
-@l
-(defmethod walk-compound-form ;
-    ((walker indexing-walker) (operator (eql 'quote)) form env &key toplevel)
-  (declare (ignore env toplevel))
-  `(,(car form)
-    ,(unsubstitute-referring-symbols (cadr form))))
-
-@t@l
-(define-indexing-test quoted-form
-  '((:section :code ((quote foo)))
-    (:section :code ((quote (foo bar))))))
-
-@ We'll treat |defun| and~|define-compiler-macro| as special forms, since
-otherwise they'll get macro-expanded before we get a chance to walk the
-name. In fact, we won't even bother with the macro expansions at all.
+@ |defun| and~|define-compiler-macro| are perfect examples of defining
+forms that we'll walk as special forms for the purposes of indexing.
+If we didn't catch them before macro expansion, we'd have a very hard
+time noticing that they were definitions at all. We won't bother letting
+them expand, since we get everything we need from walking the name with
+|walk-name| and the body with |walk-lambda-expression|.
 
 @l
 (defun walk-defun (walker form context env)
@@ -6926,9 +6976,7 @@ the global environment.
   (let* ((context (make-context 'symbol-macro-name))
          (name (walk-name walker (cadr form) context env :def t)))
     (throw 'continue-walk
-      `(,(car form)
-        ,name
-        ,(walk-form walker (caddr form) env)))))
+      `(,(car form) ,name ,(walk-form walker (caddr form) env)))))
 
 @t@l
 (define-indexing-test (defmacro :verify-walk nil :toplevel t
@@ -6945,6 +6993,55 @@ the global environment.
   `((:section :code ((define-symbol-macro ,foo-bar-baz (:bar :baz))))
     (:section :code (,foo-bar-baz)))
   ("FOO-BAR-BAZ symbol macro" (1 (:def 0))))
+
+@ We'll need to let |defvar| and |defparameter| expand after walking, too,
+in order to pick up the |special| proclamations.
+
+@l
+(defun walk-defvar (walker form env)
+  (throw 'continue-walk
+    `(,(car form)
+      ,(walk-name walker (cadr form) ;
+                  (make-context 'special-variable-name) ;
+                  env :def t)
+      ,@(cddr form))))
+
+(define-special-form-walker defvar ;
+    ((walker indexing-walker) form env &key toplevel)
+  (declare (ignore toplevel))
+  (walk-defvar walker form env))
+
+(define-special-form-walker defparameter ;
+    ((walker indexing-walker) form env &key toplevel)
+  (declare (ignore toplevel))
+  (walk-defvar walker form env))
+
+@t@l
+(define-indexing-test (defvar :verify-walk nil :toplevel t
+                              :aux (super duper))
+  `((:section :code ((defvar ,super 450)))
+    (:section :code ((defparameter ,duper (1+ ,super)))))
+  ("DUPER special variable" ((:def 1)))
+  ("SUPER special variable" (1 (:def 0))))
+
+@ We have to treat |defconstant| specially because of the work-around in
+the walker for Allegro, but it's basically the same as above.
+@^Allegro Common Lisp@>
+
+@l
+(define-special-form-walker defconstant ;
+    ((walker indexing-walker) form env &rest args)
+  (apply #'call-next-method walker 'defconstant
+         `(defconstant ,(walk-name walker (cadr form) ;
+                                   (make-context 'constant-name) env :def t)
+            ,@(walk-list walker (cddr form) env))
+         env args))
+
+@t@l
+(define-indexing-test (defconstant :verify-walk nil :toplevel t
+                                   :aux (el-gordo))
+  `((:section :code ((defconstant ,el-gordo most-positive-fixnum))))
+  ("EL-GORDO constant" ((:def 0))))
 
 @ Structure definitions get walked to pick up the structure name as well as
 any automatically defined functions. We'll let the walk continue with the
@@ -7272,56 +7369,6 @@ are affected by |:conc-name|.
   ("A-B slot accessor" ((:def 0)))
   ("B structure" ((:def 1))))
 
-@ |defvar| and |defparameter| must be walked as if they were special forms
-in order to pick up the definitions of the names. We still have to let them
-expand, though, in order to get the |special| declarations.
-
-@l
-(defun walk-defvar (walker form env)
-  (throw 'continue-walk
-    `(,(car form)
-      ,(walk-name walker (cadr form) ;
-                  (make-context 'special-variable-name) ;
-                  env :def t)
-      ,@(cddr form))))
-
-(define-special-form-walker defvar ;
-    ((walker indexing-walker) form env &key toplevel)
-  (declare (ignore toplevel))
-  (walk-defvar walker form env))
-
-(define-special-form-walker defparameter ;
-    ((walker indexing-walker) form env &key toplevel)
-  (declare (ignore toplevel))
-  (walk-defvar walker form env))
-
-@t@l
-(define-indexing-test (defvar :verify-walk nil :toplevel t
-                              :aux (super duper))
-  `((:section :code ((defvar ,super 450)))
-    (:section :code ((defparameter ,duper (1+ ,super)))))
-  ("DUPER special variable" ((:def 1)))
-  ("SUPER special variable" (1 (:def 0))))
-
-@ We have to treat |defconstant| specially because of the work-around in
-the walker for Allegro, but it's basically the same as above.
-@^Allegro Common Lisp@>
-
-@l
-(define-special-form-walker defconstant ;
-    ((walker indexing-walker) form env &rest args)
-  (apply #'call-next-method walker 'defconstant
-         `(defconstant ,(walk-name walker (cadr form) ;
-                                   (make-context 'constant-name) env :def t)
-            ,@(walk-list walker (cddr form) env))
-         env args))
-
-@t@l
-(define-indexing-test (defconstant :verify-walk nil :toplevel t
-                                   :aux (el-gordo))
-  `((:section :code ((defconstant ,el-gordo most-positive-fixnum))))
-  ("EL-GORDO constant" ((:def 0))))
-
 @ Now we'll turn to the various {\sc clos} forms. We'll start with a little
 macro to pull off method qualifiers from a |defgeneric| form or a method
 description. Syntactically, the qualifiers are any non-list objects
@@ -7576,22 +7623,6 @@ method combination types. We'll skip the expansion.
     (:section :code ((defgeneric ,generic-foo () (:method-combination ,foo)))))
   ("FOO method combination" (1 (:def 0)))
   ("GENERIC-FOO generic function" ((:def 1))))
-
-@ And here, finally, is the top-level indexing routine: it walks the
-tangled, symbol-replaced code of the given sections and returns an index
-of all of the interesting symbols so encountered.
-
-@l
-(defun index-sections (sections &key
-                       (index *index*)
-                       (walker (make-instance 'indexing-walker :index index)))
-  (let ((*evaluating* t))
-    (index-package *package*)
-    (unwind-protect
-         (dolist ;
-             (form (tangle-code-for-indexing sections) (walker-index walker))
-           (walk-form walker form nil t))
-      @<Clean up after indexing@>)))
 
 @1*Writing the index. All that remains now is to write the index entries
 out to the index file. We'll be extra fancy and try to coalesce adjacent
