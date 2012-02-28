@@ -7,6 +7,7 @@
 (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
   #+:SBCL (require "SB-CLTL2"))
 (DEFPACKAGE "CLWEB"
+  (:DOCUMENTATION "A literate programming system for Common Lisp.")
   (:USE "COMMON-LISP")
   (:EXPORT "TANGLE-FILE"
            "LOAD-WEB"

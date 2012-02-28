@@ -96,6 +96,7 @@ signaled while processing a web.
   #+sbcl (require "SB-CLTL2"))
 @e
 (defpackage "CLWEB"
+  (:documentation "A literate programming system for Common Lisp.")
   (:use "COMMON-LISP")
   (:export "TANGLE-FILE"
            "LOAD-WEB"
