@@ -102,6 +102,7 @@ signaled while processing a web.
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "*COMPILE-TESTS-FILE*"
            "*TANGLE-FILE-PATHNAME*"
            "*TANGLE-FILE-TRUENAME*"
            "*WEAVE-PRINT*"
@@ -3059,6 +3060,25 @@ with a logical pathname host in your environment, please notify the author.
                        :tests-file nil)
   nil)
 
+@ Some tests might not be worth spending time compiling, or might be
+easier to debug if not compiled, or might involve unwanted complexity
+to support compilation (e.g., |make-load-form|). So we'll allow the
+user to specify whether to compile a tests file, with a variable for
+the default preference.
+
+@<Global variables@>=
+(defvar *compile-tests-file* t
+  "The default value to use for the :COMPILE-TESTS-FILE argument to
+TANGLE-FILE.")
+
+@ During tangling, we bind |*tangle-file-pathname*| and
+|*tangle-file-truename*| in the same way that |compile-file| binds
+|*compile-file-pathname*| and |*compile-file-truename*|.
+
+@<Global variables@>=
+(defvar *tangle-file-pathname* nil)
+(defvar *tangle-file-truename* nil)
+
 @ We'll use a custom pprint-dispatch table for tangling to avoid cluttering
 the default table.
 
@@ -3103,6 +3123,7 @@ supplying a null |tests-file| argument.
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (if-exists @<|:if-exists|...@>)
+                    (compile-tests-file *compile-tests-file*)
                     (external-format :default) &allow-other-keys &aux
                     (*readtable* *readtable*)
                     (*package* *package*))
@@ -3135,18 +3156,19 @@ supplying a null |tests-file| argument.
                        :output-file lisp-file
                        :if-exists if-exists
                        :external-format external-format)
-      (multiple-value-prog1
-          (compile-file lisp-file
-                        :output-file output-file
-                        :verbose verbose
-                        :print print
-                        :external-format external-format)
-        (when tests-file
-          (compile-file tests-file
-                        :output-file tests-output-file
-                        :verbose verbose
-                        :print print
-                        :external-format external-format))))))
+      (with-compilation-unit ()
+        (multiple-value-prog1
+            (compile-file lisp-file
+                          :output-file output-file
+                          :verbose verbose
+                          :print print
+                          :external-format external-format)
+          (when (and tests-file compile-tests-file)
+            (compile-file tests-file
+                          :output-file tests-output-file
+                          :verbose verbose
+                          :print print
+                          :external-format external-format)))))))
 
 @ This routine performs the defaulting for the filename arguments to
 |tangle-file|. It returns five pathnames: the defaulted input file,
@@ -3223,14 +3245,6 @@ filename by replacing its type with the type of the defaulted output file.
   #.(compile-file-pathname #P"clweb-test:foo.lisp")
   nil
   nil)
-
-@ During tangling, we bind |*tangle-file-pathname*| and
-|*tangle-file-truename*| in the same way that |compile-file| binds
-|*compile-file-pathname*| and |*compile-file-truename*|.
-
-@<Global variables@>=
-(defvar *tangle-file-pathname* nil)
-(defvar *tangle-file-truename* nil)
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
