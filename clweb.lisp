@@ -1459,9 +1459,9 @@ otherwise, they will replace them."
               (= (SECTION-NUMBER SECTION) (SECTION-NUMBER NAMED-SECTION))))
     (WHEN CODE
       (DOLIST (FORM CODE)
-        (IF (NEWLINEP FORM)
-            (TERPRI STREAM)
-            (FORMAT STREAM "~@<\\+~@;~W~;\\cr~:>" FORM)))
+        (TYPECASE FORM
+          (NEWLINE-MARKER (FORMAT STREAM "~W" FORM))
+          (T (FORMAT STREAM "~@<\\+~@;~W~;\\cr~:>" FORM))))
       (FORMAT STREAM "~&\\egroup~%"))
     (WHEN
         (AND (NOT NAMED-SECTION) (TYPEP SECTION 'TEST-SECTION)

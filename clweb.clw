@@ -3639,9 +3639,9 @@ matches the \.{\\ifon} in \.{\\M} and \.{\\N}.
               (= (section-number section) (section-number named-section))))
     (when code
       (dolist (form code)
-        (if (newlinep form)
-            (terpri stream)
-            (format stream "~@<\\+~@;~W~;\\cr~:>" form)))
+        (typecase form
+          (newline-marker (format stream "~W" form))
+          (t (format stream "~@<\\+~@;~W~;\\cr~:>" form))))
       (format stream "~&\\egroup~%")) ; matches \.{\\bgroup} in \.{\\B}
     (when (and (not named-section)
                (typep section 'test-section)
