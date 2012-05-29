@@ -82,11 +82,12 @@ In addition to the top-level tangler and weaver functions mentioned above,
 there's also |clweb:load-sections-from-temp-file|, which is conceptually
 part of the tangler, but is a special-purpose routine designed to be used
 in conjunction with an editor such as Emacs to provide incremental
-redefinition of sections; the user will generally never need to call it
-directly. Then there are a few global variables that control various
-operations of the weaver. The remainder of the exported symbols are
-condition classes for the various errors and warnings that might be
-signaled while processing a web.
+redefinition of sections; the user will generally never need to call
+it directly. |tangle-file-pathnames| and |weave-pathnames| play roles
+analagous to |compile-file-pathname|. Next come a few global variables
+that control various operations of the weaver. The remainder of the
+exported symbols are condition classes for the various errors and warnings
+that might be signaled while processing a web.
 
 @l
 (provide "CLWEB")
@@ -102,6 +103,8 @@ signaled while processing a web.
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "TANGLE-FILE-PATHNAMES"
+           "WEAVE-PATHNAMES"
            "*COMPILE-TESTS-FILE*"
            "*TANGLE-FILE-PATHNAME*"
            "*TANGLE-FILE-TRUENAME*"
@@ -115,9 +118,7 @@ signaled while processing a web.
            "UNUSED-NAMED-SECTION-WARNING")
   (:shadow #+(or allegro ccl) "MAKE-PATHNAME")
   #+(or sbcl ccl allegro)
-  (:import-from #+sbcl "SB-CLTL2"
-                #+ccl "CCL"
-                #+allegro "SYS"
+  (:import-from #+sbcl "SB-CLTL2" #+ccl "CCL" #+allegro "SYS"
                 #-allegro "FUNCTION-INFORMATION"
                 #-allegro "VARIABLE-INFORMATION"
                 #-allegro "PARSE-MACRO"
@@ -3200,6 +3201,8 @@ filename by replacing its type with the type of the defaulted output file.
 @l
 (defun tangle-file-pathnames (input-file &rest args &key ;
                               output-file tests-file &allow-other-keys)
+  "Compute and return the names of the defaulted input file and files
+output by the tangler."
   (declare (ignorable output-file tests-file))
   (let* ((input-file (merge-pathnames ;
                       input-file ;
@@ -3414,6 +3417,8 @@ by replacing its type component with~`\.{SCN}'.
 (defun weave-pathnames (input-file &key output-file ;
                         (index-file nil index-file-supplied) ;
                         &allow-other-keys)
+  "Compute and return the names of the defaulted input file and files
+output by the weaver."
   (let* ((input-file (merge-pathnames ;
                       input-file ;
                       (make-pathname :type "CLW" :case :common)))

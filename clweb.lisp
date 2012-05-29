@@ -13,6 +13,8 @@
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "TANGLE-FILE-PATHNAMES"
+           "WEAVE-PATHNAMES"
            "*COMPILE-TESTS-FILE*"
            "*TANGLE-FILE-PATHNAME*"
            "*TANGLE-FILE-TRUENAME*"
@@ -26,9 +28,7 @@
            "UNUSED-NAMED-SECTION-WARNING")
   (:SHADOW #+(:OR :ALLEGRO :CCL) "MAKE-PATHNAME")
   #+(:OR :SBCL :CCL :ALLEGRO)
-  (:import-from #+sbcl "SB-CLTL2"
-                #+ccl "CCL"
-                #+allegro "SYS"
+  (:import-from #+sbcl "SB-CLTL2" #+ccl "CCL" #+allegro "SYS"
                 #-allegro "FUNCTION-INFORMATION"
                 #-allegro "VARIABLE-INFORMATION"
                 #-allegro "PARSE-MACRO"
@@ -1268,6 +1268,8 @@ otherwise, they will replace them."
                           EXTERNAL-FORMAT)))))))
 (DEFUN TANGLE-FILE-PATHNAMES
        (INPUT-FILE &REST ARGS &KEY OUTPUT-FILE TESTS-FILE &ALLOW-OTHER-KEYS)
+  "Compute and return the names of the defaulted input file and files
+output by the tangler."
   (DECLARE (IGNORABLE OUTPUT-FILE TESTS-FILE))
   (LET* ((INPUT-FILE
           (MERGE-PATHNAMES INPUT-FILE
@@ -1346,6 +1348,8 @@ otherwise, they will replace them."
        (INPUT-FILE
         &KEY OUTPUT-FILE (INDEX-FILE NIL INDEX-FILE-SUPPLIED)
         &ALLOW-OTHER-KEYS)
+  "Compute and return the names of the defaulted input file and files
+output by the weaver."
   (LET* ((INPUT-FILE
           (MERGE-PATHNAMES INPUT-FILE
                            (MAKE-PATHNAME :TYPE "CLW" :CASE :COMMON)))
