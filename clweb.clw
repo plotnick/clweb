@@ -90,8 +90,6 @@ exported symbols are condition classes for the various errors and warnings
 that might be signaled while processing a web.
 
 @l
-(provide "CLWEB")
-
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
   #+sbcl (require "SB-CLTL2"))
