@@ -3658,7 +3658,7 @@ matches the \.{\\ifon} in \.{\\M} and \.{\\N}.
                    (remove section (used-by named-section)))
       (print-xrefs stream #\Q ;
                    (remove section (cited-by named-section)))))
-  (format stream "\\fi~%"))
+  (format stream "~&\\fi~%"))
 
 (set-weave-dispatch 'section #'print-section)
 
