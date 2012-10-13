@@ -89,6 +89,7 @@ any existing code for that section; otherwise, it will be replaced."
   (set (make-local-variable 'parse-sexp-lookup-properties) t)
   (set (make-local-variable 'outline-regexp) start-non-test-section-regexp)
   (set (make-local-variable 'outline-level) 'clweb-outline-level)
+  (setq info-lookup-mode 'lisp-mode)
   (setq font-lock-defaults
 	'((lisp-font-lock-keywords
 	   lisp-font-lock-keywords-1
