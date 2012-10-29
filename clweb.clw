@@ -2857,8 +2857,8 @@ capability later in the indexing code.
       ((cons named-section *)
        (multiple-value-bind (d cdr-expanded-p) (tangle-1 (cdr form))
          (if expand-named-sections
-            (values (append (section-code (car form)) d) t)
-            (values (cons (car form) d) cdr-expanded-p))))
+             (values (append (section-code (car form)) d) t)
+             (values (cons (car form) d) cdr-expanded-p))))
       ((cons marker *)
        (values (if (marker-boundp (car form))
                    (cons (marker-value (car form)) (tangle-1 (cdr form)))
