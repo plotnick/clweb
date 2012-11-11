@@ -6451,15 +6451,9 @@ program, for instance), this could leak non-trivial amounts of memory,
 especially with repeated runs.
 @^memory leak@>
 
-Perhaps even more unfortunate is the fact that SBCL's compiler can't
-seem to handle removing aliases for defined classes at all. And so on
-that platform, we'll just leave the associations lying around.
-@^SBCL@>
-
 @<Clean up after indexing@>=
 (dolist (symbol *referring-classes* (setq *referring-classes* '()))
-  #+sbcl (declare (ignore symbol))
-  #-sbcl (setf (find-class symbol) nil))
+  (setf (find-class symbol) nil))
 
 @ Given a symbol, this next function first determines whether it is a
 referring symbol, and if so, it returns the referenced symbol and the

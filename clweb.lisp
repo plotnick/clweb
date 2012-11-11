@@ -2666,8 +2666,7 @@ otherwise, they will replace them."
             (FORM (TANGLE-CODE-FOR-INDEXING SECTIONS) (WALKER-INDEX WALKER))
           (WALK-FORM WALKER FORM NIL T))
       (DOLIST (SYMBOL *REFERRING-CLASSES* (SETQ *REFERRING-CLASSES* 'NIL))
-       #+:SBCL (declare (ignore symbol))
-       #-:SBCL (setf (find-class symbol) nil)))))
+        (SETF (FIND-CLASS SYMBOL) NIL)))))
 (DEFCLASS INDEXING-WALKER (WALKER)
           ((INDEX :ACCESSOR WALKER-INDEX :INITARG :INDEX :INITFORM
                   (MAKE-INDEX))))
