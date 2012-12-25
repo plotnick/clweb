@@ -2029,8 +2029,7 @@ value; and in a tangled source file, we get a \.{\#.} form.
 
 (defun sharpsign-dot-reader (stream sub-char arg)
   (declare (ignore sub-char arg))
-  (let* ((*readtable* (if *evaluating* (readtable-for-mode nil) *readtable*))
-         (form (read stream t nil t)))
+  (let ((form (tangle (read stream t nil t))))
     (unless *read-suppress*
       (unless *read-eval*
         (simple-reader-error stream "can't read #. while *READ-EVAL* is NIL"))

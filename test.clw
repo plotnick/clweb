@@ -67,7 +67,7 @@ be all on one line.
 (defparameter *bit-vector* #8*1011 "An octet")
 (defparameter *bit-string* #B1011)
 (defparameter *deadbeef* #Xdeadbeef)
-(defparameter *list* '#.(list 1 2 3))
+(defparameter *list* '#.(list 1 2 (let ((x 1)) @<Thrice |x|@>)))
 (defparameter *impl* #+sbcl "SBCL" #+(not sbcl) "Not SBCL")
 
 @*Baz. The sole purpose of this section is to exercise some of the
