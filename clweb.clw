@@ -15,6 +15,7 @@
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\<#1>{\leavevmode\hbox{$\mkern-2mu\langle${\it #1\/}$\rangle$}}
 \def\ansi{{\sc ansi}}
+\def\asdf{{\sc asdf}}
 \def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
 
 @*Introduction. This is \CLWEB, a literate programming system for Common
@@ -84,10 +85,11 @@ part of the tangler, but is a special-purpose routine designed to be used
 in conjunction with an editor such as Emacs to provide incremental
 redefinition of sections; the user will generally never need to call
 it directly. |tangle-file-pathnames| and |weave-pathnames| play roles
-analagous to |compile-file-pathname|. Next come a few global variables
-that control various operations of the weaver. The remainder of the
-exported symbols are condition classes for the various errors and warnings
-that might be signaled while processing a web.
+analagous to |compile-file-pathname|. |clweb-file| is an \asdf\ component
+class that represents a web. Next come a few global variables that control
+various operations of the weaver. The remainder of the exported symbols are
+condition classes for the various errors and warnings that might be
+signaled while processing a web.
 
 @l
 @e
@@ -103,6 +105,7 @@ that might be signaled while processing a web.
            "LOAD-SECTIONS-FROM-TEMP-FILE"
            "TANGLE-FILE-PATHNAMES"
            "WEAVE-PATHNAMES"
+           "CLWEB-FILE"
            "*COMPILE-TESTS-FILE*"
            "*TANGLE-FILE-PATHNAME*"
            "*TANGLE-FILE-TRUENAME*"
@@ -150,6 +153,57 @@ but we'd like them to appear near the top of the tangled output.
 @l
 @<Global variables@>
 @<Condition classes@>
+
+@2*ASDF integration. \asdf\ is ``another system definition facility'' for
+Common Lisp. Despite its flaws, it has become the de~facto standard system
+construction tool, and plays an important r\^ole in the modern Lisp
+ecosystem.
+
+\asdf\ was designed to be extensible, and indeed adding basic support for
+webs as first-class components is straightforward. We define a class for
+webs as source files, and add specialized methods for the most important
+operations.
+
+@l
+(defclass clweb-file (asdf:source-file)
+  ((type :initform "clw")))
+
+(defmethod asdf:component-pathname ((component clweb-file))
+  (input-file-pathname (call-next-method)))
+
+(defmethod asdf:output-files ((op asdf:compile-op) (component clweb-file))
+  (values (multiple-value-list ;
+           (tangle-file-pathnames (asdf:component-pathname component)))
+          nil))
+
+(defmethod asdf:perform ((op asdf:compile-op) (component clweb-file))
+  (tangle-file (asdf:component-pathname component)
+               :output-file (first (asdf:output-files op component))))
+
+(defmethod asdf:perform ((op asdf:load-op) (component clweb-file))
+  (map nil #'load
+       (remove-if (lambda (file) (string= (pathname-type file) "lisp"))
+                  (asdf:input-files op component))))
+
+(defmethod asdf:perform ((op asdf:load-source-op) (component clweb-file))
+  (load-web (asdf:component-pathname component)))
+
+@ We'll define a new \asdf\ operation, |weave-op|, which invokes the weaver
+on a web. It has no effect on other components.
+
+@l
+(defclass weave-op (asdf:operation) ())
+
+(defmethod asdf:output-files ((op weave-op) (component clweb-file))
+  (values (multiple-value-list ;
+           (weave-pathnames (asdf:component-pathname component)))
+          t))
+
+(defmethod asdf:perform ((op weave-op) component)
+  (declare (ignore component)))
+
+(defmethod asdf:perform ((op weave-op) (component clweb-file))
+  (weave (asdf:component-pathname component)))
 
 @1*Utilities.
 
@@ -3207,6 +3261,9 @@ using the defaulted input and output filenames.
 filename by replacing its type with the type of the defaulted output file.
 
 @l
+(defun default-input-file (input-file)
+  (merge-pathnames input-file (make-pathname :type "CLW" :case :common)))
+
 (defun tangle-file-pathnames (input-file &rest args &key ;
                               output-file tests-file &allow-other-keys)
   "Compute and return the names of the defaulted input file and files
