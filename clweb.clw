@@ -1929,13 +1929,15 @@ abbreviation.
 @l
 (defclass simple-vector-marker (marker)
   ((length :initarg :length)
-   (elements :initarg :elements)
-   (element-type :initarg :element-type))
+   (elements :reader simple-vector-marker-elements :initarg :elements)
+   (element-type :reader simple-vector-marker-element-type ;
+                 :initarg :element-type))
   (:default-initargs :element-type t))
 
 (defmethod marker-boundp ((marker simple-vector-marker)) t)
 (defmethod marker-value ((marker simple-vector-marker))
-  (with-slots (elements element-type) marker
+  (let ((elements (tangle (simple-vector-marker-elements marker)))
+        (element-type (simple-vector-marker-element-type marker)))
     (if (slot-boundp marker 'length)
         (with-slots (length) marker
           (let ((supplied-length (length elements)))
@@ -1968,8 +1970,8 @@ abbreviation.
 
 @t@l
 (deftest read-simple-vector
-  (marker-value (read-form-from-string "#5(:a :b :c)"))
-  #(:a :b :c :c :c))
+  (marker-value (read-form-from-string "#5(:a :b :c #C(0 1))"))
+  #(:a :b :c #C(0 1) #C(0 1)))
 
 @ Sharpsign asterisk also creates a vector, but the token following the
 asterisk must be composed entirely of the characters `0' and~`1', which
