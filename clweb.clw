@@ -6610,7 +6610,8 @@ of all of the interesting symbols so encountered.
     (unwind-protect
          (dolist ;
              (form (tangle-code-for-indexing sections) (walker-index walker))
-           (walk-form walker form nil t))
+           (handler-case (walk-form walker form nil t)
+             (package-error () form)))
       @<Clean up after indexing@>)))
 
 @1*The indexing walker. Now we're ready to define the specialized walker
