@@ -3791,7 +3791,7 @@ value if they require specialized escaping.
 
 @l
 (defparameter *print-escape-list* ;
-  '((" \\%&#$^_~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
+  '((" \\%&#$^_" . #\\) ("~" . "$\\sim$") ("{" . "$\\{$") ("}" . "$\\}$")))
 
 (defun print-escaped (stream string &rest args &aux
                       (stream (case stream
@@ -3822,7 +3822,7 @@ the newline.
 
 @l
 (defun print-string (stream string)
-  (loop with *print-escape-list* = `(("{*}" . #\\)
+  (loop with *print-escape-list* = `(("{*~}" . #\\)
                                      ("\\" . "\\\\\\\\")
                                      ("\"" . "\\\\\"")
                                      ,@*print-escape-list*)
@@ -3844,7 +3844,7 @@ the newline.
 (defun print-char (stream char)
   (let ((graphicp (and (graphic-char-p char) (standard-char-p char)))
         (name (char-name char))
-        (*print-escape-list* `(("{}" . #\\) ,@*print-escape-list*)))
+        (*print-escape-list* `(("{~}" . #\\) ,@*print-escape-list*)))
     (format stream "\\#\\CH{~/clweb::print-escaped/}"
             (if (and name (not graphicp))
                 name

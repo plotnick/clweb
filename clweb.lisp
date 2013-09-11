@@ -1534,7 +1534,7 @@ output by the weaver."
                       (PRINT-XREFS STREAM #\Q
                                    (REMOVE SECTION (CITED-BY SECTION)))))
 (DEFPARAMETER *PRINT-ESCAPE-LIST*
-  '((" \\%&#$^_~" . #\\) ("{" . "$\\{$") ("}" . "$\\}$")))
+  '((" \\%&#$^_" . #\\) ("~" . "$\\sim$") ("{" . "$\\{$") ("}" . "$\\}$")))
 (DEFUN PRINT-ESCAPED
        (STREAM STRING
         &REST ARGS
@@ -1554,7 +1554,7 @@ output by the weaver."
              (STRING (WRITE-STRING ESCAPE STREAM))) ELSE
         DO (WRITE-CHAR CHAR STREAM)))
 (DEFUN PRINT-STRING (STREAM STRING)
-  (LOOP WITH *PRINT-ESCAPE-LIST* = `(("{*}" . #\\) ("\\" . "\\\\\\\\")
+  (LOOP WITH *PRINT-ESCAPE-LIST* = `(("{*~}" . #\\) ("\\" . "\\\\\\\\")
                                      ("\"" . "\\\\\"") ,@*PRINT-ESCAPE-LIST*)
         FOR LAST = 0 THEN (IF (CHAR= (ELT STRING (1- NEWLINE)) #\~)
                               (POSITION-IF-NOT #'WHITESPACEP STRING :START
@@ -1572,7 +1572,7 @@ output by the weaver."
 (DEFUN PRINT-CHAR (STREAM CHAR)
   (LET ((GRAPHICP (AND (GRAPHIC-CHAR-P CHAR) (STANDARD-CHAR-P CHAR)))
         (NAME (CHAR-NAME CHAR))
-        (*PRINT-ESCAPE-LIST* `(("{}" . #\\) ,@*PRINT-ESCAPE-LIST*)))
+        (*PRINT-ESCAPE-LIST* `(("{~}" . #\\) ,@*PRINT-ESCAPE-LIST*)))
     (FORMAT STREAM "\\#\\CH{~/clweb::print-escaped/}"
             (IF (AND NAME (NOT GRAPHICP))
                 NAME
