@@ -3906,14 +3906,15 @@ of the form `(\<suffix>~.~\<replacement>)'.
 @ A few symbols get special replacements.
 
 @l
-(macrolet ((weave-symbol (symbol replacement)
-             `(set-weave-dispatch '(eql ,symbol)
-                (lambda (stream obj)
-                  (declare (ignore obj))
-                  (write-string ,replacement stream))
-                1)))
-  (weave-symbol lambda "\\L")
-  (weave-symbol pi "$\\pi$"))
+(defmacro weave-symbol-replace (symbol replacement)
+  `(set-weave-dispatch '(eql ,symbol)
+     (lambda (stream obj)
+       (declare (ignore obj))
+       (write-string ,replacement stream))
+     1))
+
+(weave-symbol-replace lambda "\\L")
+(weave-symbol-replace pi "$\\pi$")
 
 @ We transform \.{\#'} into instances of |function-marker| during reading,
 so we don't want lists of the form |(function foo)| turned into |#'foo|
