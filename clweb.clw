@@ -2087,11 +2087,13 @@ value; and in a tangled source file, we get a \.{\#.} form.
 
 (defun sharpsign-dot-reader (stream sub-char arg)
   (declare (ignore sub-char arg))
-  (let ((form (tangle (read stream t nil t))))
+  (let ((form (read stream t nil t)))
     (unless *read-suppress*
       (unless *read-eval*
         (simple-reader-error stream "can't read #. while *READ-EVAL* is NIL"))
-      (make-instance 'read-time-eval-marker :form form :value (eval form)))))
+      (make-instance 'read-time-eval-marker
+                     :form form
+                     :value (eval (tangle form))))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\. #'sharpsign-dot-reader ;
