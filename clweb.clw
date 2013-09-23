@@ -2256,6 +2256,29 @@ parse it when we need the value.
                 (read-form-from-string "#S(person :name \"James\")")))
   "James")
 
+@ Sharpsign~P reads namestrings and turns them into pathnames.
+
+@l
+(defclass pathname-marker (marker)
+  ((namestring :reader pathname-marker-namestring :initarg :namestring)))
+
+(defmethod marker-boundp ((marker pathname-marker)) t)
+(defmethod marker-value ((marker pathname-marker))
+  (parse-namestring (pathname-marker-namestring marker)))
+
+(set-tangle-dispatch 'pathname-marker
+  (lambda (stream obj)
+    (format stream "#P~W" (pathname-marker-namestring obj)))
+  1)
+
+(defun pathname-reader (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (make-instance 'pathname-marker :namestring (read stream t nil t)))
+
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\P #'pathname-reader ;
+                                (readtable-for-mode mode)))
+
 @ Sharpsign $+$ and~$-$ provide read-time conditionalization based on
 feature expressions, described in section~24.1.2 of the CL standard.
 This routine, adapted from SBCL, interprets such an expression.
@@ -4177,6 +4200,11 @@ which see.
 (set-weave-dispatch 'structure-marker
   (lambda (stream obj)
     (format stream "\\#S~W" (structure-marker-form obj))))
+
+@ @l
+(set-weave-dispatch 'pathname-marker
+  (lambda (stream obj)
+    (format stream "\\#P~W" (pathname-marker-namestring obj))))
 
 @ Read-time conditionals, like literal strings, must be printed one line at
 a time so as to respect the alignment tabs. Since the \.{\\RC} macro switches
