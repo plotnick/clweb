@@ -1041,6 +1041,11 @@
                   (LAMBDA (STREAM SUB-CHAR ARG)
                     (DECLARE (IGNORE SUB-CHAR STREAM ARG))
                     (STRING "@")))
+(SET-CONTROL-CODE #\q
+                  (LAMBDA (STREAM SUB-CHAR ARG)
+                    (DECLARE (IGNORE SUB-CHAR ARG))
+                    (READ-LINE STREAM)
+                    (VALUES)))
 (DEFSTRUCT
     (SOURCE-LOCATION (:CONSTRUCTOR CREATE-SOURCE-LOCATION (LINENO FILE)))
   LINENO

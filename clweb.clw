@@ -2858,6 +2858,21 @@ it should really only be used in \TeX\ text.
     (values (read-from-string "@@")))
   "@")
 
+@ The control code \.{@@q} introduces is a \CLWEB-only comment that
+will not be represented in either the tangled or woven results.
+
+@l
+(set-control-code #\q (lambda (stream sub-char arg)
+                        (declare (ignore sub-char arg))
+                        (read-line stream)
+                        (values)))
+
+@t@l
+(deftest \@q-lisp
+  (with-mode :lisp
+    (values (read-from-string (format nil "@q nil~%t"))))
+  t)
+
 @ While reading a \WEB\ from a file, each section gets initialized
 with a |source-location| instance denoting the filename and line
 number at which the section began. (As for getting the pathname

@@ -528,6 +528,10 @@
          (WITH-MODE :TEX
            (VALUES (READ-FROM-STRING "@@")))
          "@")
+(DEFTEST @Q-LISP
+         (WITH-MODE :LISP
+           (VALUES (READ-FROM-STRING (FORMAT NIL "@q nil~%t"))))
+         T)
 (DEFTEST START-TEST-SECTION-READER
          (LET ((*TEST-SECTIONS* (MAKE-ARRAY 2 :FILL-POINTER 0)))
            (WITH-INPUT-FROM-STRING (S (FORMAT NIL "@t~%:foo @t* :bar"))
