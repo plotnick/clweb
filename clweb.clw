@@ -3558,6 +3558,7 @@ you can say, e.g., |(load (tangle-file "web"))|.
                     (verbose *compile-verbose*)
                     (print *compile-print*)
                     (if-exists @<|:if-exists|...@>)
+                    (compile-file t)
                     (compile-tests-file *compile-tests-file*)
                     (external-format :default) &allow-other-keys &aux
                     (input-file (input-file-pathname input-file))
@@ -3595,19 +3596,21 @@ you can say, e.g., |(load (tangle-file "web"))|.
                          :output-file lisp-file
                          :if-exists if-exists ;
                          :external-format external-format)
-        (with-compilation-unit ()
-          (multiple-value-prog1
-              (compile-file lisp-file
-                            :output-file output-file
-                            :verbose verbose ;
-                            :print print
-                            :external-format external-format)
-            (when (and tests-file compile-tests-file)
-              (compile-file tests-file
-                            :output-file tests-output-file
-                            :verbose verbose ;
-                            :print print
-                            :external-format external-format))))))))
+        (if compile-file
+            (with-compilation-unit ()
+              (multiple-value-prog1
+                  (compile-file lisp-file
+                                :output-file output-file
+                                :verbose verbose ;
+                                :print print
+                                :external-format external-format)
+                (when (and tests-file compile-tests-file)
+                  (compile-file tests-file
+                                :output-file tests-output-file
+                                :verbose verbose ;
+                                :print print
+                                :external-format external-format))))
+            lisp-file)))))
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
