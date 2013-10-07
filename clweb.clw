@@ -1775,7 +1775,7 @@ not for uninterned symbols.
 
 (defun bq-process (x &aux (x (tangle x)))
   (typecase x
-    (vector `(apply #'vector ,(bq-process (coerce x 'list))))
+    (simple-vector `(apply #'vector ,(bq-process (coerce x 'list))))
     (splicing-comma (error ",~C~S after `" (comma-modifier x) (comma-form x)))
     (comma (comma-form x))
     (atom `(quote ,x))
@@ -1846,13 +1846,16 @@ Appendix~C.
   ((3 5) (4 6))
   (3 5 4 6))
 
+@t@l
 (deftest (bq vector)
   (let ((a '(1 2 3)))
     (declare (special a))
     (values (eval (tangle (read-form-from-string "`#(:a)")))
+            (eval (tangle (read-form-from-string "`#(\"a\")")))
             (eval (tangle (read-form-from-string "`#(,a)")))
             (eval (tangle (read-form-from-string "`#(,@a)")))))
   #(:a)
+  #("a")
   #((1 2 3))
   #(1 2 3))
 

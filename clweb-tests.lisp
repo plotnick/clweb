@@ -307,9 +307,10 @@
          (LET ((A '(1 2 3)))
            (DECLARE (SPECIAL A))
            (VALUES (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(:a)")))
+                   (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(\"a\")")))
                    (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(,a)")))
                    (EVAL (TANGLE (READ-FORM-FROM-STRING "`#(,@a)")))))
-         #(:A) #((1 2 3)) #(1 2 3))
+         #(:A) #("a") #((1 2 3)) #(1 2 3))
 (DEFTEST (BQ NAMED-SECTION)
          (WITH-SAMPLE-NAMED-SECTIONS
           (VALUES (EVAL (TANGLE (READ-FORM-FROM-STRING "`(, @<foo@>)")))
