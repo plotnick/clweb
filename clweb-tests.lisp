@@ -261,6 +261,13 @@
          (HANDLER-CASE (READ-FORM-FROM-STRING "(. a)")
                        (READER-ERROR NIL :ERROR))
          :ERROR)
+(DEFTEST READ-DOTTED-LIST
+         (WITH-INPUT-FROM-STRING (STREAM "(foo .(foo))")
+           (WITH-CHARPOS-INPUT-STREAM (CSTREAM STREAM)
+             (WITH-MODE :LISP
+               (READ CSTREAM)
+               (PEEK-CHAR NIL CSTREAM NIL))))
+         NIL)
 (DEFTEST READ-QUOTED-FORM
          (LET ((MARKER (READ-FORM-FROM-STRING "':foo")))
            (VALUES (QUOTED-FORM MARKER) (MARKER-VALUE MARKER)))

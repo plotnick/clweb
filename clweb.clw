@@ -1621,6 +1621,7 @@ next object.
     (cond ((token-delimiter-p following-char)
            (unless (or list *read-suppress*)
              (simple-reader-error stream "Nothing appears before . in list."))
+           (unread-char following-char stream)
            (push *consing-dot* list)
            (push charpos charpos-list))
           (t (rewind)
@@ -1631,6 +1632,14 @@ next object.
   (handler-case (read-form-from-string "(. a)")
     (reader-error () :error))
   :error)
+
+(deftest read-dotted-list
+  (with-input-from-string (stream "(foo .(foo))")
+    (with-charpos-input-stream (cstream stream)
+      (with-mode :lisp
+        (read cstream)
+        (peek-char nil cstream nil))))
+  nil)
 
 @ We have to be careful when reading in a list, because the next character
 might be a macro character whose associated reader macro function returns

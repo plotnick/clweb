@@ -598,7 +598,9 @@ TANGLE-FILE.")
                  (UNLESS (OR LIST *READ-SUPPRESS*)
                    (SIMPLE-READER-ERROR STREAM
                                         "Nothing appears before . in list."))
-                 (PUSH *CONSING-DOT* LIST) (PUSH CHARPOS CHARPOS-LIST))
+                 (UNREAD-CHAR FOLLOWING-CHAR STREAM)
+                 (PUSH *CONSING-DOT* LIST)
+                 (PUSH CHARPOS CHARPOS-LIST))
                 (T (REWIND)
                  (LET ((VALUES (READ-MAYBE-NOTHING STREAM T NIL T)))
                    (WHEN VALUES
