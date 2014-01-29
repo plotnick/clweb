@@ -66,8 +66,8 @@ TANGLE-FILE.")
 (DEFVAR *WEAVE-PRINT* T "The default for the :PRINT argument to WEAVE.")
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
 (DEFVAR *PRINT-SYMBOL-SUFFIXES*
-  '(("/=" . "$\\neq$") ("<=" . "$\\leq$") (">=" . "$\\geq$") ("<" . "$<$")
-    (">" . "$>$") ("-" . "$-$") ("+" . "$+$") ("=" . "$=$")))
+  '(("/=" . "$\\neq$") ("<=" . "$\\leq$") (">=" . "$\\geq$") ("-" . "$-$")
+    ("+" . "$+$") ("=" . "$=$")))
 (DEFVAR *INDEX-PACKAGES*
   NIL
   "The list of packages whose symbols should be indexed.")
@@ -1551,7 +1551,8 @@ output by the weaver."
                       (PRINT-XREFS STREAM #\Q
                                    (REMOVE SECTION (CITED-BY SECTION)))))
 (DEFPARAMETER *PRINT-ESCAPE-LIST*
-  '((" \\%&#$^_" . #\\) ("~" . "$\\sim$") ("{" . "$\\{$") ("}" . "$\\}$")))
+  '((" \\%&#$^_" . #\\) ("~" . "$\\sim$") ("{" . "$\\{$") ("}" . "$\\}$")
+    ("<" . "$<$") (">" . "$>$")))
 (DEFUN PRINT-ESCAPED
        (STREAM STRING
         &REST ARGS

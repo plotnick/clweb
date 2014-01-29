@@ -3816,7 +3816,10 @@ value if they require specialized escaping.
 
 @l
 (defparameter *print-escape-list* ;
-  '((" \\%&#$^_" . #\\) ("~" . "$\\sim$") ("{" . "$\\{$") ("}" . "$\\}$")))
+  '((" \\%&#$^_" . #\\)
+    ("~" . "$\\sim$")
+    ("{" . "$\\{$") ("}" . "$\\}$")
+    ("<" . "$<$") (">" . "$>$")))
 
 (defun print-escaped (stream string &rest args &aux
                       (stream (case stream
@@ -3922,8 +3925,6 @@ of the form `(\<suffix>~.~\<replacement>)'.
   '(("/=" . "$\\neq$")
     ("<=" . "$\\leq$")
     (">=" . "$\\geq$")
-    ("<" . "$<$")
-    (">" . "$>$")
     ("-" . "$-$")
     ("+" . "$+$")
     ("=" . "$=$")))
