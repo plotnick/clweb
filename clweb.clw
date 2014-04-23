@@ -4956,8 +4956,9 @@ is evaluated.
     ,@(loop with tag-context = (make-context 'tag-name)
             for tag/statement in (cdr form)
             collect (typecase tag/statement
-                      (atom (walk-name walker tag/statement tag-context env))
-                      (cons (walk-form walker tag/statement env))))))
+                      ((or symbol integer)
+                       (walk-name walker tag/statement tag-context env))
+                      (t (walk-form walker tag/statement env))))))
 
 (define-special-form-walker go ((walker walker) form env &key toplevel)
   (declare (ignore toplevel))
