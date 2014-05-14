@@ -3222,49 +3222,52 @@ supplying a null |tests-file| argument.
                     (compile-tests-file *compile-tests-file*)
                     (external-format :default) &allow-other-keys &aux
                     (input-file (input-file-pathname input-file))
-                    (*readtable* *readtable*)
-                    (*package* *package*))
+                    (readtable *readtable*)
+                    (package *package*))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (declare (ignorable output-file tests-file))
   (multiple-value-bind (output-file lisp-file tests-output-file tests-file)
       (apply #'tangle-file-pathnames input-file args)
-    (let* ((*tangle-file-pathname* input-file)
-           (*tangle-file-truename* (truename *tangle-file-pathname*)))
-      (when verbose (format t "~&; tangling web from ~A:~%" input-file))
-      @<Initialize global variables@>
-      (with-open-file (input input-file ;
-                             :direction :input ;
-                             :external-format external-format)
-        (read-sections input))
-      @<Complain about any unused named sections@>
-      @<Ensure that every referenced named section is defined@>
-      (cond ((and tests-file (> (length *test-sections*) 1))
-             (when verbose (format t "~&; writing tests to ~A~%" tests-file))
-             (tangle-sections *test-sections*
-                              :input-file input-file
-                              :output-file tests-file
-                              :if-exists if-exists
-                              :external-format external-format))
-            (t (setq tests-file nil)))
-      (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
-      (tangle-sections *sections*
-                       :input-file input-file
-                       :output-file lisp-file
-                       :if-exists if-exists
-                       :external-format external-format)
-      (with-compilation-unit ()
-        (multiple-value-prog1
-            (compile-file lisp-file
-                          :output-file output-file
-                          :verbose verbose
-                          :print print
-                          :external-format external-format)
-          (when (and tests-file compile-tests-file)
-            (compile-file tests-file
-                          :output-file tests-output-file
-                          :verbose verbose
-                          :print print
-                          :external-format external-format)))))))
+    (with-standard-io-syntax
+      (let* ((*readtable* readtable)
+             (*package* package)
+             (*tangle-file-pathname* input-file)
+             (*tangle-file-truename* (truename *tangle-file-pathname*)))
+        (when verbose (format t "~&; tangling web from ~A:~%" input-file))
+        @<Initialize global variables@>
+        (with-open-file (input input-file ;
+                               :direction :input ;
+                               :external-format external-format)
+          (read-sections input))
+        @<Complain about any unused named sections@>
+        @<Ensure that every referenced named section is defined@>
+        (cond ((and tests-file (> (length *test-sections*) 1))
+               (when verbose (format t "~&; writing tests to ~A~%" tests-file))
+               (tangle-sections *test-sections*
+                                :input-file input-file
+                                :output-file tests-file
+                                :if-exists if-exists
+                                :external-format external-format))
+              (t (setq tests-file nil)))
+        (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
+        (tangle-sections *sections*
+                         :input-file input-file
+                         :output-file lisp-file
+                         :if-exists if-exists
+                         :external-format external-format)
+        (with-compilation-unit ()
+          (multiple-value-prog1
+              (compile-file lisp-file
+                            :output-file output-file
+                            :verbose verbose
+                            :print print
+                            :external-format external-format)
+            (when (and tests-file compile-tests-file)
+              (compile-file tests-file
+                            :output-file tests-output-file
+                            :verbose verbose
+                            :print print
+                            :external-format external-format))))))))
 
 @ This routine performs the defaulting for the filename arguments to
 |tangle-file|. It returns four pathnames: the output (\.{FASL}) file,
@@ -3426,46 +3429,49 @@ If successful, |weave| returns the truename of the output file.
               (print *weave-print*)
               (external-format :default) &aux
               (input-file (input-file-pathname input-file))
-              (*readtable* *readtable*)
-              (*package* *package*))
+              (readtable *readtable*)
+              (package *package*))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (declare (ignorable output-file tests-file index-file))
   (multiple-value-bind (output-file index-file sections-file)
-      (apply #'weave-pathnames input-file args)
-    (when verbose (format t "~&; weaving web from ~A:~%" input-file))
-    @<Initialize global variables@>
-    (with-open-file (input input-file ;
-                     :direction :input ;
-                     :external-format external-format)
-      (read-sections input))
-    (let ((tests-file (apply #'tests-file-pathname input-file "TEX" ;
-                             :output-file output-file ;
-                             args)))
-      (when (and tests-file (> (length *test-sections*) 1))
-        (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
-        (multiple-value-bind (output-file index-file sections-file)
-            (apply #'weave-pathnames input-file ;
-                   :output-file tests-file ;
-                   args)
-          @<Fix up the index and sections filenames for test suite output@>
-          (weave-sections *test-sections*
-                          :input-file input-file
-                          :output-file output-file
-                          :index-file index-file
-                          :sections-file sections-file
-                          :verbose verbose
-                          :print print
-                          :external-format external-format
-                          :weaving-tests t))))
-    (when verbose (format t "~&; weaving sections to ~A~%" output-file))
-    (weave-sections *sections*
-                    :input-file input-file
-                    :output-file output-file
-                    :index-file index-file
-                    :sections-file sections-file
-                    :verbose verbose
-                    :print print
-                    :external-format external-format)))
+       (apply #'weave-pathnames input-file args)
+    (with-standard-io-syntax
+      (let ((*readtable* readtable)
+            (*package* package))
+        (when verbose (format t "~&; weaving web from ~A:~%" input-file))
+        @<Initialize global variables@>
+        (with-open-file (input input-file ;
+                               :direction :input ;
+                               :external-format external-format)
+          (read-sections input))
+        (let ((tests-file (apply #'tests-file-pathname input-file "TEX" ;
+                                 :output-file output-file ;
+                                 args)))
+          (when (and tests-file (> (length *test-sections*) 1))
+            (when verbose (format t "~&; weaving tests to ~A~%" tests-file))
+            (multiple-value-bind (output-file index-file sections-file)
+                (apply #'weave-pathnames input-file ;
+                       :output-file tests-file ;
+                       args)
+              @<Fix up the index and sections filenames for test suite output@>
+              (weave-sections *test-sections*
+                              :input-file input-file
+                              :output-file output-file
+                              :index-file index-file
+                              :sections-file sections-file
+                              :verbose verbose
+                              :print print
+                              :external-format external-format
+                              :weaving-tests t))))
+        (when verbose (format t "~&; weaving sections to ~A~%" output-file))
+        (weave-sections *sections*
+                        :input-file input-file
+                        :output-file output-file
+                        :index-file index-file
+                        :sections-file sections-file
+                        :verbose verbose
+                        :print print
+                        :external-format external-format)))))
 
 @ We don't accept a separate argument for the test suite index filename,
 so we have to do a little post-processing to get it all right. At this
