@@ -48,12 +48,14 @@ With argument, do this that many times."
   (let ((p (point))
         (n -1))
     (save-excursion
-      (goto-char 1)
-      (condition-case nil
-          (while (<= (point) p)
-            (setq n (1+ n))
-            (move-by-sections 1 t))
-        (end-of-buffer)))
+      (save-restriction
+        (widen)
+        (goto-char 1)
+        (condition-case nil
+            (while (<= (point) p)
+              (setq n (1+ n))
+              (move-by-sections 1 t))
+          (end-of-buffer))))
     (message "%d" n)))
 
 (defun eval-section (arg)
