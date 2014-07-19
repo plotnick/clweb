@@ -2889,19 +2889,14 @@ includes streams not created by |open|, on which |pathname| errors.)
   lineno file)
 
 (defun source-location-for-reader (stream)
-  (labels ((stream-pathname (stream)
-             (typecase stream
-               (file-stream (ignore-errors (pathname stream)))
-               (synonym-stream (stream-pathname
-                                (symbol-value (synonym-stream-symbol stream))))
-               (two-way-stream (stream-pathname
-                                (two-way-stream-input-stream stream)))
-               (concatenated-stream (stream-pathname
-                                     (first (concatenated-stream-streams stream)))))))
-    (let ((lineno (stream-lineno stream))
-          (pathname (stream-pathname stream)))
-      (when (and lineno pathname)
-        (create-source-location lineno pathname)))))
+  (let ((source-pathname (cond ((boundp '*weave-pathname*)
+                                *weave-pathname*)
+                               ((boundp '*tangle-file-pathname*)
+                                *tangle-file-pathname*))))
+    (when source-pathname
+      (let ((lineno (stream-lineno stream)))
+        (when lineno
+          (create-source-location lineno source-pathname))))))
 
 @ Ordinary sections are introduced by \.{@@\ } or \.{@@|#\Newline|}.
 
@@ -3597,7 +3592,7 @@ you can say, e.g., |(load (tangle-file "web"))|.
                          :if-exists if-exists ;
                          :external-format external-format)
         (if compile-file
-            (with-compilation-unit ()
+            (with-compilation-unit @<Compilation unit for tangling@>
               (multiple-value-prog1
                   (compile-file lisp-file
                                 :output-file output-file
@@ -3611,6 +3606,21 @@ you can say, e.g., |(load (tangle-file "web"))|.
                                 :print print
                                 :external-format external-format))))
             lisp-file)))))
+
+@ The function |make-definition-location-table| can build a fasdumpable
+data structure associating symbols with the line numbers of their definitions.
+Here we arrange for SBCL to dump this data structure into FASLs during
+compilation of a tangled web.
+@^SBCL@>
+
+@<Compilation unit for tangling@>=
+#+sbcl
+(:source-namestring (namestring *tangle-file-pathname*)
+ :source-plist (list :clweb-section-linenos
+                     (make-definition-location-table
+                      (remove-if #'test-section-p *sections*))))
+#-sbcl
+()
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
@@ -3704,11 +3714,13 @@ If successful, |weave| returns the truename of the output file.
               (external-format :default) &aux
               (input-file (input-file-pathname input-file))
               (readtable *readtable*)
-              (package *package*))
+              (package *package*)
+              *weave-pathname*)
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (declare (ignorable output-file tests-file index-file))
   (multiple-value-bind (output-file index-file sections-file) ;
        (apply #'weave-pathnames input-file args)
+    (setq *weave-pathname* input-file)
     (with-standard-io-syntax
       (let ((*readtable* readtable)
             (*package* package)
@@ -3747,6 +3759,12 @@ If successful, |weave| returns the truename of the output file.
                         :verbose verbose ;
                         :print print
                         :external-format external-format)))))
+
+@ The weaver also binds a special variable, mostly for source location
+tracking.
+
+@<Global variables@>=
+(defvar *weave-pathname*)
 
 @ We don't accept a separate argument for the test suite index filename,
 so we have to do a little post-processing to get it all right. At this
@@ -8003,6 +8021,51 @@ method combination types. We'll skip the expansion.
     (:section :code ((defgeneric ,generic-foo () (:method-combination ,foo)))))
   ("FOO method combination" (1 (:def 0)))
   ("GENERIC-FOO generic function" ((:def 1))))
+
+@1* Indexing for source location tracking. Here is a simple
+application of the indexing routine: it produces a table describing
+the locations in the \CLWEB\ file at which Lisp names are defined. The
+table is realized as a simple vector of (|package-name| |symbol-name|
+|namespace| ({\it lineno}\thinspace+)) quadruples. The table's
+contents consist only of strings, keyword symbols, and integers, so
+that it may be freely dumped and reloaded into a Lisp, no matter what
+packages exist in that Lisp. This table can be useful for development
+environments.
+
+@l
+(defun make-definition-location-table (&optional (sections *sections*) ;
+                                       &aux (index (make-index)))
+  ; SBCL's authors never heard of the boy who cried wolf.
+  (handler-bind (#+sbcl (style-warning #'muffle-warning))
+    (index-sections sections :index index))
+  (let (results)
+    (flet ((extract-entry-info (entry)
+             (let* ((heading (entry-heading entry))
+                    (symbol (slot-value heading 'name))
+                    (sub-heading (sub-heading heading))
+                    (locators (entry-locators entry))
+                    (definitions ;
+                        (remove-if-not #'locator-definition-p locators)))
+               (when (and (typep sub-heading 'namespace) definitions)
+                 (push (list (package-name (symbol-package symbol))
+                             (symbol-name symbol)
+                             (namespace-name sub-heading)
+                             (mapcar (lambda (locator)
+                                       (source-location-lineno
+                                        (section-source-location
+                                         (elt sections ;
+                                              (section-number ;
+                                               (location locator))))))
+                                     definitions))
+                       results)))))
+      (map-bst #'extract-entry-info (index-entries index)))
+     (coerce (sort results ;
+                   (lambda (list1 list2)
+                     (and (string<= (first list1) (first list2))
+                          (string<= (second list1) (second list2)))))
+             'vector)))
+
+
 
 @1*Writing the index. All that remains now is to write the index entries
 out to the index file. We'll be extra fancy and try to coalesce adjacent
