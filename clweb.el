@@ -84,6 +84,15 @@ any existing code for that section; otherwise, it will be replaced."
                (comint-simple-send (inferior-lisp-proc) string))
               (t (error "Unable to find superior or inferior Lisp")))))))
 
+
+(defun insert-named-section (&optional section-name)
+  "Insert a CLWEB @<SECTION-NAME@> at point."
+  (interactive "sSection name: ")
+  (insert (format "@<%s@>" section-name))
+  (when (or (null section-name) (string= section-name ""))
+    ;; Back up point over "@>" for convenient name input.
+    (backward-char 2)))
+
 (define-derived-mode clweb-mode lisp-mode "CLWEB"
   "Major mode for editing CLWEB programs.
 \\{clweb-mode-map}"
@@ -120,6 +129,7 @@ any existing code for that section; otherwise, it will be replaced."
 (define-key clweb-mode-map "\C-c\C-n" 'forward-section)
 (define-key clweb-mode-map "\C-c\C-p" 'backward-section)
 (define-key clweb-mode-map "\C-c\C-s" 'eval-section)
+(define-key clweb-mode-map "\C-c\C-i" 'insert-named-section)
 
 (add-to-list 'auto-mode-alist '("\\.clw" . clweb-mode))
 
