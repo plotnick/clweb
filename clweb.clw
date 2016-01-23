@@ -3913,7 +3913,8 @@ and a final \.{\\fi} that matches the \.{\\ifon} in \.{\\M} and
   (let* ((commentary (section-commentary section))
          (name (section-name section))
          (named-section (and name (find-section name)))
-         (code (section-code section)))
+         (code (section-code section))
+         (test-section-p (typep section 'test-section)))
     (print-TeX stream commentary)
     (cond ((and commentary code) (format stream "~&\\Y\\B~%"))
           (code (format stream "~&\\B~%")))
@@ -3936,12 +3937,17 @@ and a final \.{\\fi} that matches the \.{\\ifon} in \.{\\M} and
     (when (and named-section
                (= (section-number section)
                   (section-number named-section)))
-      (print-xrefs stream #\A ;
-                   (remove section (named-section-sections named-section)))
-      (print-xrefs stream #\U ;
-                   (remove section (used-by named-section)))
-      (print-xrefs stream #\Q ;
-                   (remove section (cited-by named-section)))))
+      (flet ((filter-xref (xref-section)
+               (or (eql xref-section section)
+                   (if test-section-p
+                       nil
+                       (typep xref-section 'test-section)))))
+        (print-xrefs stream #\A ;
+                     (remove-if #'filter-xref (named-section-sections named-section)))
+        (print-xrefs stream #\U ;
+                     (remove-if #'filter-xref (used-by named-section)))
+        (print-xrefs stream #\Q ;
+                     (remove-if #'filter-xref (cited-by named-section))))))
   (format stream "~&\\fi~%"))
 
 (set-weave-dispatch 'section #'print-section)
