@@ -1238,19 +1238,19 @@ will rewind to the state just after the previous one.
 
 @l
 (defmacro with-rewind-stream ((var stream &optional (rewind 'rewind)) &body body)
-  (with-unique-names (in out closing)
+  (with-unique-names (in out close)
     `(let* ((,out (make-string-output-stream))
             (,var (make-echo-stream ,stream ,out))
-            (,closing (list ,out ,var)))
+            (,close (list ,var ,out)))
        (flet ((,rewind ()
                 (let ((,in (make-string-input-stream ;
                             (get-output-stream-string ,out))))
                   (prog1 (setq ,var (make-concatenated-stream ,in ,var))
-                    (push ,var ,closing)
-                    (push ,in ,closing)))))
+                    (pushnew ,var ,close)
+                    (pushnew ,in ,close)))))
          (declare (ignorable (function ,rewind)))
          (unwind-protect (progn ,@body)
-           (map nil #'close ,closing))))))
+           (map nil #'close ,close))))))
 
 @t@l
 (deftest rewind-stream
