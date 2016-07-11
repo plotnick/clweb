@@ -7174,6 +7174,7 @@ expansion so that the compiler can pick up the structure definition, too.
   (declare (ignore toplevel))
   (let ((structure-description)
         (name-and-options))
+    (declare (ignorable name-and-options)) ; for Allegro and CCL
     (throw 'continue-walk
       `(,(pop form)
         ,(multiple-value-setq (name-and-options structure-description)
@@ -7243,9 +7244,9 @@ never go more than one level deep.
         (t `(,(first option)
              ,@(ensure-list @<Walk one |defstruct| option@>)))))
 
-@ We only care about specifically about a handful of |defstruct| options.
-At this point, |option| will have been converted to list form; we'll walk
-it and record relevant information in |description| as we go.
+@ For the purposes of indexing, we only care about a handful of |defstruct|
+options. At this point, |option| will have been converted to list form;
+we'll walk it and record relevant information in |description| as we go.
 
 @<Walk one |defstruct| option@>=
 (let ((args (rest option))
