@@ -3240,6 +3240,7 @@ supplying a null |tests-file| argument.
     (with-standard-io-syntax
       (let* ((*readtable* readtable)
              (*package* package)
+             (*print-readably* nil)
              (*tangle-file-pathname* input-file)
              (*tangle-file-truename* (truename *tangle-file-pathname*)))
         (when verbose (format t "~&; tangling web from ~A:~%" input-file))
@@ -3390,7 +3391,7 @@ sections.
     (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%" input-file)
     (let ((*evaluating* nil)
           (*print-pprint-dispatch* *tangle-pprint-dispatch*)
-          (*print-readably* t))
+          (*print-readably* nil))
       @<Output a form that sets the source pathname@>
       (dolist (form (tangle (unnamed-section-code-parts sections)))
         (pprint form output)))))
@@ -3446,7 +3447,8 @@ If successful, |weave| returns the truename of the output file.
        (apply #'weave-pathnames input-file args)
     (with-standard-io-syntax
       (let ((*readtable* readtable)
-            (*package* package))
+            (*package* package)
+            (*print-readably* nil))
         (when verbose (format t "~&; weaving web from ~A:~%" input-file))
         @<Initialize global variables@>
         (with-open-file (input input-file ;
@@ -3664,7 +3666,7 @@ are printed using the pretty printer with a customized dispatch table.
 @l
 (defun weave-object (object stream)
   (write object
-         :stream stream :readably t
+         :stream stream
          :case :downcase
          :pretty t :pprint-dispatch *weave-pprint-dispatch* ;
          :right-margin 1000))
@@ -3909,7 +3911,7 @@ Lambda-list keywords and symbols in the `keyword' package have specialized
                          (write-string "\\K{" stream))
                         ((keywordp symbol)
                          (write-string "\\:{" stream))))
-         (string (write-to-string symbol :escape nil :pretty nil)))
+         (string (write-to-string symbol :escape t :pretty nil)))
     (multiple-value-bind (prefix suffix)
         @<Split |string| into a prefix and nicely formatted suffix@>
       (print-escaped stream prefix)
