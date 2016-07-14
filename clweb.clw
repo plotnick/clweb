@@ -1462,15 +1462,12 @@ from a string-stream that tracks character positions. In fact, most of the
 reader tests will involve reading a single form in Lisp mode.
 
 @l
-(defmacro read-from-string-with-charpos (string &optional
-                                         (eof-error-p t)
-                                         (eof-value nil) &key
-                                         (preserve-whitespace nil))
-  (let ((reader (if preserve-whitespace 'read-preserving-whitespace 'read)))
-    (with-unique-names (string-stream charpos-stream)
-      `(with-open-stream (,string-stream (make-string-input-stream ,string))
-         (with-charpos-input-stream (,charpos-stream ,string-stream)
-           (,reader ,charpos-stream ,eof-error-p ,eof-value))))))
+(defmacro read-from-string-with-charpos (string &optional ;
+                                         (eof-error-p t) (eof-value nil))
+  (with-unique-names (string-stream charpos-stream)
+    `(with-open-stream (,string-stream (make-string-input-stream ,string))
+       (with-charpos-input-stream (,charpos-stream ,string-stream)
+         (read ,charpos-stream ,eof-error-p ,eof-value)))))
 
 (defun read-form-from-string (string &key (mode :lisp))
   (let ((*package* (find-package "CLWEB")))
@@ -7343,13 +7340,14 @@ or an accessor is defined, which we do care about.
      (walk-defstruct-slot-name walker slot-description nil ;
                                struct-description env))
     (cons
-     (destructuring-bind (slot-name &optional (initform nil initform-supplied)
-                          &rest args &key read-only &allow-other-keys)
+     (destructuring-bind (slot-name &optional ;
+                          (slot-initform nil initform-supplied) &rest ;
+                          slot-options)
          slot-description
-       `(,(walk-defstruct-slot-name walker slot-name read-only ;
+       `(,(walk-defstruct-slot-name walker slot-name slot-options ;
                                     struct-description env)
-          ,@(when initform-supplied `(,(walk-form walker initform env)))
-          ,@args)))
+         ,@(when initform-supplied `(,(walk-form walker slot-initform env)))
+         ,@slot-options)))
     (t slot-description)))
 
 @ As we walk structure slot names, we'll index the automatically created
@@ -7365,7 +7363,7 @@ a definition here.
 
 @<Define |defstruct| parsing routines@>=
 (defun walk-defstruct-slot-name ;
-    (walker slot-name read-only-p struct-description env)
+    (walker slot-name slot-options struct-description env)
   (declare (ignore env))
   (multiple-value-bind (symbol section) (symbol-provenance slot-name)
     (let ((name (symbolicate (struct-conc-name struct-description) symbol))
@@ -7378,7 +7376,9 @@ a definition here.
                                                  (make-heading name accessor))
                              (find-index-entries index ;
                                                  (make-heading name reader)))))
-        (index index name section (if read-only-p reader accessor) t)))
+        (index index name section
+               (if (getf slot-options :read-only) reader accessor)
+               t)))
     symbol))
 
 @ @<Define namespace...@>=
