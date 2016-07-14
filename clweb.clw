@@ -118,6 +118,7 @@ signaled while processing a web.
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
   (:shadow #+(or allegro ccl) "MAKE-PATHNAME")
+  #+sbcl (:import-from "SB-INT" "NAMED-LAMBDA")
   #+(or sbcl ccl allegro)
   (:import-from #+sbcl "SB-CLTL2" #+ccl "CCL" #+allegro "SYS"
                 #-allegro "FUNCTION-INFORMATION"
@@ -5126,14 +5127,13 @@ load time, or~both.''
          (symbol-value name)))
   #.(* 2 pi))
 
-@ The |function| special form takes either a valid function name or a
-\L~expression. Under SBCL, this is extended to also include their non-standard
-|named-lambda| special forms, which we'll come to shortly.
+@ The |function| special form takes either a function name or a \L expression.
+Under SBCL, this is extended to also include their non-standard |named-lambda|
+special form, which we'll come to shortly.
 @^SBCL@>
 
 @l
-(deftype named-lambda-expression () ;
-  '(cons (eql #+sbcl sb-int:named-lambda #-sbcl named-lambda)))
+(deftype named-lambda-expression () '(cons (eql named-lambda)))
 
 (define-special-form-walker function ((walker walker) form env &key toplevel)
   (declare (ignore toplevel))
@@ -5565,17 +5565,17 @@ the bindings in |flet|, |macrolet|, and~|labels| special forms.
   (declare (ignore toplevel))
   (walk-lambda-expression walker form nil env))
 
-@ We'll also support a `named lambda'. Several Lisp implementations use
-such forms internally, but SBCL unfortunately does not provide a portable
-macro defintion. (This is just rude; Allegro has a similar |named-function|
-special operator, but they provide a macro definition that expands into
-a regular |lambda|.) The syntax is assumed to be
+@ We also support a `named lambda' form. Several Lisp implementations
+use such forms internally, but SBCL does not provide a macro defintion
+for theirs. This is just rude; Allegro has a similar operator called
+|named-function|, but they provide a macro definition that expands
+into an ordinary \L~expression. The syntax is assumed to be
 `(|named-lambda| \<name> \<lambda-list> \<body>)'.
 @^SBCL@>
 
 @l
-(define-special-form-walker #+sbcl sb-int:named-lambda #-sbcl named-lambda
-    ((walker walker) form env &key toplevel)
+(define-special-form-walker named-lambda ((walker walker) form env &key ;
+                                          toplevel)
   (declare (ignore toplevel))
   (walk-lambda-expression walker ;
                           `(lambda ,(caddr form) ,@(cdddr form)) nil env))
