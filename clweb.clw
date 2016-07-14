@@ -981,29 +981,37 @@ of obtaining a list of all the characters with a given syntax.
 (deftest (token-delimiter-p 1) (not (token-delimiter-p #\Space)) nil)
 (deftest (token-delimiter-p 2) (not (token-delimiter-p #\))) nil)
 
-@ In some of the reading routines we'll define below, we need to be
-careful about reader macro functions that don't return any values. For
-example, if the input file contains `\.{(\#\v...\v\#)}', and we na{\"\i}vely
-call |read| in the reader macro function for `|#\(|'\thinspace, an error
-will be signaled, since |read| will skip over the comment and invoke the
-reader macro function for `|#\)|'\thinspace.
+@ We need to be careful about reader macro functions that don't return
+any values. (In standard \ansi\ Common Lisp syntax, the only reader macros
+that might return zero values are those for the two comment syntaxes.)
+For example, if the input file contains `\.{(\#\v...\v\#)}' and we blindly
+call |read| in the reader macro function for `|#\(|'\thinspace, it will skip
+over the comment and invoke the reader macro function for `|#\)|'\thinspace,
+which will signal an error.
+@^\ansi\ Common Lisp@>
 
-The solution is to peek at the next character in the input stream and
-manually invoke the associated reader macro function (if any), returning a
-list of the values returned by that function. If the next character is not
-a macro character, we just call |read| or |read-preserving-whitespace|,
-returning a list containing the single object so read.
+Our solution is to encapsulate any reader macro function that might return
+zero values with a closure that throws to our gatekeeper entry point to the
+reader, |read-maybe-nothing-internal|. That function (and thus also its two
+front-ends |read-maybe-nothing| and |read-maybe-nothing-preserving-whitespace|)
+returns a list containing either zero or one values.
 
 @l
+(defun wrap-reader-macro-function (function)
+  (lambda (&rest args)
+    (let ((values (multiple-value-list (apply function args))))
+      (assert (null (cdr values))
+              (values)
+              "Reader macro function ~S returned more than one value." function)
+      (if values
+          (values-list values)
+          (throw 'read-nothing (values))))))
+
 (defun read-maybe-nothing-internal (read stream ;
                                     eof-error-p eof-value recursive-p)
   (multiple-value-list
-   (let* ((next-char (peek-char nil stream nil nil recursive-p))
-          (macro-fun (and next-char (get-macro-character next-char))))
-     (cond (macro-fun
-            (read-char stream)
-            (call-reader-macro-function macro-fun stream next-char))
-           (t (funcall read stream eof-error-p eof-value recursive-p))))))
+   (catch 'read-nothing
+     (funcall read stream eof-error-p eof-value recursive-p))))
 
 (defun read-maybe-nothing (stream &optional ;
                            (eof-error-p t) eof-value recursive-p)
@@ -1020,30 +1028,20 @@ returning a list containing the single object so read.
   (123))
 
 (deftest (read-maybe-nothing 2)
-  (with-input-from-string (s "#|x|#") (read-maybe-nothing s))
+  (let ((*readtable* (copy-readtable nil)))
+    (set-macro-character #\! (wrap-reader-macro-function
+                              (lambda (stream char)
+                                (declare (ignore stream char))
+                                (values))))
+    (with-input-from-string (s "!")
+      (read-maybe-nothing s)))
   nil)
 
-(deftest (read-maybe-nothing-preserving-whitespace)
+(deftest read-maybe-nothing-preserving-whitespace
   (with-input-from-string (s "x y")
     (read-maybe-nothing-preserving-whitespace s t nil nil)
     (peek-char nil s))
   #\Space)
-
-@ In SBCL, most of the standard reader macro functions assume that they're
-being called in an environment where the global read buffer is bound and
-initialized. It would be nice if that wasn't the case and we could elide
-the following nonsense.
-@^SBCL@>
-
-@l
-(defmacro with-read-buffer ((&rest args) &body body)
-  (declare (ignorable args))
-  #+sbcl `(sb-impl::with-read-buffer ,args ,@body)
-  #-sbcl `(progn ,@body))
-
-(defun call-reader-macro-function (fn stream char)
-  (with-read-buffer ()
-    (funcall fn stream char)))
 
 @1*Tracking character position. We want the weaver to output properly
 indented code, but it's basically impossible to automatically indent
@@ -1704,7 +1702,8 @@ line breaks in the source file that will not appear in the woven output.
                      :text @<Read characters up to, but not including,
                              the next newline@>)))
 
-(set-macro-character #\; #'comment-reader nil (readtable-for-mode :lisp))
+(set-macro-character #\; (wrap-reader-macro-function #'comment-reader)
+                     nil (readtable-for-mode :lisp))
 
 @ @<Read characters up to...@>=
 (with-output-to-string (s)
@@ -2362,7 +2361,7 @@ characters that the reader scans, and use that to reconstruct the form.
          (*readtable* (readtable-for-mode nil))
          (test (let ((*package* (find-package "KEYWORD"))
                      (*read-suppress* nil))
-                 (read stream t nil t)))
+                 (read-preserving-whitespace stream t nil nil)))
          (*read-suppress* (if plusp (not (featurep test)) (featurep test))))
     (read-with-echo (stream value form)
       (apply #'make-instance 'read-time-conditional-marker
@@ -2402,6 +2401,24 @@ characters that the reader scans, and use that to reconstruct the form.
                          (read-from-string-with-charpos
                           (format nil "(#-:foo foo~% bar)"))))
   (1 0 1))
+
+@ We do not preserve sharpsign vertical-bar comments during either weaving
+or tangling. We can therefore almost use the standard reader macro function,
+but it must be wrapped to obey our |read-maybe-nothing-internal| protocol.
+
+@l
+(dolist (mode '(:lisp :inner-lisp))
+  (set-dispatch-macro-character #\# #\|
+                                (wrap-reader-macro-function ;
+                                 (get-dispatch-macro-character #\# #\| nil))
+                                (readtable-for-mode mode)))
+
+@t@l
+(deftest read-block-comment
+  (with-input-from-string (s "#|foo|#")
+    (with-mode :lisp
+      (read-maybe-nothing s)))
+  nil)
 
 @1*Web control codes. So much for the standard macro characters. Now we're
 ready to move on to \WEB-specific reading. We accumulate \TeX\ mode
@@ -2780,7 +2797,8 @@ They differ only in how they are typeset in the woven output.
   (values))
 
 (dolist (sub-char '(#\^ #\. #\:))
-  (set-control-code sub-char #'index-entry-reader '(:TeX :lisp)))
+  (set-control-code sub-char (wrap-reader-macro-function #'index-entry-reader)
+                    '(:TeX :lisp)))
 
 @1*Reading sections. We come now to the heart of the \WEB\ parser. This
 function is a tiny state machine that models the global syntax of a \WEB\
