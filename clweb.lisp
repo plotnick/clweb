@@ -26,7 +26,6 @@
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
-  (:SHADOW #+(:OR :ALLEGRO :CCL) "MAKE-PATHNAME")
   #+:SBCL (:import-from "SB-INT" "NAMED-LAMBDA")
   #+(:OR :SBCL :CCL :ALLEGRO)
   (:import-from #+sbcl "SB-CLTL2" #+ccl "CCL" #+allegro "SYS"
@@ -1181,6 +1180,9 @@ TANGLE-FILE.")
     (EXPAND FORM NIL)))
 (DEFUN UNNAMED-SECTION-CODE-PARTS (SECTIONS)
   (MAPAPPEND #'SECTION-CODE (COERCE (REMOVE-IF #'SECTION-NAME SECTIONS) 'LIST)))
+(DEFUN INPUT-FILE-PATHNAME (INPUT-FILE)
+  "Apply defaults to the given input filename."
+  (MERGE-PATHNAMES INPUT-FILE (MAKE-PATHNAME :TYPE "clw")))
 (DEFUN LOAD-WEB-FROM-STREAM
        (STREAM PRINT
         &KEY (APPEND T)
@@ -1210,10 +1212,8 @@ TANGLE-FILE.")
   (IF (STREAMP FILESPEC)
       (LOAD-WEB-FROM-STREAM FILESPEC PRINT)
       (WITH-OPEN-FILE
-          (STREAM
-           (MERGE-PATHNAMES FILESPEC (MAKE-PATHNAME :TYPE "CLW" :CASE :COMMON))
-           :DIRECTION :INPUT :EXTERNAL-FORMAT EXTERNAL-FORMAT
-           :IF-DOES-NOT-EXIST
+          (STREAM (INPUT-FILE-PATHNAME FILESPEC) :DIRECTION :INPUT
+           :EXTERNAL-FORMAT EXTERNAL-FORMAT :IF-DOES-NOT-EXIST
            (IF IF-DOES-NOT-EXIST
                :ERROR
                NIL))
@@ -1227,43 +1227,17 @@ otherwise, they will replace them."
         (WITH-OPEN-FILE (STREAM FILE :DIRECTION :INPUT)
           (LOAD-WEB-FROM-STREAM STREAM T :APPEND APPEND))
       (DELETE-FILE FILE))))
-#+(:OR :ALLEGRO :CCL)
-(defun make-pathname (&key host device directory name type version
-                      (defaults
-                       (cl:make-pathname :host (pathname-host
-                                                *default-pathname-defaults*
-                                                :case :common)
-                                         :device nil
-                                         :directory nil
-                                         :name nil
-                                         :type nil
-                                         :version nil
-                                         :case :common))
-                      (case :local))
-  (merge-pathnames
-   (cl:make-pathname :host (or host (pathname-host defaults :case case))
-                     :device device
-                     :directory directory
-                     :name name
-                     :type type
-                     :version version
-                     :case case)
-   defaults))
 (DEFUN TESTS-FILE-PATHNAME
        (INPUT-FILE TYPE
         &KEY (OUTPUT-FILE *DEFAULT-PATHNAME-DEFAULTS*)
         (TESTS-FILE NIL TESTS-FILE-SUPPLIED) &ALLOW-OTHER-KEYS)
   (IF TESTS-FILE
-      (MAKE-PATHNAME :TYPE TYPE :DEFAULTS TESTS-FILE :CASE :COMMON)
+      (MAKE-PATHNAME :TYPE TYPE :DEFAULTS TESTS-FILE)
       (UNLESS TESTS-FILE-SUPPLIED
         (MAKE-PATHNAME :NAME
-                       (CONCATENATE 'STRING
-                                    (PATHNAME-NAME INPUT-FILE :CASE :COMMON)
-                                    "-TESTS")
-                       :TYPE TYPE :DEFAULTS OUTPUT-FILE :CASE :COMMON))))
-(DEFUN INPUT-FILE-PATHNAME (INPUT-FILE)
-  "Apply defaults to the given input filename."
-  (MERGE-PATHNAMES INPUT-FILE (MAKE-PATHNAME :TYPE "CLW" :CASE :COMMON)))
+                       (CONCATENATE 'STRING (PATHNAME-NAME INPUT-FILE)
+                                    "-tests")
+                       :TYPE TYPE :DEFAULTS OUTPUT-FILE))))
 (DEFUN TANGLE-FILE
        (INPUT-FILE
         &REST ARGS
@@ -1327,8 +1301,6 @@ otherwise, they will replace them."
              (COMPILE-FILE TESTS-FILE :OUTPUT-FILE TESTS-OUTPUT-FILE :VERBOSE
                            VERBOSE :PRINT PRINT :EXTERNAL-FORMAT
                            EXTERNAL-FORMAT))))))))
-(DEFUN DEFAULT-INPUT-FILE (INPUT-FILE)
-  (MERGE-PATHNAMES INPUT-FILE (MAKE-PATHNAME :TYPE "CLW" :CASE :COMMON)))
 (DEFUN TANGLE-FILE-PATHNAMES
        (INPUT-FILE &REST ARGS &KEY OUTPUT-FILE TESTS-FILE &ALLOW-OTHER-KEYS)
   "Compute and return the names of the defaulted input file and files
@@ -1337,15 +1309,14 @@ output by the tangler."
   (LET* ((INPUT-FILE (INPUT-FILE-PATHNAME INPUT-FILE))
          (OUTPUT-FILE
           (APPLY #'COMPILE-FILE-PATHNAME INPUT-FILE :ALLOW-OTHER-KEYS T ARGS))
-         (LISP-FILE
-          (MAKE-PATHNAME :TYPE "LISP" :DEFAULTS OUTPUT-FILE :CASE :COMMON))
+         (LISP-FILE (MAKE-PATHNAME :TYPE "lisp" :DEFAULTS OUTPUT-FILE))
          (TESTS-FILE
-          (APPLY #'TESTS-FILE-PATHNAME INPUT-FILE "LISP" :OUTPUT-FILE
+          (APPLY #'TESTS-FILE-PATHNAME INPUT-FILE "lisp" :OUTPUT-FILE
                  OUTPUT-FILE ARGS))
          (TESTS-OUTPUT-FILE
-          (WHEN TESTS-FILE
-            (MAKE-PATHNAME :TYPE (PATHNAME-TYPE OUTPUT-FILE :CASE :COMMON)
-                           :DEFAULTS TESTS-FILE :CASE :COMMON))))
+          (AND TESTS-FILE
+               (MAKE-PATHNAME :TYPE (PATHNAME-TYPE OUTPUT-FILE) :DEFAULTS
+                              TESTS-FILE))))
     (VALUES OUTPUT-FILE LISP-FILE TESTS-OUTPUT-FILE TESTS-FILE)))
 (DEFUN TANGLE-SECTIONS
        (SECTIONS &KEY INPUT-FILE OUTPUT-FILE IF-EXISTS EXTERNAL-FORMAT)
@@ -1388,7 +1359,7 @@ output by the tangler."
             EXTERNAL-FORMAT)
          (READ-SECTIONS INPUT))
        (LET ((TESTS-FILE
-              (APPLY #'TESTS-FILE-PATHNAME INPUT-FILE "TEX" :OUTPUT-FILE
+              (APPLY #'TESTS-FILE-PATHNAME INPUT-FILE "tex" :OUTPUT-FILE
                      OUTPUT-FILE ARGS)))
          (WHEN (AND TESTS-FILE (> (LENGTH *TEST-SECTIONS*) 1))
            (WHEN VERBOSE (FORMAT T "~&; weaving tests to ~A~%" TESTS-FILE))
@@ -1420,21 +1391,18 @@ output by the weaver."
   (LET* ((INPUT-FILE (INPUT-FILE-PATHNAME INPUT-FILE))
          (OUTPUT-FILE
           (LET ((OUTPUT-FILE-DEFAULTS
-                 (MAKE-PATHNAME :TYPE "TEX" :DEFAULTS INPUT-FILE :CASE
-                                :COMMON)))
+                 (MAKE-PATHNAME :TYPE "tex" :DEFAULTS INPUT-FILE)))
             (IF OUTPUT-FILE
                 (MERGE-PATHNAMES OUTPUT-FILE OUTPUT-FILE-DEFAULTS)
                 OUTPUT-FILE-DEFAULTS)))
          (INDEX-FILE
           (LET ((INDEX-FILE-DEFAULTS
-                 (MAKE-PATHNAME :TYPE "IDX" :DEFAULTS OUTPUT-FILE :CASE
-                                :COMMON)))
+                 (MAKE-PATHNAME :TYPE "idx" :DEFAULTS OUTPUT-FILE)))
             (IF INDEX-FILE
                 (MERGE-PATHNAMES INDEX-FILE INDEX-FILE-DEFAULTS)
                 (WHEN (NOT INDEX-FILE-SUPPLIED) INDEX-FILE-DEFAULTS))))
          (SECTIONS-FILE
-          (WHEN INDEX-FILE
-            (MAKE-PATHNAME :TYPE "SCN" :DEFAULTS INDEX-FILE :CASE :COMMON))))
+          (WHEN INDEX-FILE (MAKE-PATHNAME :TYPE "scn" :DEFAULTS INDEX-FILE))))
     (VALUES OUTPUT-FILE INDEX-FILE SECTIONS-FILE)))
 (DEFUN WEAVE-SECTIONS
        (SECTIONS

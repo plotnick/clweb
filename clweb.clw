@@ -117,7 +117,6 @@ signaled while processing a web.
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
-  (:shadow #+(or allegro ccl) "MAKE-PATHNAME")
   #+sbcl (:import-from "SB-INT" "NAMED-LAMBDA")
   #+(or sbcl ccl allegro)
   (:import-from #+sbcl "SB-CLTL2" #+ccl "CCL" #+allegro "SYS"
@@ -3025,11 +3024,25 @@ of the complete program; if you tangle it, you get the whole thing.
 (defun unnamed-section-code-parts (sections)
   (mapappend #'section-code (coerce (remove-if #'section-name sections) 'list)))
 
+@ In keeping with the usual behavior of both Lisp and \TeX, the type
+component of an input filename argument to any top-level function may
+be omitted; it defaults to~`\.{clw}'.
+
+@l
+(defun input-file-pathname (input-file)
+  "Apply defaults to the given input filename."
+  (merge-pathnames input-file (make-pathname :type "clw")))
+
+@t@l
+(deftest input-file-pathname
+  (input-file-pathname #P"foo")
+  #P"foo.clw")
+
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so that
 it can handle input from an arbitrary stream. The logic is straightforward:
-we loop over the tangled forms read from the stream, evaluating each one in
-turn.
+we loop over the tangled forms read from the stream, evaluating each one
+in~turn.
 
 Note that like |load|, we bind |*readtable*| and |*package*| to their
 current values, so that assignments to those variables in the \WEB\ code
@@ -3040,7 +3053,7 @@ will not affect the calling environment.
                              (*readtable* *readtable*)
                              (*package* *package*)
                              (*evaluating* t))
-  (dolist (form (tangle (unnamed-section-code-parts
+  (dolist (form (tangle (unnamed-section-code-parts ;
                          (read-sections stream :append append))) t)
     (if print
         (let ((results (multiple-value-list (eval form))))
@@ -3057,9 +3070,7 @@ will not affect the calling environment.
   (when verbose (format t "~&; loading WEB from ~S~%" filespec))
   (if (streamp filespec)
       (load-web-from-stream filespec print)
-      (with-open-file (stream (merge-pathnames filespec ;
-                                               (make-pathname :type "CLW" ;
-                                                              :case :common))
+      (with-open-file (stream (input-file-pathname filespec)
                        :direction :input
                        :external-format external-format
                        :if-does-not-exist (if if-does-not-exist :error nil))
@@ -3082,89 +3093,44 @@ otherwise, they will replace them."
            (load-web-from-stream stream t :append append))
       (delete-file file))))
 
-@ Both Allegro and CCL get the wrong case for pathname components created
-using |make-pathname| with a supplied |defaults| argument when |case|
-is |:common|. This simple wrapper seems to behave correctly.
-
-@l
-#+(or allegro ccl)
-(defun make-pathname (&key host device directory name type version
-                      (defaults
-                       (cl:make-pathname :host (pathname-host
-                                                *default-pathname-defaults*
-                                                :case :common)
-                                         :device nil
-                                         :directory nil
-                                         :name nil
-                                         :type nil
-                                         :version nil
-                                         :case :common))
-                      (case :local))
-  (merge-pathnames
-   (cl:make-pathname :host (or host (pathname-host defaults :case case))
-                     :device device
-                     :directory directory
-                     :name name
-                     :type type
-                     :version version
-                     :case case)
-   defaults))
-
 @ Both |tangle-file| and |weave|, below, take a |tests-file| argument that
 has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
 then we use a pathname derived from the one given by merging in a default
-type (`\.{LISP}' in the case of tangling, `\.{TEX}' for weaving). If it's
+type (`\.{lisp}' in the case of tangling, `\.{tex}' for weaving). If it's
 not supplied, then we construct a pathname from the input file by appending
-the string \.{"-TESTS"} to its name component, using the supplied type, and
-merging defaults from the output filename. Finally, if the argument is
-supplied and is |nil|, then no tests file will be written at all.
+the string \.{"-tests"} to its name component, using the supplied type,
+and merging defaults from the output filename. Finally, if the argument
+is supplied and is |nil|, then no tests file will be written at all.
 
 @l
-(defun tests-file-pathname (input-file type &key
+(defun tests-file-pathname (input-file type &key ;
                             (output-file *default-pathname-defaults*)
                             (tests-file nil tests-file-supplied) ;
                             &allow-other-keys)
   (if tests-file
-      (make-pathname :type type :defaults tests-file :case :common)
+      (make-pathname :type type :defaults tests-file)
       (unless tests-file-supplied
         (make-pathname :name (concatenate 'string ;
-                                          (pathname-name input-file ;
-                                                         :case :common) ;
-                                          "-TESTS")
+                                          (pathname-name input-file) ;
+                                          "-tests")
                        :type type
-                       :defaults output-file
-                       :case :common))))
-
-@t We'll shortly be defining a whole bunch of tests for pathname-generating
-functions. These tests become vastly more compact if we use logical
-pathnames. So we'll define a trivial translation for the logical pathname
-host `\.{CLWEB-TEST}'. In the extremely unlikely event that this conflicts
-with a logical pathname host in your environment, please notify the author.
-
-@l
-@e
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (setf (logical-pathname-translations "clweb-test") '(("**;*.*.*" ""))))
+                       :defaults output-file))))
 
 @t@l
 (deftest (tests-file-pathname 1)
-  (tests-file-pathname #P"clweb-test:foo" "LISP"
-                       :tests-file #P"clweb-test:bar")
-  #P"clweb-test:bar.lisp")
+  (tests-file-pathname #P"foo" "lisp" :tests-file #P"bar")
+  #P"bar.lisp")
 
 (deftest (tests-file-pathname 2)
-  (tests-file-pathname #P"clweb-test:foo" "TEX"
-                       :output-file #P"clweb-test:")
-  #P"clweb-test:foo-tests.tex")
+  (tests-file-pathname #P"foo" "tex" :output-file #P"/a/b/")
+  #P"/a/b/foo-tests.tex")
 
 (deftest (tests-file-pathname 3)
-  (tests-file-pathname #P"clweb-test:foo" "TEX"
-                       :output-file #P"clweb-test:a;b;")
-  #P"clweb-test:a;b;foo-tests.tex")
+  (tests-file-pathname #P"foo" "tex" :output-file #P"/a/b/")
+  #P"/a/b/foo-tests.tex")
 
 (deftest (tests-file-pathname 4)
-  (tests-file-pathname #P"clweb-test:foo" "LISP"
-                       :tests-file nil)
+  (tests-file-pathname #P"foo" "lisp" :tests-file nil)
   nil)
 
 @ Some tests might not be worth spending time compiling, or might be
@@ -3211,33 +3177,14 @@ signal an error.
 @<|:if-exists| default disposition@>=
 #+sbcl :supersede #-sbcl :new-version
 
-@ In keeping with the usual behavior of both Lisp and \TeX, the type
-component of an input filename argument to any top-level function may
-be omitted; it defaults to~`\.{CLW}'.
-
-@l
-(defun input-file-pathname (input-file)
-  "Apply defaults to the given input filename."
-  (merge-pathnames input-file (make-pathname :type "CLW" :case :common)))
-
-@t@l
-(deftest input-file-pathname
-  (input-file-pathname #P"clweb-test:foo")
-  #P"clweb-test:foo.clw.newest")
-
 @ The file tangler operates by writing out the tangled code to a Lisp source
 file and then invoking the file compiler on that file. The arguments are
 essentially the same as those to |compile-file|, except for the |tests-file|
 keyword argument, which specifies the file to which the test sections' code
-should be written (see~|tests-file-pathname|, above, for the defaulting
-behavior).
-
-We return the values returned by invoking |compile-file| on the tangled
-file. We compile the tests file, if any, {\it after\/} the tangled file,
-on the assumption that the tests might require a module provided by the
-output file. Note that this might cause the output file to be unintentionally
-loaded; the work-around is to disable production of the tests file by
-supplying a null |tests-file| argument.
+should be written. We compile the tests file after the source file on the
+assumption that the tests probably depend on the main program, but we return
+the values returned by the call to |compile-file| on the tangled file so that
+you can say, e.g., |(load (tangle-file "web"))|.
 
 @l
 (defun tangle-file (input-file &rest args &key output-file tests-file
@@ -3251,7 +3198,7 @@ supplying a null |tests-file| argument.
                     (package *package*))
   "Tangle and compile the web in INPUT-FILE, producing OUTPUT-FILE."
   (declare (ignorable output-file tests-file))
-  (multiple-value-bind (output-file lisp-file tests-output-file tests-file)
+  (multiple-value-bind (output-file lisp-file tests-output-file tests-file) ;
       (apply #'tangle-file-pathnames input-file args)
     (with-standard-io-syntax
       (let* ((*readtable* readtable)
@@ -3270,33 +3217,33 @@ supplying a null |tests-file| argument.
         (cond ((and tests-file (> (length *test-sections*) 1))
                (when verbose (format t "~&; writing tests to ~A~%" tests-file))
                (tangle-sections *test-sections*
-                                :input-file input-file
+                                :input-file input-file ;
                                 :output-file tests-file
-                                :if-exists if-exists
+                                :if-exists if-exists ;
                                 :external-format external-format))
               (t (setq tests-file nil)))
         (when verbose (format t "~&; writing tangled code to ~A~%" lisp-file))
         (tangle-sections *sections*
-                         :input-file input-file
+                         :input-file input-file ;
                          :output-file lisp-file
-                         :if-exists if-exists
+                         :if-exists if-exists ;
                          :external-format external-format)
         (with-compilation-unit ()
           (multiple-value-prog1
               (compile-file lisp-file
                             :output-file output-file
-                            :verbose verbose
+                            :verbose verbose ;
                             :print print
                             :external-format external-format)
             (when (and tests-file compile-tests-file)
               (compile-file tests-file
                             :output-file tests-output-file
-                            :verbose verbose
+                            :verbose verbose ;
                             :print print
                             :external-format external-format))))))))
 
 @ This routine performs the defaulting for the filename arguments to
-|tangle-file|. It returns four pathnames: the output (\.{FASL}) file,
+|tangle-file|. It returns four pathnames: the output (\.{fasl}) file,
 the intermediate Lisp file, the test suite output file, and~the test
 suite Lisp file. The defaulting behavior is as follows:
 
@@ -3306,18 +3253,15 @@ with the supplied input filename and other arguments, including any supplied
 |output-file|. It is thus system-specific.
 
 \item\bull The Lisp filename is generated from the defaulted output filename
-by replacing its type component with~`\.{LISP}'.
+by replacing its type component with~`\.{lisp}'.
 
 \item\bull The tests filename is computed by the function |tests-file-pathname|
 using the defaulted input and output filenames.
 
 \item\bull The tests output filename is generated from the defaulted tests
-filename by replacing its type with the type of the defaulted output file.
+filename by replacing its type with the~type of the defaulted output file.
 
 @l
-(defun default-input-file (input-file)
-  (merge-pathnames input-file (make-pathname :type "CLW" :case :common)))
-
 (defun tangle-file-pathnames (input-file &rest args &key ;
                               output-file tests-file &allow-other-keys)
   "Compute and return the names of the defaulted input file and files
@@ -3326,44 +3270,40 @@ output by the tangler."
   (let* ((input-file (input-file-pathname input-file))
          (output-file (apply #'compile-file-pathname input-file ;
                              :allow-other-keys t args))
-         (lisp-file (make-pathname :type "LISP" ;
-                                   :defaults output-file ;
-                                   :case :common))
-         (tests-file (apply #'tests-file-pathname input-file "LISP" ;
+         (lisp-file (make-pathname :type "lisp" ;
+                                   :defaults output-file))
+         (tests-file (apply #'tests-file-pathname input-file "lisp" ;
                             :output-file output-file ;
                             args))
          (tests-output-file ;
-          (when tests-file
-            (make-pathname :type (pathname-type output-file :case :common)
-                           :defaults tests-file
-                           :case :common))))
+          (and tests-file ;
+               (make-pathname :type (pathname-type output-file) ;
+                              :defaults tests-file))))
     (values output-file lisp-file tests-output-file tests-file)))
 
 @t@l
 (deftest (tangle-file-pathnames 1)
-  (tangle-file-pathnames #P"clweb-test:foo")
-  #.(compile-file-pathname #P"clweb-test:foo.lisp")
-  #P"clweb-test:foo.lisp.newest"
-  #.(compile-file-pathname #P"clweb-test:foo-tests.lisp")
-  #P"clweb-test:foo-tests.lisp.newest")
+  (tangle-file-pathnames #P"foo")
+  #.(compile-file-pathname #P"foo.lisp")
+  #.(merge-pathnames #P"foo.lisp" (compile-file-pathname #P"foo.lisp"))
+  #.(compile-file-pathname #P"foo-tests.lisp")
+  #.(merge-pathnames #P"foo-tests.lisp" ;
+                     (compile-file-pathname #P"foo-tests.lisp")))
 
 (deftest (tangle-file-pathnames 2)
-  (let* ((input-file #P"clweb-test:foo")
-         (fasl-type (pathname-type (compile-file-pathname input-file) ;
-                                   :case :common))
-         (output-file (make-pathname :type fasl-type
-                                     :defaults #P"clweb-test:a;b;bar"
-                                     :case :common)))
+  (let* ((input-file #P"foo")
+         (fasl-type (pathname-type (compile-file-pathname input-file)))
+         (output-file (make-pathname :type fasl-type :defaults #P"/a/b/bar")))
     (tangle-file-pathnames input-file :output-file output-file))
-  #.(compile-file-pathname #P"clweb-test:a;b;bar.lisp")
-  #P"clweb-test:a;b;bar.lisp.newest"
-  #.(compile-file-pathname #P"clweb-test:a;b;foo-tests.lisp")
-  #P"clweb-test:a;b;foo-tests.lisp.newest")
+  #.(compile-file-pathname #P"/a/b/bar.lisp")
+  #P"/a/b/bar.lisp"
+  #.(compile-file-pathname #P"/a/b/foo-tests.lisp")
+  #P"/a/b/foo-tests.lisp")
 
 (deftest (tangle-file-pathnames 3)
-  (tangle-file-pathnames #P"clweb-test:foo" :tests-file nil)
-  #.(compile-file-pathname #P"clweb-test:foo.lisp")
-  #P"clweb-test:foo.lisp.newest"
+  (tangle-file-pathnames #P"foo" :tests-file nil)
+  #.(compile-file-pathname #P"foo.lisp")
+  #.(merge-pathnames #P"foo.lisp" (compile-file-pathname #P"foo.lisp"))
   nil
   nil)
 
@@ -3459,7 +3399,7 @@ If successful, |weave| returns the truename of the output file.
               (package *package*))
   "Weave the web contained in INPUT-FILE, producing the TeX file OUTPUT-FILE."
   (declare (ignorable output-file tests-file index-file))
-  (multiple-value-bind (output-file index-file sections-file)
+  (multiple-value-bind (output-file index-file sections-file) ;
        (apply #'weave-pathnames input-file args)
     (with-standard-io-syntax
       (let ((*readtable* readtable)
@@ -3471,7 +3411,7 @@ If successful, |weave| returns the truename of the output file.
                                :direction :input ;
                                :external-format external-format)
           (read-sections input))
-        (let ((tests-file (apply #'tests-file-pathname input-file "TEX" ;
+        (let ((tests-file (apply #'tests-file-pathname input-file "tex" ;
                                  :output-file output-file ;
                                  args)))
           (when (and tests-file (> (length *test-sections*) 1))
@@ -3482,21 +3422,21 @@ If successful, |weave| returns the truename of the output file.
                        args)
               @<Fix up the index and sections filenames for test suite output@>
               (weave-sections *test-sections*
-                              :input-file input-file
+                              :input-file input-file ;
                               :output-file output-file
-                              :index-file index-file
+                              :index-file index-file ;
                               :sections-file sections-file
-                              :verbose verbose
+                              :verbose verbose ;
                               :print print
                               :external-format external-format
                               :weaving-tests t))))
         (when verbose (format t "~&; weaving sections to ~A~%" output-file))
         (weave-sections *sections*
-                        :input-file input-file
+                        :input-file input-file ;
                         :output-file output-file
-                        :index-file index-file
+                        :index-file index-file ;
                         :sections-file sections-file
-                        :verbose verbose
+                        :verbose verbose ;
                         :print print
                         :external-format external-format)))))
 
@@ -3518,15 +3458,15 @@ and the section names list filename. They are defaulted as follows:
 
 \smallskip
 \item\bull If |output-file| is not supplied or is |nil|, a pathname will be
-generated from |input-file| by replacing its type component with~`\.{TEX}'.
+generated from |input-file| by replacing its type component with~`\.{tex}'.
 
 \item\bull If |index-file| is not supplied or is supplied and non-null,
 an index of variables, functions, classes, \etc. will be written to the
 indicated file. The default filename is generated from |output-file| by
-replacing its type component with~`\.{IDX}'.
+replacing its type component with~`\.{idx}'.
 
 \item\bull The sections filename is generated from the index filename
-by replacing its type component with~`\.{SCN}'.
+by replacing its type component with~`\.{scn}'.
 
 @l
 (defun weave-pathnames (input-file &key output-file ;
@@ -3536,52 +3476,49 @@ by replacing its type component with~`\.{SCN}'.
 output by the weaver."
   (let* ((input-file (input-file-pathname input-file))
          (output-file (let ((output-file-defaults
-                             (make-pathname :type "TEX" ;
-                                            :defaults input-file ;
-                                            :case :common)))
+                             (make-pathname :type "tex" ;
+                                            :defaults input-file)))
                         (if output-file
                             (merge-pathnames output-file output-file-defaults)
                             output-file-defaults)))
          (index-file (let ((index-file-defaults
-                            (make-pathname :type "IDX" ;
-                                           :defaults output-file ;
-                                           :case :common)))
+                            (make-pathname :type "idx" ;
+                                           :defaults output-file)))
                        (if index-file
                            (merge-pathnames index-file index-file-defaults)
                            (when (not index-file-supplied) ;
                              index-file-defaults))))
          (sections-file (when index-file
-                          (make-pathname :type "SCN" ;
-                                         :defaults index-file ;
-                                         :case :common))))
+                          (make-pathname :type "scn" ;
+                                         :defaults index-file))))
     (values output-file index-file sections-file)))
 
 @t@l
 (deftest (weave-pathnames 1)
-  (weave-pathnames #P"clweb-test:foo")
-  #P"clweb-test:foo.tex.newest"
-  #P"clweb-test:foo.idx.newest"
-  #P"clweb-test:foo.scn.newest")
+  (weave-pathnames #P"foo")
+  #P"foo.tex"
+  #P"foo.idx"
+  #P"foo.scn")
 
 (deftest (weave-pathnames 2)
-  (weave-pathnames #P"clweb-test:foo" :output-file #P"clweb-test:a;b;bar")
-  #P"clweb-test:a;b;bar.tex.newest"
-  #P"clweb-test:a;b;bar.idx.newest"
-  #P"clweb-test:a;b;bar.scn.newest")
+  (weave-pathnames #P"foo" :output-file #P"/a/b/bar")
+  #P"/a/b/bar.tex"
+  #P"/a/b/bar.idx"
+  #P"/a/b/bar.scn")
 
 (deftest (weave-pathnames 3)
-  (weave-pathnames #P"clweb-test:foo" :index-file nil)
-  #P"clweb-test:foo.tex.newest"
+  (weave-pathnames #P"foo" :index-file nil)
+  #P"foo.tex"
   nil
   nil)
 
 (deftest (weave-pathnames 4)
-  (weave-pathnames #P"clweb-test:foo"
-                   :output-file #P"clweb-test:a;b;bar.tex"
-                   :index-file #P"clweb-test:c;index")
-  #P"clweb-test:a;b;bar.tex.newest"
-  #P"clweb-test:c;index.idx.newest"
-  #P"clweb-test:c;index.scn.newest")
+  (weave-pathnames #P"foo"
+                   :output-file #P"/a/b/bar.tex"
+                   :index-file #P"c/index")
+  #P"/a/b/bar.tex"
+  #P"/a/b/c/index.idx"
+  #P"/a/b/c/index.scn")
 
 @ @<Global variables@>=
 (defvar *weave-verbose* t
