@@ -1101,17 +1101,17 @@ its output to a string stream, which we'll use as our buffer.
 @l
 (defclass charpos-input-stream (charpos-stream) ())
 
-(defmethod shared-initialize :around ;
-    ((instance charpos-input-stream) slot-names &rest initargs &key stream)
+(defmethod shared-initialize ;
+    ((instance charpos-input-stream) slot-names &rest initargs &key stream &aux
+     (element-type (stream-element-type stream)))
   (apply #'call-next-method instance slot-names
-         (list* :proxy (make-echo-stream
-                        stream
-                        (make-string-output-stream
-                         :element-type (stream-element-type stream)))
-                initargs)))
+         :proxy (make-echo-stream stream ;
+                                  (make-string-output-stream ;
+                                   :element-type element-type))
+         initargs))
 
 (defmethod get-charpos-stream-buffer ((stream charpos-input-stream))
-  (get-output-stream-string
+  (get-output-stream-string ;
    (echo-stream-output-stream (charpos-proxy-stream stream))))
 
 @ For the output stream case, our proxy stream is a broadcast stream to the
@@ -1120,17 +1120,17 @@ given stream and a fresh string stream, again used as a buffer.
 @l
 (defclass charpos-output-stream (charpos-stream) ())
 
-(defmethod shared-initialize :around ;
-    ((instance charpos-output-stream) slot-names &rest initargs &key stream)
+(defmethod shared-initialize ;
+    ((instance charpos-output-stream) slot-names &rest initargs &key stream &aux
+     (element-type (stream-element-type stream)))
   (apply #'call-next-method instance slot-names
-         (list* :proxy (make-broadcast-stream
-                        (make-string-output-stream
-                         :element-type (stream-element-type stream))
-                        stream)
-                initargs)))
+         :proxy (make-broadcast-stream (make-string-output-stream ;
+                                        :element-type element-type) ;
+                                       stream)
+         initargs))
 
 (defmethod get-charpos-stream-buffer ((stream charpos-output-stream))
-  (get-output-stream-string
+  (get-output-stream-string ;
    (first (broadcast-stream-streams (charpos-proxy-stream stream)))))
 
 @ Because we'll be passing around the proxy streams, we need to manually
