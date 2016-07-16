@@ -95,6 +95,7 @@ signaled while processing a web.
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
   #+sbcl (require "SB-CLTL2"))
+
 @e
 (defpackage "CLWEB"
   (:documentation "A literate programming system for Common Lisp.")
@@ -105,7 +106,7 @@ signaled while processing a web.
            "LOAD-SECTIONS-FROM-TEMP-FILE"
            "TANGLE-FILE-PATHNAMES"
            "WEAVE-PATHNAMES"
-           "CLWEB-FILE"
+           "CLWEB-FILE" "WEAVE-OP"
            "*WEB-SOURCE-DEFAULTS*"
            "*LISP-SOURCE-DEFAULTS*"
            "*TEX-SOURCE-DEFAULTS*"
@@ -123,13 +124,20 @@ signaled while processing a web.
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
            "UNUSED-NAMED-SECTION-WARNING")
-  #+sbcl (:import-from "SB-INT" "NAMED-LAMBDA")
+  #+asdf
+  (:import-from "ASDF"
+                "COMPONENT" "DOWNWARD-OPERATION" "SOURCE-FILE" "SYSTEM"
+                "COMPILE-OP" "LOAD-OP" "LOAD-SOURCE-OP"
+                "COMPONENT-PATHNAME" "INPUT-FILES" "OUTPUT-FILES" "PERFORM")
   #+(or sbcl ccl allegro)
   (:import-from #+sbcl "SB-CLTL2" #+ccl "CCL" #+allegro "SYS"
                 #-allegro "FUNCTION-INFORMATION"
                 #-allegro "VARIABLE-INFORMATION"
                 #-allegro "PARSE-MACRO"
-                "AUGMENT-ENVIRONMENT"))
+                "AUGMENT-ENVIRONMENT")
+  #+sbcl
+  (:import-from "SB-INT" "NAMED-LAMBDA"))
+
 @e
 (in-package "CLWEB")
 
@@ -396,45 +404,44 @@ webs as source files, and add specialized methods for the most important
 operations.
 
 @l
-(defclass clweb-file (asdf:source-file)
-  ((type :initform "clw")))
+(defclass clweb-file (source-file)
+  ((type :initform (pathname-type *web-source-defaults*))))
 
-(defmethod asdf:component-pathname ((component clweb-file))
+(defmethod component-pathname ((component clweb-file))
   (input-file-pathname (call-next-method)))
 
-(defmethod asdf:output-files ((op asdf:compile-op) (component clweb-file))
+(defmethod output-files ((op compile-op) (component clweb-file))
   (values (multiple-value-list ;
-           (tangle-file-pathnames (asdf:component-pathname component)))
+           (tangle-file-pathnames (component-pathname component)))
           nil))
 
-(defmethod asdf:perform ((op asdf:compile-op) (component clweb-file))
-  (tangle-file (asdf:component-pathname component)
-               :output-file (first (asdf:output-files op component))))
+(defmethod perform ((op compile-op) (component clweb-file))
+  (tangle-file (component-pathname component)
+               :output-file (first (output-files op component))))
 
-(defmethod asdf:perform ((op asdf:load-op) (component clweb-file))
+(defmethod perform ((op load-op) (component clweb-file))
   (map nil #'load
-       (remove-if (lambda (file) (string= (pathname-type file) "lisp"))
-                  (asdf:input-files op component))))
+       (remove-if (lambda (file) ;
+                    (string= (pathname-type file) ;
+                             (pathname-type *lisp-source-defaults*)))
+                  (input-files op component))))
 
-(defmethod asdf:perform ((op asdf:load-source-op) (component clweb-file))
-  (load-web (asdf:component-pathname component)))
+(defmethod perform ((op load-source-op) (component clweb-file))
+  (load-web (component-pathname component)))
 
-@ We'll define a new \asdf\ operation, |weave-op|, which invokes the weaver
+@ We also define a new \asdf\ operation, |weave-op|, which invokes the weaver
 on a web. It has no effect on other components.
 
 @l
-(defclass weave-op (asdf:operation) ())
+(defclass weave-op (downward-operation) ())
 
-(defmethod asdf:output-files ((op weave-op) (component clweb-file))
+(defmethod output-files ((op weave-op) (component clweb-file))
   (values (multiple-value-list ;
-           (weave-pathnames (asdf:component-pathname component)))
+           (weave-pathnames (component-pathname component)))
           t))
 
-(defmethod asdf:perform ((op weave-op) component)
-  (declare (ignore component)))
-
-(defmethod asdf:perform ((op weave-op) (component clweb-file))
-  (weave (asdf:component-pathname component)))
+(defmethod perform ((op weave-op) (component clweb-file))
+  (weave (component-pathname component)))
 
 @1*Utilities.
 
