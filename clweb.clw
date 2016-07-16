@@ -14,17 +14,18 @@
 \def\progname{{\eighttt CLWEB}}
 \def\etc.{{\it \char`&c.\spacefactor1000}}
 \def\<#1>{\leavevmode\hbox{$\mkern-2mu\langle${\it #1\/}$\rangle$}}
+\def\api{{\sc api}}
 \def\ansi{{\sc ansi}}
 \def\asdf{{\sc asdf}}
 \def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
 
-@*Introduction. This is \CLWEB, a literate programming system for Common
-Lisp by Alex Plotnick \<plotnick@@cs.brandeis.edu>. It is modeled
-after the \CWEB\ system by Silvio Levy and Donald E.~Knuth, which was in
-turn adapted from Knuth's original \WEB\ system. It shares with those
-systems not only their underlying philosophy, but also most of their syntax.
-Readers unfamiliar with either of them---or with literate programming in
-general---should consult the \CWEB\ manual or Knuth's {\it \ldq Literate
+@*Introduction. This is \CLWEB, a literate programming system for
+Common Lisp by Alex Plotnick. It~is modeled after the \CWEB\ system
+by Silvio Levy and Donald E.~Knuth, which was in turn adapted from
+Knuth's original \WEB\ system. It shares with those systems not only
+their underlying philosophy, but also most of their syntax.
+Readers unfamiliar with either of them---or with literate programming
+in general---should consult the \CWEB\ manual or Knuth's {\it \ldq Literate
 Programming\/\rdq} ({\sc csli}:~1992).
 @^Knuth, Donald Ervin@>
 @^Levy, Silvio@>
@@ -32,64 +33,65 @@ Programming\/\rdq} ({\sc csli}:~1992).
 @^\WEB@>
 @^\CWEB@>
 
-This is a preliminary, $\beta$-quality release of the system.
-To obtain the latest version, please visit\break
-\hbox{\.{http://www.cs.brandeis.edu/\~plotnick/clweb/}}\,.
-
-@ A \CLWEB\ source file consists of a mixture of \TeX, Lisp, and \WEB\
-control codes, but which is primary depends on your point of view. The
-\CWEB\ manual, for instance, says that ``[w]riting \CWEB\ programs is
-something like writing \TeX\ documents, but with an additional `C mode'
-that is added to \TeX's horizontal mode, vertical mode, and math mode.''
-The same applies, {\it mutatis mutandis}, to the current system, but one
-might just as easily think of a web as some code with documentation blocks
-and special control codes sprinkled throughout, or as a completely separate
-language containing blocks that happen to have the syntax (more or less) of
-\TeX\ and Lisp. For the purposes of understanding the implementation, this
-last view is perhaps the most useful, since the control codes determine
-which syntax to use in reading the material that follows.
+@ A \CLWEB\ source file, or {\it web}, consists of a mixture of \TeX, Lisp,
+and~\WEB\ control codes. Which is primary depends on your point of view;
+the \CWEB\ manual says that ``[w]riting \CWEB\ programs is something like
+writing \TeX\ documents, but with an additional `C mode' that is added to
+\TeX's horizontal mode, vertical mode, and math mode.'' The same applies,
+{\it mutatis mutandis}, to the current system, but one might also think
+of a web as a Lisp program with documentation blocks and special directives
+sprinkled throughout, or as a completely separate language containing
+blocks that happen to have the syntax (more or less) of \TeX\ and~Lisp.
+For the purposes of understanding the implementation, this last view
+is perhaps the most useful, since the control codes determine which syntax
+to use in reading the material that follows.
 @^\WEB@>
 @^\CWEB@>
 
-The syntax of the \CLWEB\ control codes themselves is similar to that of
-dispatching reader macro characters in Lisp: they all begin with
+The syntax of the \CLWEB\ control codes themselves is similar to that
+of dispatching reader macro characters in Lisp: they all begin with
 `\.{@@}$x$', where~$x$ is a single character that selects the control code.
 Most of the \CLWEB\ control codes are quite similar to the ones used in
 \CWEB; see the \CWEB\ manual for detailed descriptions of the individual
 codes.
 
 @ A literate programming system provides two primary operations:
-{\it tangling\/} and {\it weaving}. The tangler prepares a literate 
-program, or {\it web}, for evaluation by a machine, while the weaver
-prepares it for typesetting and subsequent reading by a human. These
-operations reflect the two uses of a literate program, and the two
-audiences by whom it must be read: the computer on the one hand, and the
-human programmers that must understand and maintain it on the other.
+{\it tangling\/} and {\it weaving}. The tangler prepares a web for
+compilation and evaluation by a machine, and the weaver pretty-prints it
+for reading by a human. These operations reflect the two uses of a literate
+program, and the two audiences by whom it is to be read: the computer on
+the one hand, and the human programmers that must understand and maintain
+it on the other.
 
 Our tangler has two main interface functions: |clweb:tangle-file| and
 |clweb:load-web|. The first is analogous to |compile-file|: given a file
-containing \CLWEB\ source, it produces an output file that can be
-subsequently loaded into a Lisp image with |load|. The function
-|clweb:load-web| is analogous to |load|, but also accepts \CLWEB\ source
-as input instead of ordinary Lisp source: it loads a web into the Lisp
-environment.
+containing \CLWEB\ source, it produces an output file that can be loaded
+into a Lisp image with |load|. The function |clweb:load-web| is analogous
+to |load|: it loads a web into the Lisp environment without first tangling
+and compiling~it. (There's also |clweb:load-sections-from-temp-file|,
+which is a special-purpose routine designed to be used in conjunction with
+an editor such as Emacs to provide incremental redefinition of sections;
+the user should generally never call it directly.) Tangling can also produce
+and compile a {\it tests file}, which contains any tests defined alongside
+the main program as part of the web.
 
-The weaver has a single entry point: |clweb:weave| takes a web as input and
-generates a file that can be fed to \TeX\ to generate a pretty-printed
-version of that web.
+The weaver has a single entry point: |clweb:weave| takes a web as input
+and generates a \TeX\ file containing a pretty-printed version of it,
+along with a complete index of the classes, functions, variables,~\etc.
+defined by the program.
 
-@1*System construction. We'll start by setting up a package for the system.
-In addition to the top-level tangler and weaver functions mentioned above,
-there's also |clweb:load-sections-from-temp-file|, which is conceptually
-part of the tangler, but is a special-purpose routine designed to be used
-in conjunction with an editor such as Emacs to provide incremental
-redefinition of sections; the user will generally never need to call
-it directly. |tangle-file-pathnames| and |weave-pathnames| play roles
-analagous to |compile-file-pathname|. |clweb-file| is an \asdf\ component
-class that represents a web. Next come a few global variables that control
-various operations of the weaver. The remainder of the exported symbols are
-condition classes for the various errors and warnings that might be
-signaled while processing a web.
+@ We begin by defining a package for the \CLWEB\ system. In addition to
+the top-level tangling and weaving functions mentioned above, we also export
+a handful of public utility functions, some global variables that control
+various operations of the tangler and weaver, and condition classes for
+the various errors and warnings that may be signaled while processing a~web.
+We import the symbols needed for defining \asdf\ operations on web files,
+the \cltl~environments \api\ (needed for indexing), and whatever other
+implementation-specific symbols that we need.
+@^\asdf@>
+@^\cltl@>
+@^environments \api@>
+
 
 @l
 @e
@@ -528,7 +530,7 @@ they are generated automatically by the system.
 Aside from a name, a section may have a {\it commentary part}, optionally
 followed by a {\it code part}. (We don't support the `middle' part of a
 section that \WEB\ and \CWEB's sections have, since the kinds of definitions
-that can appear there are essentially irrelevant in Lisp.)  The commentary
+that can appear there are essentially irrelevant in Lisp.) The commentary
 part consists of \TeX\ material that describes the section; the weaver
 copies it (nearly) verbatim into the \TeX\ output file, and the tangler
 ignores it. The code part contains Lisp forms and named section references;
@@ -584,8 +586,8 @@ ones with none upon thars.
 (defmethod section-depth ((section section)) nil)
 
 @ Sections that begin with \.{@@t} are {\it test sections}. They are used to
-include test cases alongside the normal code, but are treated specially by
-both the tangler and the weaver. The tangler writes them out to a separate
+include test cases alongside the program, and are treated specially by both
+the tangler and the weaver. The tangler writes them out to a separate
 file, and the weaver may elide them entirely.
 
 Test sections are automatically associated with the last non-test section
@@ -4282,10 +4284,10 @@ actually be walking a special sort of munged code that isn't exactly
 Common Lisp. And because of this, none of the available code walkers
 will quite do what we want. So we'll roll our own.
 
-@ We'll use the environments {\sc api} defined in~\cltl, since even
-though it's not part of the Common Lisp standard, it's widely supported,
-and does everything we need it to do.
-@^environments {\sc api}@>
+@ We'll use the environments \api\ defined in~\cltl, since even though
+it's not part of the Common Lisp standard, it's widely supported and does
+everything we need it to do.
+@^environments \api@>
 @^\cltl@>
 
 Allegro Common Lisp has an additional function,
@@ -4357,7 +4359,7 @@ there is no relevant information to supply.
 
 @ The most important kind of context we'll supply is the {\it namespace\/}
 of a name that's about to be walked. Namespaces are associated with
-environments, but the \cltl\ environments {\sc api} does not provide
+environments, but the \cltl\ environments \api\ does not provide
 functions for dealing directly with many of the kinds of namespaces
 that we'll define. However, the most important namespaces---variable
 names, function names, macros, \etc.---do have corresponding entries
@@ -4487,7 +4489,7 @@ slightly simpler.
 (defnamespace macro-definition (macro-name))
 
 @ The people at Franz just can't seem to resist tweaking the environments
-{\sc api}: their version of |function-information| returns |:sepcial-operator|
+\api: their version of |function-information| returns |:sepcial-operator|
 rather than |:special-form| when the function spec names a special operator.
 This may be more precise terminology, but it's an arbitrary and capricious
 change. Still, it's easy enough to provide an alias for our namespace class.
@@ -6471,7 +6473,7 @@ bother indexing.
 
 @1*Referring symbols. We'll perform the indexing by walking over the code
 of each section and noting each of the interesting symbols that we find
-there according to its semantic role. In theory, this should be a
+there according to its semantic r\^ole. In theory, this should be a
 straightforward task for any Common Lisp code walker. What makes it tricky
 is that references to named sections can occur anywhere in a form, which
 might break the syntax of macros and special forms unless we tangle the
