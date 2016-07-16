@@ -106,6 +106,12 @@ signaled while processing a web.
            "TANGLE-FILE-PATHNAMES"
            "WEAVE-PATHNAMES"
            "CLWEB-FILE"
+           "*WEB-SOURCE-DEFAULTS*"
+           "*LISP-SOURCE-DEFAULTS*"
+           "*TEX-SOURCE-DEFAULTS*"
+           "*INDEX-FILE-DEFAULTS*"
+           "*SECTIONS-FILE-DEFAULTS*"
+           "*TESTS-FILE-PATHNAME-FUNCTION*"
            "*COMPILE-TESTS-FILE*"
            "*TANGLE-FILE-PATHNAME*"
            "*TANGLE-FILE-TRUENAME*"
@@ -154,9 +160,234 @@ but we'd like them to appear near the top of the tangled output.
 @<Global variables@>
 @<Condition classes@>
 
-@2*ASDF integration. \asdf\ is ``another system definition facility'' for
+@1*File names. In keeping with the usual conventions of both Lisp and \TeX,
+the type component of an input filename argument to any top-level function
+may be omitted; it defaults to~`\.{clw}'. Lisp source files are assumed to
+have type `\.{lisp}', \TeX\ files type `\.{tex}', and so on. Any of these
+defaults may be overridden by changing the value of the following global
+variables.
+
+@<Global variables@>=
+(defvar *web-source-defaults* (make-pathname :type "clw" :version :newest))
+(defvar *lisp-source-defaults* (make-pathname :type "lisp" :version :newest))
+(defvar *tex-source-defaults* (make-pathname :type "tex" :version :newest))
+(defvar *index-file-defaults* (make-pathname :type "idx" :version :newest))
+(defvar *sections-file-defaults* (make-pathname :type "scn" :version :newest))
+
+@ Here are a few little utility functions for constructing input and output
+filenames.
+
+@l
+(defun input-file-pathname (input-file)
+  (merge-pathnames input-file *web-source-defaults*))
+
+(defun lisp-file-pathname (filename)
+  (make-pathname :type (pathname-type *lisp-source-defaults*)
+                 :version :newest
+                 :defaults filename))
+
+(defun fasl-file-pathname (input-file &rest args)
+  (apply #'compile-file-pathname (lisp-file-pathname input-file)
+         :allow-other-keys t
+         args))
+
+@t@l
+(deftest input-file-pathname
+  (input-file-pathname #P"foo")
+  #P"foo.clw")
+
+(deftest lisp-file-pathname
+  (lisp-file-pathname #P"foo.clw")
+  #P"foo.lisp")
+
+(deftest fasl-file-pathname
+  (fasl-file-pathname #P"foo.clw")
+  #.(compile-file-pathname #P"foo"))
+
+@ Both |tangle-file| and |weave| take a |tests-file| argument with
+slightly hairy defaulting behavior. If it's supplied as~|nil|, then
+no tests file will be written. If it's supplied and non-|nil|, then
+we replace the type with that of the output filename. If it's not supplied,
+then we construct one from the output filename by appending the string
+\.{"-tests"} to its name. The behavior of the last case is customizable
+by overriding the function stored in |*tests-file-pathname-function*|.
+
+@l
+(defun tests-file-pathname (input-file &key output-file ;
+                            (tests-file nil tests-file-supplied) ;
+                            &allow-other-keys)
+  (check-type input-file pathname)
+  (assert (or output-file tests-file-supplied)
+          (output-file tests-file)
+          "Either an output or a tests filename must be supplied.")
+  (if tests-file
+      (make-pathname :type (pathname-type output-file)
+                     :version :newest
+                     :defaults tests-file)
+      (unless tests-file-supplied
+        (funcall *tests-file-pathname-function* input-file output-file))))
+
+@ @<Global variables@>=
+(defvar *tests-file-pathname-function*
+  (lambda (input-file output-file)
+    (declare (ignore input-file))
+    (make-pathname :name (concatenate 'string ;
+                                      (pathname-name output-file) ;
+                                      "-tests")
+                   :type (pathname-type output-file)
+                   :version :newest
+                   :defaults output-file)))
+
+@t@l
+(deftest (tests-file-pathname 1)
+  (tests-file-pathname #P"foo.clw"
+                       :output-file #P"foo.lisp"
+                       :tests-file #P"bar")
+  #P"bar.lisp")
+
+(deftest (tests-file-pathname 2)
+  (tests-file-pathname #P"foo.clw"
+                       :output-file #P"foo"
+                       :tests-file nil)
+  nil)
+
+(deftest (tests-file-pathname 3)
+  (tests-file-pathname #P"foo.clw"
+                       :output-file #P"/a/b/bar.tex")
+  #P"/a/b/bar-tests.tex")
+
+@ This routine performs the defaulting for the filename arguments to
+|tangle-file|. It returns four pathnames: the output (\.{fasl}) file,
+the intermediate Lisp file, the test suite output file, and~the test
+suite Lisp file. The defaulting behavior is as follows:
+
+\smallskip
+\item\bull The output filename is the pathname that |compile-file|
+will write into when called with the intermediate Lisp file. It is
+thus implementation-specific.
+
+\item\bull The Lisp filename is generated from the defaulted output filename
+by replacing its type component with~`\.{lisp}'.
+
+\item\bull The tests filename is computed by the function |tests-file-pathname|
+using the defaulted input and output filenames.
+
+\item\bull The tests output filename is generated from the defaulted tests
+filename by replacing its type with the~type of the defaulted output file.
+
+@l
+(defun tangle-file-pathnames (input-file &rest args &key ;
+                              output-file tests-file &allow-other-keys)
+  "Compute and return the names of the defaulted tangler output files."
+  (declare (ignorable output-file tests-file))
+  (let* ((input-file (input-file-pathname input-file))
+         (output-file (apply #'fasl-file-pathname input-file args))
+         (lisp-file (lisp-file-pathname output-file))
+         (tests-file (apply #'tests-file-pathname input-file ;
+                            :output-file lisp-file ;
+                            args))
+         (tests-output-file (and tests-file
+                                 (make-pathname :type (pathname-type output-file)
+                                                :version :newest
+                                                :defaults tests-file))))
+    (values output-file lisp-file tests-output-file tests-file)))
+
+@t@l
+(deftest (tangle-file-pathnames 1)
+  (tangle-file-pathnames #P"foo")
+  #.(compile-file-pathname #P"foo.lisp")
+  #.(merge-pathnames #P"foo.lisp" (compile-file-pathname #P"foo.lisp"))
+  #.(compile-file-pathname #P"foo-tests.lisp")
+  #.(merge-pathnames #P"foo-tests.lisp" ;
+                     (compile-file-pathname #P"foo-tests.lisp")))
+
+(deftest (tangle-file-pathnames 2)
+  (let* ((input-file #P"foo")
+         (fasl-type (pathname-type (compile-file-pathname input-file)))
+         (output-file (make-pathname :type fasl-type :defaults #P"/a/b/bar")))
+    (tangle-file-pathnames input-file :output-file output-file))
+  #.(compile-file-pathname #P"/a/b/bar.lisp")
+  #P"/a/b/bar.lisp"
+  #.(compile-file-pathname #P"/a/b/bar-tests.lisp")
+  #P"/a/b/bar-tests.lisp")
+
+(deftest (tangle-file-pathnames 3)
+  (tangle-file-pathnames #P"foo" :tests-file nil)
+  #.(compile-file-pathname #P"foo.lisp")
+  #.(merge-pathnames #P"foo.lisp" (compile-file-pathname #P"foo.lisp"))
+  nil
+  nil)
+
+@ And this routine does the defaulting for the filename arguments to |weave|.
+It returns three filenames: the output (\TeX) filename, the index filename,
+and the section names list filename. They are defaulted as follows:
+
+\smallskip
+\item\bull If |output-file| is not supplied or is |nil|, a pathname will be
+generated from |input-file| by replacing its type component with~`\.{tex}'.
+
+\item\bull If |index-file| is not supplied or is supplied and non-null,
+an index of variables, functions, classes, \etc. will be written to the
+indicated file. The default index filename is generated from |output-file|
+by replacing its type component with~`\.{idx}'.
+
+\item\bull The sections filename is generated from the defaulted index
+filename by replacing its type component with~`\.{scn}'.
+
+@l
+(defun weave-pathnames (input-file &key output-file ;
+                        (index-file nil index-file-supplied) ;
+                        &allow-other-keys)
+  "Compute and return the defaulted names of the weaver output files."
+  (let* ((input-file (input-file-pathname input-file))
+         (output-file (or output-file
+                          (make-pathname :type (pathname-type ;
+                                                *tex-source-defaults*)
+                                         :version :newest
+                                         :defaults input-file)))
+         (index-file (or index-file
+                         (unless index-file-supplied
+                           (make-pathname :type (pathname-type ;
+                                                 *index-file-defaults*)
+                                          :version :newest
+                                          :defaults output-file))))
+         (sections-file (and index-file
+                             (make-pathname :type (pathname-type ;
+                                                   *sections-file-defaults*)
+                                            :version :newest
+                                            :defaults index-file))))
+    (values output-file index-file sections-file)))
+
+@t@l
+(deftest (weave-pathnames 1)
+  (weave-pathnames #P"foo")
+  #P"foo.tex"
+  #P"foo.idx"
+  #P"foo.scn")
+
+(deftest (weave-pathnames 2)
+  (weave-pathnames #P"foo" :output-file #P"a/bar.baz")
+  #P"a/bar.baz"
+  #P"a/bar.idx"
+  #P"a/bar.scn")
+
+(deftest (weave-pathnames 3)
+  (weave-pathnames #P"foo" :index-file nil)
+  #P"foo.tex"
+  nil
+  nil)
+
+(deftest (weave-pathnames 4)
+  (weave-pathnames #P"foo"
+                   :output-file #P"/a/bar.tex"
+                   :index-file #P"/b/index.idx")
+  #P"/a/bar.tex"
+  #P"/b/index.idx"
+  #P"/b/index.scn")
+
+@1*ASDF integration. \asdf\ is ``another system definition facility'' for
 Common Lisp. Despite its flaws, it has become the de~facto standard system
-construction tool, and plays an important r\^ole in the modern Lisp
+construction tool, and plays an important r\^ole in the modern Common Lisp
 ecosystem.
 
 \asdf\ was designed to be extensible, and indeed adding basic support for
@@ -3024,20 +3255,6 @@ of the complete program; if you tangle it, you get the whole thing.
 (defun unnamed-section-code-parts (sections)
   (mapappend #'section-code (coerce (remove-if #'section-name sections) 'list)))
 
-@ In keeping with the usual behavior of both Lisp and \TeX, the type
-component of an input filename argument to any top-level function may
-be omitted; it defaults to~`\.{clw}'.
-
-@l
-(defun input-file-pathname (input-file)
-  "Apply defaults to the given input filename."
-  (merge-pathnames input-file (make-pathname :type "clw")))
-
-@t@l
-(deftest input-file-pathname
-  (input-file-pathname #P"foo")
-  #P"foo.clw")
-
 @ We're now ready for the high-level tangler interface. We begin with
 |load-web|, which uses a helper function, |load-web-from-stream|, so that
 it can handle input from an arbitrary stream. The logic is straightforward:
@@ -3093,46 +3310,6 @@ otherwise, they will replace them."
            (load-web-from-stream stream t :append append))
       (delete-file file))))
 
-@ Both |tangle-file| and |weave|, below, take a |tests-file| argument that
-has slightly hairy defaulting behavior. If it's supplied and is non-|nil|,
-then we use a pathname derived from the one given by merging in a default
-type (`\.{lisp}' in the case of tangling, `\.{tex}' for weaving). If it's
-not supplied, then we construct a pathname from the input file by appending
-the string \.{"-tests"} to its name component, using the supplied type,
-and merging defaults from the output filename. Finally, if the argument
-is supplied and is |nil|, then no tests file will be written at all.
-
-@l
-(defun tests-file-pathname (input-file type &key ;
-                            (output-file *default-pathname-defaults*)
-                            (tests-file nil tests-file-supplied) ;
-                            &allow-other-keys)
-  (if tests-file
-      (make-pathname :type type :defaults tests-file)
-      (unless tests-file-supplied
-        (make-pathname :name (concatenate 'string ;
-                                          (pathname-name input-file) ;
-                                          "-tests")
-                       :type type
-                       :defaults output-file))))
-
-@t@l
-(deftest (tests-file-pathname 1)
-  (tests-file-pathname #P"foo" "lisp" :tests-file #P"bar")
-  #P"bar.lisp")
-
-(deftest (tests-file-pathname 2)
-  (tests-file-pathname #P"foo" "tex" :output-file #P"/a/b/")
-  #P"/a/b/foo-tests.tex")
-
-(deftest (tests-file-pathname 3)
-  (tests-file-pathname #P"foo" "tex" :output-file #P"/a/b/")
-  #P"/a/b/foo-tests.tex")
-
-(deftest (tests-file-pathname 4)
-  (tests-file-pathname #P"foo" "lisp" :tests-file nil)
-  nil)
-
 @ Some tests might not be worth spending time compiling, or might be
 easier to debug if not compiled, or might involve unwanted complexity
 to support compilation (e.g., |make-load-form|). So we'll allow the
@@ -3141,8 +3318,7 @@ the default preference.
 
 @<Global variables@>=
 (defvar *compile-tests-file* t
-  "The default value to use for the :COMPILE-TESTS-FILE argument to
-TANGLE-FILE.")
+  "The default value for the :COMPILE-TESTS-FILE argument to TANGLE-FILE.")
 
 @ During tangling, we bind |*tangle-file-pathname*| and
 |*tangle-file-truename*| in the same way that |compile-file| binds
@@ -3241,71 +3417,6 @@ you can say, e.g., |(load (tangle-file "web"))|.
                             :verbose verbose ;
                             :print print
                             :external-format external-format))))))))
-
-@ This routine performs the defaulting for the filename arguments to
-|tangle-file|. It returns four pathnames: the output (\.{fasl}) file,
-the intermediate Lisp file, the test suite output file, and~the test
-suite Lisp file. The defaulting behavior is as follows:
-
-\smallskip
-\item\bull The output filename is generated by calling |compile-file-pathname|
-with the supplied input filename and other arguments, including any supplied
-|output-file|. It is thus system-specific.
-
-\item\bull The Lisp filename is generated from the defaulted output filename
-by replacing its type component with~`\.{lisp}'.
-
-\item\bull The tests filename is computed by the function |tests-file-pathname|
-using the defaulted input and output filenames.
-
-\item\bull The tests output filename is generated from the defaulted tests
-filename by replacing its type with the~type of the defaulted output file.
-
-@l
-(defun tangle-file-pathnames (input-file &rest args &key ;
-                              output-file tests-file &allow-other-keys)
-  "Compute and return the names of the defaulted input file and files
-output by the tangler."
-  (declare (ignorable output-file tests-file))
-  (let* ((input-file (input-file-pathname input-file))
-         (output-file (apply #'compile-file-pathname input-file ;
-                             :allow-other-keys t args))
-         (lisp-file (make-pathname :type "lisp" ;
-                                   :defaults output-file))
-         (tests-file (apply #'tests-file-pathname input-file "lisp" ;
-                            :output-file output-file ;
-                            args))
-         (tests-output-file ;
-          (and tests-file ;
-               (make-pathname :type (pathname-type output-file) ;
-                              :defaults tests-file))))
-    (values output-file lisp-file tests-output-file tests-file)))
-
-@t@l
-(deftest (tangle-file-pathnames 1)
-  (tangle-file-pathnames #P"foo")
-  #.(compile-file-pathname #P"foo.lisp")
-  #.(merge-pathnames #P"foo.lisp" (compile-file-pathname #P"foo.lisp"))
-  #.(compile-file-pathname #P"foo-tests.lisp")
-  #.(merge-pathnames #P"foo-tests.lisp" ;
-                     (compile-file-pathname #P"foo-tests.lisp")))
-
-(deftest (tangle-file-pathnames 2)
-  (let* ((input-file #P"foo")
-         (fasl-type (pathname-type (compile-file-pathname input-file)))
-         (output-file (make-pathname :type fasl-type :defaults #P"/a/b/bar")))
-    (tangle-file-pathnames input-file :output-file output-file))
-  #.(compile-file-pathname #P"/a/b/bar.lisp")
-  #P"/a/b/bar.lisp"
-  #.(compile-file-pathname #P"/a/b/foo-tests.lisp")
-  #P"/a/b/foo-tests.lisp")
-
-(deftest (tangle-file-pathnames 3)
-  (tangle-file-pathnames #P"foo" :tests-file nil)
-  #.(compile-file-pathname #P"foo.lisp")
-  #.(merge-pathnames #P"foo.lisp" (compile-file-pathname #P"foo.lisp"))
-  nil
-  nil)
 
 @ A named section doesn't do any good if it's never referenced, so we issue
 warnings about unused named sections.
@@ -3411,7 +3522,7 @@ If successful, |weave| returns the truename of the output file.
                                :direction :input ;
                                :external-format external-format)
           (read-sections input))
-        (let ((tests-file (apply #'tests-file-pathname input-file "tex" ;
+        (let ((tests-file (apply #'tests-file-pathname input-file ;
                                  :output-file output-file ;
                                  args)))
           (when (and tests-file (> (length *test-sections*) 1))
@@ -3451,74 +3562,6 @@ files for the test suite.
   (let ((output-file-name (make-pathname :name (pathname-name output-file))))
     (setq index-file (merge-pathnames output-file-name index-file)
           sections-file (merge-pathnames output-file-name sections-file))))
-
-@ This routine does the defaulting for the filename arguments to |weave|.
-It returns three filenames: the output (\TeX) filename, the index filename,
-and the section names list filename. They are defaulted as follows:
-
-\smallskip
-\item\bull If |output-file| is not supplied or is |nil|, a pathname will be
-generated from |input-file| by replacing its type component with~`\.{tex}'.
-
-\item\bull If |index-file| is not supplied or is supplied and non-null,
-an index of variables, functions, classes, \etc. will be written to the
-indicated file. The default filename is generated from |output-file| by
-replacing its type component with~`\.{idx}'.
-
-\item\bull The sections filename is generated from the index filename
-by replacing its type component with~`\.{scn}'.
-
-@l
-(defun weave-pathnames (input-file &key output-file ;
-                        (index-file nil index-file-supplied) ;
-                        &allow-other-keys)
-  "Compute and return the names of the defaulted input file and files
-output by the weaver."
-  (let* ((input-file (input-file-pathname input-file))
-         (output-file (let ((output-file-defaults
-                             (make-pathname :type "tex" ;
-                                            :defaults input-file)))
-                        (if output-file
-                            (merge-pathnames output-file output-file-defaults)
-                            output-file-defaults)))
-         (index-file (let ((index-file-defaults
-                            (make-pathname :type "idx" ;
-                                           :defaults output-file)))
-                       (if index-file
-                           (merge-pathnames index-file index-file-defaults)
-                           (when (not index-file-supplied) ;
-                             index-file-defaults))))
-         (sections-file (when index-file
-                          (make-pathname :type "scn" ;
-                                         :defaults index-file))))
-    (values output-file index-file sections-file)))
-
-@t@l
-(deftest (weave-pathnames 1)
-  (weave-pathnames #P"foo")
-  #P"foo.tex"
-  #P"foo.idx"
-  #P"foo.scn")
-
-(deftest (weave-pathnames 2)
-  (weave-pathnames #P"foo" :output-file #P"/a/b/bar")
-  #P"/a/b/bar.tex"
-  #P"/a/b/bar.idx"
-  #P"/a/b/bar.scn")
-
-(deftest (weave-pathnames 3)
-  (weave-pathnames #P"foo" :index-file nil)
-  #P"foo.tex"
-  nil
-  nil)
-
-(deftest (weave-pathnames 4)
-  (weave-pathnames #P"foo"
-                   :output-file #P"/a/b/bar.tex"
-                   :index-file #P"c/index")
-  #P"/a/b/bar.tex"
-  #P"/a/b/c/index.idx"
-  #P"/a/b/c/index.scn")
 
 @ @<Global variables@>=
 (defvar *weave-verbose* t
