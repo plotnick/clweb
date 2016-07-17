@@ -7,6 +7,15 @@
 (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
   (REQUIRE "RT")
   (DO-EXTERNAL-SYMBOLS (SYMBOL (FIND-PACKAGE "RT")) (IMPORT SYMBOL)))
+(DEFTEST MAYBE-PUSH
+         (LET ((LIST 'NIL))
+           (MAYBE-PUSH 'A LIST)
+           (MAYBE-PUSH NIL LIST)
+           (MAYBE-PUSH 'B LIST)
+           (MAYBE-PUSH "" LIST)
+           (MAYBE-PUSH "foo" LIST)
+           (NREVERSE LIST))
+         (A B "foo"))
 (DEFTEST INPUT-FILE-PATHNAME (INPUT-FILE-PATHNAME #P"foo") #P"foo.clw")
 (DEFTEST LISP-FILE-PATHNAME (LISP-FILE-PATHNAME #P"foo.clw") #P"foo.lisp")
 (DEFTEST FASL-FILE-PATHNAME (FASL-FILE-PATHNAME #P"foo.clw")
@@ -52,14 +61,6 @@
          (WEAVE-PATHNAMES #P"foo" :OUTPUT-FILE #P"/a/bar.tex" :INDEX-FILE
                           #P"/b/index.idx")
          #P"/a/bar.tex" #P"/b/index.idx" #P"/b/index.scn")
-(DEFTEST MAYBE-PUSH
-         (LET ((LIST 'NIL))
-           (MAYBE-PUSH 'A LIST)
-           (MAYBE-PUSH NIL LIST)
-           (MAYBE-PUSH "" LIST)
-           (MAYBE-PUSH 'B LIST)
-           LIST)
-         (B A))
 (DEFMETHOD SECTION-NUMBER ((SECTION INTEGER)) SECTION)
 (DEFTEST CURRENT-SECTION
          (LET ((*SECTIONS* (MAKE-ARRAY 1 :FILL-POINTER 0)))

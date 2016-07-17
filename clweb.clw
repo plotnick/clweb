@@ -170,6 +170,74 @@ but we'd like them to appear near the top of the tangled output.
 @<Global variables@>
 @<Condition classes@>
 
+@ Next we'll define some utility functions and macros that we'll use
+throughout the program. Our first function simply treats its argument
+as a list designator.
+
+@l
+(defun ensure-list (object)
+  (if (listp object)
+      object
+      (list object)))
+
+@ This auxiliary function---shamelessly stolen from \cltl, Appendix~C---is
+like |mapcar| but has two extra purposes: (1)~it handles dotted lists; (2)~it
+tries to make the result share with the argument |x| as much as possible.
+
+@l
+(defun maptree (fn x)
+  (if (atom x)
+      (funcall fn x)
+      (let ((a (funcall fn (car x)))
+            (d (maptree fn (cdr x))))
+        (if (and (eql a (car x)) (eql d (cdr x)))
+            x
+            (cons a d)))))
+
+@ And here's one taken from {\sc pcl}: |mapappend| is like |mapcar| except
+that the results are appended together.
+
+@l
+(defun mapappend (fn &rest args)
+  (if (some #'null args)
+      ()
+      (append (apply fn (mapcar #'car args))
+              (apply #'mapappend fn (mapcar #'cdr args)))))
+
+@ When we're accumulating text, we usually won't want to bother with
+empty strings. In such cases we'll use the following macro, which is
+like |push| but does nothing if the new object is an empty string or~|nil|.
+
+@l
+(defmacro maybe-push (obj place &aux (temp (gensym)))
+  `(let ((,temp ,obj))
+     (when (if (stringp ,temp) (plusp (length ,temp)) ,temp)
+       (push ,temp ,place))))
+
+@t@l
+(deftest maybe-push
+  (let ((list '()))
+    (maybe-push 'a list)
+    (maybe-push nil list)
+    (maybe-push 'b list)
+    (maybe-push "" list)
+    (maybe-push "foo" list)
+    (nreverse list))
+  (a b "foo"))
+
+@ Our last utility macro goes by many names. Paul Graham calls it
+|with-gensyms|, but we'll use the more descriptive |with-unique-names|.
+It captures a common idiom used in writing macros: given a list of symbols,
+it executes the body in an environment augmented with bindings for each
+of those symbols to a fresh, uninterned symbol.
+
+@l
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defmacro with-unique-names (symbols &body body)
+    `(let ,(loop for symbol in symbols ;
+                 collect `(,symbol (copy-symbol ',symbol)))
+       ,@body)))
+
 @1*File names. In keeping with the usual conventions of both Lisp and \TeX,
 the type component of an input filename argument to any top-level function
 may be omitted; it defaults to~`\.{clw}'. Lisp source files are assumed to
@@ -444,73 +512,6 @@ on a web. It has no effect on other components.
 
 (defmethod perform ((op weave-op) (component clweb-file))
   (weave (component-pathname component)))
-
-@1*Utilities.
-
-@ Here's a little utility function that we'll use often. It's particularly
-useful for functions that accept a list desginator.
-
-@l
-(defun ensure-list (object)
-  (if (listp object) object (list object)))
-
-@ This auxiliary function---shamelessly stolen from \cltl, Appendix~C.---is
-like |mapcar| but has two extra purposes: (1)~it handles dotted lists; (2)~it
-tries to make the result share with the argument |x| as much as possible.
-
-@l
-(defun maptree (fn x)
-  (if (atom x)
-      (funcall fn x)
-      (let ((a (funcall fn (car x)))
-            (d (maptree fn (cdr x))))
-        (if (and (eql a (car x)) (eql d (cdr x)))
-            x
-            (cons a d)))))
-
-@ And here's one taken from {\sc pcl}: |mapappend| is like |mapcar| except
-that the results are appended together.
-
-@l
-(defun mapappend (fn &rest args)
-  (if (some #'null args)
-      ()
-      (append (apply fn (mapcar #'car args))
-              (apply #'mapappend fn (mapcar #'cdr args)))))
-
-@ Sometimes, when we're accumulating text, we won't want to bother with
-empty strings. In such cases we'll use the following macro, which is like
-|push| but does nothing if the new object is an empty string or |nil|.
-
-@l
-(defmacro maybe-push (obj place &aux (g (gensym)))
-  `(let ((,g ,obj))
-     (when (if (stringp ,g) (plusp (length ,g)) ,g)
-       (push ,g ,place))))
-
-@t@l
-(deftest maybe-push
-  (let ((list '()))
-    (maybe-push 'a list)
-    (maybe-push nil list)
-    (maybe-push "" list)
-    (maybe-push 'b list)
-    list)
-  (b a))
-
-@ This next macro has been written many times by many authors under
-many names, which seems somehow appropriate. Paul Graham calls it
-|with-gensyms|, but I prefer the more descriptive |with-unique-names|.
-It captures a common idiom used in writing macros: given a list of
-symbols, it executes the given body in an environment augmented with
-bindings for each of those symbols to a fresh, uninterned symbol.
-
-@l
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defmacro with-unique-names (symbols &body body)
-    `(let ,(loop for symbol in symbols
-                 collect `(,symbol (copy-symbol ',symbol)))
-       ,@body)))
 
 @*Sections. The fundamental unit of a web is the {\it section}, which may
 be either {\it named\/} or~{\it unnamed}. Named sections are conceptually
