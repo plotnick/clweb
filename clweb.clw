@@ -252,8 +252,16 @@ variables.
 (defvar *index-file-defaults* (make-pathname :type "idx" :version :newest))
 (defvar *sections-file-defaults* (make-pathname :type "scn" :version :newest))
 
-@ Here are a few little utility functions for constructing input and output
-filenames.
+@t We'll shortly be defining a number of tests for pathname-generating
+functions. To maximize portability, we will use only logical pathnames
+on the host `\.{CLWEB-TEST}'.
+
+@l
+@e
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (setf (logical-pathname-translations "clweb-test") '(("**;*.*.*" ""))))
+
+@ Here are a few utility functions for constructing input and output filenames.
 
 @l
 (defun input-file-pathname (input-file)
@@ -271,16 +279,16 @@ filenames.
 
 @t@l
 (deftest input-file-pathname
-  (input-file-pathname #P"foo")
-  #P"foo.clw")
+  (input-file-pathname #P"clweb-test:foo")
+  #P"clweb-test:foo.clw.newest")
 
 (deftest lisp-file-pathname
-  (lisp-file-pathname #P"foo.clw")
-  #P"foo.lisp")
+  (lisp-file-pathname #P"clweb-test:foo.clw")
+  #P"clweb-test:foo.lisp.newest")
 
 (deftest fasl-file-pathname
-  (fasl-file-pathname #P"foo.clw")
-  #.(compile-file-pathname #P"foo"))
+  (fasl-file-pathname #P"clweb-test:foo.clw")
+  #.(compile-file-pathname #P"clweb-test:foo.lisp.newest"))
 
 @ Both |tangle-file| and |weave| take a |tests-file| argument with
 slightly hairy defaulting behavior. If it's supplied as~|nil|, then
@@ -318,21 +326,21 @@ by overriding the function stored in |*tests-file-pathname-function*|.
 
 @t@l
 (deftest (tests-file-pathname 1)
-  (tests-file-pathname #P"foo.clw"
-                       :output-file #P"foo.lisp"
-                       :tests-file #P"bar")
-  #P"bar.lisp")
+  (tests-file-pathname #P"clweb-test:foo.clw"
+                       :output-file #P"clweb-test:foo.lisp"
+                       :tests-file #P"clweb-test:bar")
+  #P"clweb-test:bar.lisp.newest")
 
 (deftest (tests-file-pathname 2)
-  (tests-file-pathname #P"foo.clw"
-                       :output-file #P"foo"
+  (tests-file-pathname #P"clweb-test:foo.clw"
+                       :output-file #P"clweb-test:foo"
                        :tests-file nil)
   nil)
 
 (deftest (tests-file-pathname 3)
-  (tests-file-pathname #P"foo.clw"
-                       :output-file #P"/a/b/bar.tex")
-  #P"/a/b/bar-tests.tex")
+  (tests-file-pathname #P"clweb-test:foo.clw"
+                       :output-file #P"clweb-test:a;b;bar.tex")
+  #P"clweb-test:a;b;bar-tests.tex.newest")
 
 @ This routine performs the defaulting for the filename arguments to
 |tangle-file|. It returns four pathnames: the output (\.{fasl}) file,
@@ -372,27 +380,27 @@ filename by replacing its type with the~type of the defaulted output file.
 
 @t@l
 (deftest (tangle-file-pathnames 1)
-  (tangle-file-pathnames #P"foo")
-  #.(compile-file-pathname #P"foo.lisp")
-  #.(merge-pathnames #P"foo.lisp" (compile-file-pathname #P"foo.lisp"))
-  #.(compile-file-pathname #P"foo-tests.lisp")
-  #.(merge-pathnames #P"foo-tests.lisp" ;
-                     (compile-file-pathname #P"foo-tests.lisp")))
+  (tangle-file-pathnames #P"clweb-test:foo")
+  #.(compile-file-pathname #P"clweb-test:foo.lisp.newest")
+  #P"clweb-test:foo.lisp.newest"
+  #.(compile-file-pathname #P"clweb-test:foo-tests.lisp.newest")
+  #P"clweb-test:foo-tests.lisp.newest")
 
 (deftest (tangle-file-pathnames 2)
-  (let* ((input-file #P"foo")
+  (let* ((input-file #P"clweb-test:foo")
          (fasl-type (pathname-type (compile-file-pathname input-file)))
-         (output-file (make-pathname :type fasl-type :defaults #P"/a/b/bar")))
+         (output-file (make-pathname :type fasl-type ;
+                                     :defaults #P"clweb-test:a;b;bar")))
     (tangle-file-pathnames input-file :output-file output-file))
-  #.(compile-file-pathname #P"/a/b/bar.lisp")
-  #P"/a/b/bar.lisp"
-  #.(compile-file-pathname #P"/a/b/bar-tests.lisp")
-  #P"/a/b/bar-tests.lisp")
+  #.(compile-file-pathname #P"clweb-test:a;b;bar.lisp.newest")
+  #P"clweb-test:a;b;bar.lisp.newest"
+  #.(compile-file-pathname #P"clweb-test:a;b;bar-tests.lisp.newest")
+  #P"clweb-test:a;b;bar-tests.lisp.newest")
 
 (deftest (tangle-file-pathnames 3)
-  (tangle-file-pathnames #P"foo" :tests-file nil)
-  #.(compile-file-pathname #P"foo.lisp")
-  #.(merge-pathnames #P"foo.lisp" (compile-file-pathname #P"foo.lisp"))
+  (tangle-file-pathnames #P"clweb-test:foo" :tests-file nil)
+  #.(compile-file-pathname #P"clweb-test:foo.lisp.newest")
+  #P"clweb-test:foo.lisp.newest"
   nil
   nil)
 
@@ -438,30 +446,31 @@ filename by replacing its type component with~`\.{scn}'.
 
 @t@l
 (deftest (weave-pathnames 1)
-  (weave-pathnames #P"foo")
-  #P"foo.tex"
-  #P"foo.idx"
-  #P"foo.scn")
+  (weave-pathnames #P"clweb-test:foo")
+  #P"clweb-test:foo.tex.newest"
+  #P"clweb-test:foo.idx.newest"
+  #P"clweb-test:foo.scn.newest")
 
 (deftest (weave-pathnames 2)
-  (weave-pathnames #P"foo" :output-file #P"a/bar.baz")
-  #P"a/bar.baz"
-  #P"a/bar.idx"
-  #P"a/bar.scn")
+  (weave-pathnames #P"clweb-test:foo" ;
+                   :output-file #P"clweb-test:a;bar.baz.newest")
+  #P"clweb-test:a;bar.baz.newest"
+  #P"clweb-test:a;bar.idx.newest"
+  #P"clweb-test:a;bar.scn.newest")
 
 (deftest (weave-pathnames 3)
-  (weave-pathnames #P"foo" :index-file nil)
-  #P"foo.tex"
+  (weave-pathnames #P"clweb-test:foo" :index-file nil)
+  #P"clweb-test:foo.tex.newest"
   nil
   nil)
 
 (deftest (weave-pathnames 4)
-  (weave-pathnames #P"foo"
-                   :output-file #P"/a/bar.tex"
-                   :index-file #P"/b/index.idx")
-  #P"/a/bar.tex"
-  #P"/b/index.idx"
-  #P"/b/index.scn")
+  (weave-pathnames #P"clweb-test:foo"
+                   :output-file #P"clweb-test:a;bar.tex.newest"
+                   :index-file #P"clweb-test:b;index.idx.newest")
+  #P"clweb-test:a;bar.tex.newest"
+  #P"clweb-test:b;index.idx.newest"
+  #P"clweb-test:b;index.scn.newest")
 
 @1*ASDF integration. \asdf\ is ``another system definition facility'' for
 Common Lisp. Despite its flaws, it has become the de~facto standard system
@@ -2504,7 +2513,14 @@ parse it when we need the value.
                 (read-form-from-string "#S(person :name \"James\")")))
   "James")
 
-@ Sharpsign~P reads namestrings and turns them into pathnames.
+@ Sharpsign~P reads namestrings and turns them into pathnames. We downcase
+logical pathname namestrings during tangling to avoid problems reading the
+output of implementations that conform to section~19.3.1.1.7 of the \ansi\
+standard (e.g., SBCL) in ones that do not (e.g., Allegro and~CCL).
+@^\ansi\ Common Lisp@>
+@^Allegro Common Lisp@>
+@^Clozure Common Lisp@>
+@^SBCL@>
 
 @l
 (defclass pathname-marker (marker)
@@ -2514,9 +2530,19 @@ parse it when we need the value.
 (defmethod marker-value ((marker pathname-marker))
   (parse-namestring (pathname-marker-namestring marker)))
 
+(set-tangle-dispatch 'logical-pathname
+  (lambda (stream obj)
+    (format stream "#P~W" ;
+            (string-downcase (with-standard-io-syntax (namestring obj)))))
+  1)
+
 (set-tangle-dispatch 'pathname-marker
   (lambda (stream obj)
-    (format stream "#P~W" (pathname-marker-namestring obj)))
+    (format stream "#P~W" ;
+            (etypecase (marker-value obj)
+              (logical-pathname (string-downcase ;
+                                 (pathname-marker-namestring obj)))
+              (pathname (pathname-marker-namestring obj)))))
   1)
 
 (defun pathname-reader (stream sub-char arg)

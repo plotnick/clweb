@@ -933,9 +933,20 @@
 (DEFMETHOD MARKER-BOUNDP ((MARKER PATHNAME-MARKER)) T)
 (DEFMETHOD MARKER-VALUE ((MARKER PATHNAME-MARKER))
   (PARSE-NAMESTRING (PATHNAME-MARKER-NAMESTRING MARKER)))
+(SET-TANGLE-DISPATCH 'LOGICAL-PATHNAME
+                     (LAMBDA (STREAM OBJ)
+                       (FORMAT STREAM "#P~W"
+                               (STRING-DOWNCASE
+                                (WITH-STANDARD-IO-SYNTAX (NAMESTRING OBJ)))))
+                     1)
 (SET-TANGLE-DISPATCH 'PATHNAME-MARKER
                      (LAMBDA (STREAM OBJ)
-                       (FORMAT STREAM "#P~W" (PATHNAME-MARKER-NAMESTRING OBJ)))
+                       (FORMAT STREAM "#P~W"
+                               (ETYPECASE (MARKER-VALUE OBJ)
+                                 (LOGICAL-PATHNAME
+                                  (STRING-DOWNCASE
+                                   (PATHNAME-MARKER-NAMESTRING OBJ)))
+                                 (PATHNAME (PATHNAME-MARKER-NAMESTRING OBJ)))))
                      1)
 (DEFUN PATHNAME-READER (STREAM SUB-CHAR ARG)
   (DECLARE (IGNORE SUB-CHAR ARG))

@@ -16,51 +16,64 @@
            (MAYBE-PUSH "foo" LIST)
            (NREVERSE LIST))
          (A B "foo"))
-(DEFTEST INPUT-FILE-PATHNAME (INPUT-FILE-PATHNAME #P"foo") #P"foo.clw")
-(DEFTEST LISP-FILE-PATHNAME (LISP-FILE-PATHNAME #P"foo.clw") #P"foo.lisp")
-(DEFTEST FASL-FILE-PATHNAME (FASL-FILE-PATHNAME #P"foo.clw")
-         #.(COMPILE-FILE-PATHNAME #P"foo"))
+(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
+  (SETF (LOGICAL-PATHNAME-TRANSLATIONS "clweb-test") '(("**;*.*.*" ""))))
+(DEFTEST INPUT-FILE-PATHNAME (INPUT-FILE-PATHNAME #P"clweb-test:foo")
+         #P"clweb-test:foo.clw.newest")
+(DEFTEST LISP-FILE-PATHNAME (LISP-FILE-PATHNAME #P"clweb-test:foo.clw")
+         #P"clweb-test:foo.lisp.newest")
+(DEFTEST FASL-FILE-PATHNAME (FASL-FILE-PATHNAME #P"clweb-test:foo.clw")
+         #.(COMPILE-FILE-PATHNAME #P"clweb-test:foo.lisp.newest"))
 (DEFTEST (TESTS-FILE-PATHNAME 1)
-         (TESTS-FILE-PATHNAME #P"foo.clw" :OUTPUT-FILE #P"foo.lisp" :TESTS-FILE
-                              #P"bar")
-         #P"bar.lisp")
+         (TESTS-FILE-PATHNAME #P"clweb-test:foo.clw" :OUTPUT-FILE
+                              #P"clweb-test:foo.lisp" :TESTS-FILE
+                              #P"clweb-test:bar")
+         #P"clweb-test:bar.lisp.newest")
 (DEFTEST (TESTS-FILE-PATHNAME 2)
-         (TESTS-FILE-PATHNAME #P"foo.clw" :OUTPUT-FILE #P"foo" :TESTS-FILE NIL)
+         (TESTS-FILE-PATHNAME #P"clweb-test:foo.clw" :OUTPUT-FILE
+                              #P"clweb-test:foo" :TESTS-FILE NIL)
          NIL)
 (DEFTEST (TESTS-FILE-PATHNAME 3)
-         (TESTS-FILE-PATHNAME #P"foo.clw" :OUTPUT-FILE #P"/a/b/bar.tex")
-         #P"/a/b/bar-tests.tex")
-(DEFTEST (TANGLE-FILE-PATHNAMES 1) (TANGLE-FILE-PATHNAMES #P"foo")
-         #.(COMPILE-FILE-PATHNAME #P"foo.lisp")
-         #.(MERGE-PATHNAMES #P"foo.lisp" (COMPILE-FILE-PATHNAME #P"foo.lisp"))
-         #.(COMPILE-FILE-PATHNAME #P"foo-tests.lisp")
-         #.(MERGE-PATHNAMES #P"foo-tests.lisp"
-                            (COMPILE-FILE-PATHNAME #P"foo-tests.lisp")))
+         (TESTS-FILE-PATHNAME #P"clweb-test:foo.clw" :OUTPUT-FILE
+                              #P"clweb-test:a;b;bar.tex")
+         #P"clweb-test:a;b;bar-tests.tex.newest")
+(DEFTEST (TANGLE-FILE-PATHNAMES 1) (TANGLE-FILE-PATHNAMES #P"clweb-test:foo")
+         #.(COMPILE-FILE-PATHNAME #P"clweb-test:foo.lisp.newest")
+         #P"clweb-test:foo.lisp.newest"
+         #.(COMPILE-FILE-PATHNAME #P"clweb-test:foo-tests.lisp.newest")
+         #P"clweb-test:foo-tests.lisp.newest")
 (DEFTEST (TANGLE-FILE-PATHNAMES 2)
-         (LET* ((INPUT-FILE #P"foo")
+         (LET* ((INPUT-FILE #P"clweb-test:foo")
                 (FASL-TYPE (PATHNAME-TYPE (COMPILE-FILE-PATHNAME INPUT-FILE)))
                 (OUTPUT-FILE
-                 (MAKE-PATHNAME :TYPE FASL-TYPE :DEFAULTS #P"/a/b/bar")))
+                 (MAKE-PATHNAME :TYPE FASL-TYPE :DEFAULTS
+                                #P"clweb-test:a;b;bar")))
            (TANGLE-FILE-PATHNAMES INPUT-FILE :OUTPUT-FILE OUTPUT-FILE))
-         #.(COMPILE-FILE-PATHNAME #P"/a/b/bar.lisp") #P"/a/b/bar.lisp"
-         #.(COMPILE-FILE-PATHNAME #P"/a/b/bar-tests.lisp")
-         #P"/a/b/bar-tests.lisp")
+         #.(COMPILE-FILE-PATHNAME #P"clweb-test:a;b;bar.lisp.newest")
+         #P"clweb-test:a;b;bar.lisp.newest"
+         #.(COMPILE-FILE-PATHNAME #P"clweb-test:a;b;bar-tests.lisp.newest")
+         #P"clweb-test:a;b;bar-tests.lisp.newest")
 (DEFTEST (TANGLE-FILE-PATHNAMES 3)
-         (TANGLE-FILE-PATHNAMES #P"foo" :TESTS-FILE NIL)
-         #.(COMPILE-FILE-PATHNAME #P"foo.lisp")
-         #.(MERGE-PATHNAMES #P"foo.lisp" (COMPILE-FILE-PATHNAME #P"foo.lisp"))
-         NIL NIL)
-(DEFTEST (WEAVE-PATHNAMES 1) (WEAVE-PATHNAMES #P"foo") #P"foo.tex" #P"foo.idx"
-         #P"foo.scn")
+         (TANGLE-FILE-PATHNAMES #P"clweb-test:foo" :TESTS-FILE NIL)
+         #.(COMPILE-FILE-PATHNAME #P"clweb-test:foo.lisp.newest")
+         #P"clweb-test:foo.lisp.newest" NIL NIL)
+(DEFTEST (WEAVE-PATHNAMES 1) (WEAVE-PATHNAMES #P"clweb-test:foo")
+         #P"clweb-test:foo.tex.newest" #P"clweb-test:foo.idx.newest"
+         #P"clweb-test:foo.scn.newest")
 (DEFTEST (WEAVE-PATHNAMES 2)
-         (WEAVE-PATHNAMES #P"foo" :OUTPUT-FILE #P"a/bar.baz") #P"a/bar.baz"
-         #P"a/bar.idx" #P"a/bar.scn")
-(DEFTEST (WEAVE-PATHNAMES 3) (WEAVE-PATHNAMES #P"foo" :INDEX-FILE NIL)
-         #P"foo.tex" NIL NIL)
+         (WEAVE-PATHNAMES #P"clweb-test:foo" :OUTPUT-FILE
+                          #P"clweb-test:a;bar.baz.newest")
+         #P"clweb-test:a;bar.baz.newest" #P"clweb-test:a;bar.idx.newest"
+         #P"clweb-test:a;bar.scn.newest")
+(DEFTEST (WEAVE-PATHNAMES 3)
+         (WEAVE-PATHNAMES #P"clweb-test:foo" :INDEX-FILE NIL)
+         #P"clweb-test:foo.tex.newest" NIL NIL)
 (DEFTEST (WEAVE-PATHNAMES 4)
-         (WEAVE-PATHNAMES #P"foo" :OUTPUT-FILE #P"/a/bar.tex" :INDEX-FILE
-                          #P"/b/index.idx")
-         #P"/a/bar.tex" #P"/b/index.idx" #P"/b/index.scn")
+         (WEAVE-PATHNAMES #P"clweb-test:foo" :OUTPUT-FILE
+                          #P"clweb-test:a;bar.tex.newest" :INDEX-FILE
+                          #P"clweb-test:b;index.idx.newest")
+         #P"clweb-test:a;bar.tex.newest" #P"clweb-test:b;index.idx.newest"
+         #P"clweb-test:b;index.scn.newest")
 (DEFMETHOD SECTION-NUMBER ((SECTION INTEGER)) SECTION)
 (DEFTEST CURRENT-SECTION
          (LET ((*SECTIONS* (MAKE-ARRAY 1 :FILL-POINTER 0)))
