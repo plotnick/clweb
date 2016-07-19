@@ -945,19 +945,19 @@
                                 (READTABLE-FOR-MODE MODE)))
 (DEFUN FEATUREP (X)
   (ETYPECASE X
+    (SYMBOL (NOT (NULL (MEMBER X *FEATURES* :TEST #'EQ))))
     (CONS
      (CASE (CAR X)
        ((:NOT NOT)
         (COND
          ((CDDR X)
-          (ERROR "too many subexpressions in feature expression: ~S" X))
+          (ERROR "Too many subexpressions in feature expression: ~S." X))
          ((NULL (CDR X))
-          (ERROR "too few subexpressions in feature expression: ~S" X))
+          (ERROR "Too few subexpressions in feature expression: ~S." X))
          (T (NOT (FEATUREP (CADR X))))))
        ((:AND AND) (EVERY #'FEATUREP (CDR X)))
        ((:OR OR) (SOME #'FEATUREP (CDR X)))
-       (T (ERROR "unknown operator in feature expression: ~S." X))))
-    (SYMBOL (NOT (NULL (MEMBER X *FEATURES* :TEST #'EQ))))))
+       (T (ERROR "Unknown operator in feature expression: ~S." X))))))
 (DEFCLASS READ-TIME-CONDITIONAL NIL
           ((PLUSP :READER READ-TIME-CONDITIONAL-PLUSP :INITARG :PLUSP)
            (TEST :READER READ-TIME-CONDITIONAL-TEST :INITARG :TEST)
