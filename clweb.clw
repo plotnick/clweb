@@ -7364,7 +7364,9 @@ or an accessor is defined, which we do care about.
        `(,(walk-defstruct-slot-name walker slot-name slot-options ;
                                     struct-description env)
          ,@(when initform-supplied `(,(walk-form walker slot-initform env)))
-         ,@slot-options)))
+         ,@(let ((slot-options (copy-list slot-options)))
+             (remf slot-options :type)
+             slot-options))))
     (t slot-description)))
 
 @ As we walk structure slot names, we'll index the automatically created
