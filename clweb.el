@@ -58,6 +58,11 @@ With argument, do this that many times."
           (end-of-buffer))))
     (message "%d" n)))
 
+(defcustom clweb-inferior-lisp-method 'inferior-lisp
+  "The inferior Lisp method used to evaluate CLWEB sections.
+One of the symbols INFERIOR-LISP, ELI, or SLIME."
+  :type 'symbol)
+
 (defun eval-section (arg)
   "Evaluate the (named or unnamed) section around point.
 If an argument is supplied, code for named sections will be appended to
@@ -76,11 +81,14 @@ any existing code for that section; otherwise, it will be replaced."
       (write-region start end temp-file t 'nomsg)
       (let ((string (format "(clweb:load-sections-from-temp-file %S %S)"
                             temp-file (not (null arg)))))
-        (cond ((fboundp 'slime-interactive-eval)
+        (cond ((and (eq clweb-inferior-lisp-method 'slime)
+                    (fboundp 'slime-interactive-eval))
                (slime-interactive-eval string))
-              ((fboundp 'fi:eval-in-lisp)
+              ((and (eq clweb-inferior-lisp-method 'eli)
+                    (fboundp 'fi:eval-in-lisp))
                (fi:eval-in-lisp string))
-              ((fboundp 'inferior-lisp-proc)
+              ((and (eq clweb-inferior-lisp-method 'inferior-lisp)
+                    (fboundp 'inferior-lisp-proc))
                (comint-simple-send (inferior-lisp-proc) string))
               (t (error "Unable to find superior or inferior Lisp")))))))
 
