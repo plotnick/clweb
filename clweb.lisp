@@ -798,7 +798,7 @@
 (DEFMETHOD MARKER-VALUE ((MARKER SIMPLE-VECTOR-MARKER))
   (LET ((ELEMENTS (TANGLE (SIMPLE-VECTOR-MARKER-ELEMENTS MARKER)))
         (ELEMENT-TYPE (SIMPLE-VECTOR-MARKER-ELEMENT-TYPE MARKER)))
-    (IF (SLOT-BOUNDP MARKER 'LENGTH)
+    (IF (AND ELEMENTS (SLOT-BOUNDP MARKER 'LENGTH))
         (WITH-SLOTS (LENGTH)
             MARKER
           (LET ((SUPPLIED-LENGTH (LENGTH ELEMENTS)))
@@ -813,15 +813,17 @@
           (HANDLER-CASE (LENGTH LIST)
                         (TYPE-ERROR (ERROR) (DECLARE (IGNORE ERROR))
                          (SIMPLE-READER-ERROR STREAM "improper list in #(): ~S"
-                                              LIST)))))
+                                              LIST))))
+         (ELEMENTS (OR LIST *EMPTY-LIST*)))
     (UNLESS *READ-SUPPRESS*
       (IF ARG
           (IF (> LENGTH ARG)
               (SIMPLE-READER-ERROR STREAM
                                    "vector longer than specified length: #~S~S"
                                    ARG LIST)
-              (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :LENGTH ARG :ELEMENTS LIST))
-          (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :ELEMENTS LIST)))))
+              (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :LENGTH ARG :ELEMENTS
+                             ELEMENTS))
+          (MAKE-INSTANCE 'SIMPLE-VECTOR-MARKER :ELEMENTS ELEMENTS)))))
 (DOLIST (MODE '(:LISP :INNER-LISP))
   (SET-DISPATCH-MACRO-CHARACTER #\# #\( #'SIMPLE-VECTOR-READER
                                 (READTABLE-FOR-MODE MODE)))
@@ -897,7 +899,7 @@
 (DEFMETHOD MARKER-VALUE ((MARKER ARRAY-MARKER))
   (LOOP WITH CONTENTS = (TANGLE (ARRAY-MARKER-INITIAL-CONTENTS MARKER))
         REPEAT (ARRAY-MARKER-RANK MARKER)
-        FOR SEQ = CONTENTS THEN (ELT SEQ 0)
+        FOR SEQ = CONTENTS THEN (AND SEQ (ELT SEQ 0))
         COLLECT (LENGTH SEQ) INTO DIMENSIONS
         FINALLY (RETURN (MAKE-ARRAY DIMENSIONS :INITIAL-CONTENTS CONTENTS))))
 (DEFUN ARRAY-READER (STREAM SUB-CHAR ARG)
@@ -1751,7 +1753,7 @@ otherwise, they will replace them."
                     1)
 (SET-WEAVE-DISPATCH 'SIMPLE-VECTOR-MARKER
                     (LAMBDA (STREAM OBJ)
-                      (FORMAT STREAM "\\#~@[~D~]~S"
+                      (FORMAT STREAM "\\#~@[~D~]~W"
                               (AND (SLOT-BOUNDP OBJ 'LENGTH)
                                    (SLOT-VALUE OBJ 'LENGTH))
                               (SLOT-VALUE OBJ 'ELEMENTS))))

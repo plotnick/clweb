@@ -398,8 +398,9 @@
            (VALUES (QUOTED-FORM MARKER) (MARKER-VALUE MARKER)))
          IDENTITY #'IDENTITY)
 (DEFTEST READ-SIMPLE-VECTOR
-         (MARKER-VALUE (READ-FORM-FROM-STRING "#5(:a :b :c #C(0 1))"))
-         #(:A :B :C #C(0 1) #C(0 1)))
+         (VALUES (MARKER-VALUE (READ-FORM-FROM-STRING "#5(:a :b :c #C(0 1))"))
+                 (MARKER-VALUE (READ-FORM-FROM-STRING "#0()")))
+         #(:A :B :C #C(0 1) #C(0 1)) #())
 (DEFTEST READ-BIT-VECTOR (MARKER-VALUE (READ-FORM-FROM-STRING "#6*101"))
          #*101111)
 (DEFTEST (READ-TIME-EVAL 1)
@@ -425,9 +426,9 @@
            (MARKER-VALUE MARKER))
          #C(0 1))
 (DEFTEST READ-ARRAY
-         (LET ((MARKER (READ-FORM-FROM-STRING "#2A((1 2 3) (4 5 6))")))
-           (EQUALP (MARKER-VALUE MARKER) #2A((1 2 3) (4 5 6))))
-         T)
+         (VALUES (MARKER-VALUE (READ-FORM-FROM-STRING "#2A((1 2 3) (4 5 6))"))
+                 (MARKER-VALUE (READ-FORM-FROM-STRING "#2A()")))
+         #2A((1 2 3) (4 5 6)) #2A())
 (DEFSTRUCT PERSON (NAME 7 :TYPE STRING))
 (DEFTEST STRUCTURE-MARKER
          (PERSON-NAME

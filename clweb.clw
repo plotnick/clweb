@@ -2249,7 +2249,7 @@ abbreviation.
 (defmethod marker-value ((marker simple-vector-marker))
   (let ((elements (tangle (simple-vector-marker-elements marker)))
         (element-type (simple-vector-marker-element-type marker)))
-    (if (slot-boundp marker 'length)
+    (if (and elements (slot-boundp marker 'length))
         (with-slots (length) marker
           (let ((supplied-length (length elements)))
             (fill (replace (make-array length :element-type element-type) ;
@@ -2266,14 +2266,18 @@ abbreviation.
                    (type-error (error)
                      (declare (ignore error))
                      (simple-reader-error ;
-                      stream "improper list in #(): ~S" list)))))
+                      stream "improper list in #(): ~S" list))))
+         (elements (or list *empty-list*)))
     (unless *read-suppress*
       (if arg
           (if (> length arg)
               (simple-reader-error ;
                stream "vector longer than specified length: #~S~S" arg list)
-              (make-instance 'simple-vector-marker :length arg :elements list))
-          (make-instance 'simple-vector-marker :elements list)))))
+              (make-instance 'simple-vector-marker ;
+                             :length arg ;
+                             :elements elements))
+          (make-instance 'simple-vector-marker ;
+                         :elements elements)))))
 
 (dolist (mode '(:lisp :inner-lisp))
   (set-dispatch-macro-character #\# #\( #'simple-vector-reader ;
@@ -2281,8 +2285,10 @@ abbreviation.
 
 @t@l
 (deftest read-simple-vector
-  (marker-value (read-form-from-string "#5(:a :b :c #C(0 1))"))
-  #(:a :b :c #C(0 1) #C(0 1)))
+  (values (marker-value (read-form-from-string "#5(:a :b :c #C(0 1))"))
+          (marker-value (read-form-from-string "#0()")))
+  #(:a :b :c #C(0 1) #C(0 1))
+  #())
 
 @ Sharpsign asterisk also creates a vector, but the token following the
 asterisk must be composed entirely of the characters `0' and~`1', which
@@ -2453,7 +2459,7 @@ sequences.
 (defmethod marker-value ((marker array-marker))
   (loop with contents = (tangle (array-marker-initial-contents marker))
         repeat (array-marker-rank marker)
-        for seq = contents then (elt seq 0)
+        for seq = contents then (and seq (elt seq 0))
         collect (length seq) into dimensions
         finally (return (make-array dimensions :initial-contents contents))))
 
@@ -2470,10 +2476,10 @@ sequences.
 
 @t@l
 (deftest read-array
-  (let ((marker (read-form-from-string "#2A((1 2 3) (4 5 6))")))
-    (equalp (marker-value marker)
-            #2A((1 2 3) (4 5 6))))
-  t)
+  (values (marker-value (read-form-from-string "#2A((1 2 3) (4 5 6))"))
+          (marker-value (read-form-from-string "#2A()")))
+  #2A((1 2 3) (4 5 6))
+  #2A())
 
 @ Sharpsign~S requires determining the standard constructor function of the
 structure type named, which we simply can't do portably. So we cache the
@@ -4209,7 +4215,7 @@ which see.
 @ @l
 (set-weave-dispatch 'simple-vector-marker
   (lambda (stream obj)
-    (format stream "\\#~@[~D~]~S"
+    (format stream "\\#~@[~D~]~W"
             (and (slot-boundp obj 'length)
                  (slot-value obj 'length))
             (slot-value obj 'elements))))
