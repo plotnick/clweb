@@ -90,8 +90,8 @@
 (DEFVAR *WEAVE-PRINT* T "The default for the :PRINT argument to WEAVE.")
 (DEFPARAMETER *WEAVE-PPRINT-DISPATCH* (COPY-PPRINT-DISPATCH NIL))
 (DEFVAR *PRINT-SYMBOL-SUFFIXES*
-  '(("/=" . "$\\neq$") ("<=" . "$\\leq$") (">=" . "$\\geq$") ("-" . "$-$")
-    ("+" . "$+$") ("=" . "$=$")))
+  '(("/=" . "$\\neq$") ("<=" . "$\\leq$") (">=" . "$\\geq$") ("+-" . "$\\pm$")
+    ("+" . "$+$") ("-" . "$-$") ("=" . "$=$") ("'" . "$'$")))
 (DEFVAR *INDEX-PACKAGES*
   NIL
   "The list of packages whose symbols should be indexed.")
