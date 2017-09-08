@@ -1620,26 +1620,46 @@ otherwise, they will replace them."
     CHAR))
 (SET-WEAVE-DISPATCH 'CHARACTER #'PRINT-CHAR)
 (DEFUN PRINT-SYMBOL (STREAM SYMBOL)
-  (LET* ((GROUP-P
-          (COND
-           ((MEMBER SYMBOL LAMBDA-LIST-KEYWORDS) (WRITE-STRING "\\K{" STREAM))
-           ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM))))
-         (STRING (WRITE-TO-STRING SYMBOL :ESCAPE T :PRETTY NIL)))
-    (MULTIPLE-VALUE-BIND (PREFIX SUFFIX)
-        (LOOP WITH STRING-LENGTH = (LENGTH STRING)
-              FOR (SUFFIX
-                   . REPLACEMENT) IN *PRINT-SYMBOL-SUFFIXES* AS PREFIX-END = (MAX
-                                                                              0
-                                                                              (-
-                                                                               STRING-LENGTH
-                                                                               (LENGTH
-                                                                                SUFFIX)))
-              WHEN (STRING= STRING SUFFIX :START1 PREFIX-END)
-              DO (RETURN (VALUES (SUBSEQ STRING 0 PREFIX-END) REPLACEMENT))
-              FINALLY (RETURN STRING))
-      (PRINT-ESCAPED STREAM PREFIX)
-      (WHEN SUFFIX (WRITE-STRING SUFFIX STREAM)))
-    (WHEN GROUP-P (WRITE-STRING "}" STREAM))))
+  (FLET ((PRINT-CASE (STRING)
+           (FUNCALL
+            (ECASE *PRINT-CASE*
+              (:UPCASE #'STRING-UPCASE)
+              (:DOWNCASE #'STRING-DOWNCASE)
+              (:CAPITALIZE #'STRING-CAPITALIZE))
+            STRING)))
+    (LET* ((GROUP-P
+            (COND
+             ((MEMBER SYMBOL LAMBDA-LIST-KEYWORDS)
+              (WRITE-STRING "\\K{" STREAM))
+             ((KEYWORDP SYMBOL) (WRITE-STRING "\\:{" STREAM))))
+           (SYMBOL-NAME (SYMBOL-NAME SYMBOL))
+           (PACKAGE (SYMBOL-PACKAGE SYMBOL)))
+      (COND ((KEYWORDP SYMBOL)) ((EQ PACKAGE *PACKAGE*))
+            ((NULL PACKAGE) (WRITE-STRING "\\#:" STREAM))
+            (T
+             (MULTIPLE-VALUE-BIND (FOUND ACCESSIBLE)
+                 (FIND-SYMBOL SYMBOL-NAME *PACKAGE*)
+               (UNLESS (AND ACCESSIBLE (EQ FOUND SYMBOL))
+                 (PRINT-ESCAPED STREAM (PRINT-CASE (PACKAGE-NAME PACKAGE)))
+                 (CASE (NTH-VALUE 1 (FIND-SYMBOL SYMBOL-NAME PACKAGE))
+                   (:EXTERNAL (WRITE-CHAR #\: STREAM))
+                   (OTHERWISE (WRITE-STRING "::" STREAM)))))))
+      (MULTIPLE-VALUE-BIND (PREFIX SUFFIX)
+          (LOOP WITH LENGTH = (LENGTH SYMBOL-NAME)
+                FOR (SUFFIX
+                     . REPLACEMENT) IN *PRINT-SYMBOL-SUFFIXES* AS PREFIX-END = (MAX
+                                                                                0
+                                                                                (-
+                                                                                 LENGTH
+                                                                                 (LENGTH
+                                                                                  SUFFIX)))
+                WHEN (STRING= SYMBOL-NAME SUFFIX :START1 PREFIX-END)
+                DO (RETURN
+                    (VALUES (SUBSEQ SYMBOL-NAME 0 PREFIX-END) REPLACEMENT))
+                FINALLY (RETURN SYMBOL-NAME))
+        (PRINT-ESCAPED STREAM (PRINT-CASE PREFIX))
+        (WHEN SUFFIX (WRITE-STRING SUFFIX STREAM)))
+      (WHEN GROUP-P (WRITE-STRING "}" STREAM)))))
 (SET-WEAVE-DISPATCH 'SYMBOL #'PRINT-SYMBOL)
 (DEFMACRO WEAVE-SYMBOL-REPLACE (SYMBOL REPLACEMENT)
   `(SET-WEAVE-DISPATCH '(EQL ,SYMBOL)

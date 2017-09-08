@@ -3934,40 +3934,57 @@ the newline.
 
 (set-weave-dispatch 'character #'print-char)
 
-@ Symbols are printed by first writing them out to a string, then printing
-that string. This relieves us of the burden of worrying about case conversion,
-package prefixes, and the like---we just let the Lisp printer handle it.
-
-Lambda-list keywords and symbols in the `keyword' package have specialized
-\TeX\ macros that add a bit of emphasis.
+@ Symbols receive special treatment during weaving. Lambda-list keywords
+and symbols in the keyword package have specialized \TeX\ macros that add
+a bit of emphasis.
 
 @l
 (defun print-symbol (stream symbol)
-  (let* ((group-p (cond ((member symbol lambda-list-keywords)
-                         (write-string "\\K{" stream))
-                        ((keywordp symbol)
-                         (write-string "\\:{" stream))))
-         (string (write-to-string symbol :escape t :pretty nil)))
-    (multiple-value-bind (prefix suffix)
-        @<Split |string| into a prefix and nicely formatted suffix@>
-      (print-escaped stream prefix)
-      (when suffix (write-string suffix stream)))
-    (when group-p (write-string "}" stream))))
+  (flet ((print-case (string)
+           (funcall (ecase *print-case*
+                      (:upcase #'string-upcase)
+                      (:downcase #'string-downcase)
+                      (:capitalize #'string-capitalize))
+                    string)))
+    (let* ((group-p (cond ((member symbol lambda-list-keywords)
+                           (write-string "\\K{" stream))
+                          ((keywordp symbol)
+                           (write-string "\\:{" stream))))
+           (symbol-name (symbol-name symbol))
+           (package (symbol-package symbol)))
+    @<Maybe print a package prefix for |symbol|@>
+      (multiple-value-bind (prefix suffix) ;
+          @<Split |symbol-name| into a prefix and nicely formatted suffix@>
+        (print-escaped stream (print-case prefix))
+        (when suffix (write-string suffix stream)))
+      (when group-p (write-string "}" stream)))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
 
+@ @<Maybe print a package prefix for |symbol|@>=
+(cond ((keywordp symbol)) ; \TeX\ macro supplies the colon
+      ((eq package *package*)) ; no prefix necessary
+      ((null package) (write-string "\\#:" stream))
+      (t (multiple-value-bind (found accessible) ;
+             (find-symbol symbol-name *package*)
+           (unless (and accessible (eq found symbol))
+             (print-escaped stream (print-case (package-name package)))
+             (case (nth-value 1 (find-symbol symbol-name package))
+               (:external (write-char #\: stream))
+               (otherwise (write-string "::" stream)))))))
+
 @ Symbols with certain suffixes also get a bit of fancy formatting. 
 We test for suffixes one at a time, and if we find a match, we return
-two values: the portion of |string| before the suffix and the suffix
-replacement. Otherwise, we just return the string.
+two values: the portion of the symbol name before the suffix, and the
+suffix replacement. Otherwise, we just return the symbol name.
 
-@<Split |string|...@>=
-(loop with string-length = (length string)
+@<Split |symbol-name|...@>=
+(loop with length = (length symbol-name)
       for (suffix . replacement) in *print-symbol-suffixes*
-      as prefix-end = (max 0 (- string-length (length suffix)))
-      when (string= string suffix :start1 prefix-end)
-        do (return (values (subseq string 0 prefix-end) replacement))
-      finally (return string))
+      as prefix-end = (max 0 (- length (length suffix)))
+      when (string= symbol-name suffix :start1 prefix-end)
+        do (return (values (subseq symbol-name 0 prefix-end) replacement))
+      finally (return symbol-name))
 
 @ We'll keep the suffixes in a global variable in case the user wants to
 override them for whatever reason. The format is simply a list of pairs
