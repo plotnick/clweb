@@ -3017,6 +3017,22 @@ citations, and so are not expanded.
          (read-from-string "@<foo@>")))))
   "foo")
 
+@ The control code \.{@@w} reads the next two forms, which should be
+a symbol and a string, respectively. It tells the weaver to output the
+string instead of the symbol in Lisp mode.
+
+@l
+(defun symbol-replacement-reader (stream sub-char arg)
+  (declare (ignore sub-char arg))
+  (let* ((symbol (read stream))
+         (replacement (read stream)))
+    (check-type symbol symbol "a symbol")
+    (check-type replacement string "a replacement string")
+    (weave-symbol-replace symbol replacement))
+  (values))
+
+(set-control-code #\w #'symbol-replacement-reader :lisp)
+
 @ The control code \.{@@x} reads the following form, which should be a
 designator for a list of packages, and informs the indexing sub-system
 that symbols in those packages are to be indexed. It returns the form.
@@ -3934,6 +3950,16 @@ the newline.
 
 (set-weave-dispatch 'character #'print-char)
 
+@ We transform \.{\#'} into instances of |function-marker| during reading,
+so we don't want lists of the form |(function foo)| turned into |#'foo|
+during weaving.
+
+@l
+(set-weave-dispatch '(cons (eql function))
+  (lambda (stream obj)
+    (format stream "(~{~W~^ ~})" obj))
+  1)
+
 @ Symbols receive special treatment during weaving. Lambda-list keywords
 and symbols in the keyword package have specialized \TeX\ macros that add
 a bit of emphasis.
@@ -3946,17 +3972,14 @@ a bit of emphasis.
                       (:downcase #'string-downcase)
                       (:capitalize #'string-capitalize))
                     string)))
-    (let* ((group-p (cond ((member symbol lambda-list-keywords)
+    (let* ((group-p (cond ((member symbol lambda-list-keywords) ;
                            (write-string "\\K{" stream))
-                          ((keywordp symbol)
+                          ((keywordp symbol) ;
                            (write-string "\\:{" stream))))
            (symbol-name (symbol-name symbol))
            (package (symbol-package symbol)))
-    @<Maybe print a package prefix for |symbol|@>
-      (multiple-value-bind (prefix suffix) ;
-          @<Split |symbol-name| into a prefix and nicely formatted suffix@>
-        (print-escaped stream (print-case prefix))
-        (when suffix (write-string suffix stream)))
+      @<Maybe print a package prefix for |symbol|@>
+      @<Print |symbol-name|@>
       (when group-p (write-string "}" stream)))))
 
 (set-weave-dispatch 'symbol #'print-symbol)
@@ -3973,12 +3996,17 @@ a bit of emphasis.
                (:external (write-char #\: stream))
                (otherwise (write-string "::" stream)))))))
 
-@ Symbols with certain suffixes also get a bit of fancy formatting. 
-We test for suffixes one at a time, and if we find a match, we return
-two values: the portion of the symbol name before the suffix, and the
-suffix replacement. Otherwise, we just return the symbol name.
+@ @<Print |symbol-name|@>=
+(multiple-value-bind (prefix suffix) @<Split |symbol-name|...@>
+  (print-escaped stream (print-case prefix))
+  (when suffix (write-string suffix stream)))
 
-@<Split |symbol-name|...@>=
+@ Symbols with certain suffixes get a bit of fancy formatting. We test for
+suffixes one at a time, and if we find a match, we return two values: the
+portion of the symbol name before the suffix, and the suffix replacement.
+Otherwise, we just return the symbol name.
+
+@<Split |symbol-name| into a prefix and nicely formatted suffix@>=
 (loop with length = (length symbol-name)
       for (suffix . replacement) in *print-symbol-suffixes*
       as prefix-end = (max 0 (- length (length suffix)))
@@ -3986,9 +4014,9 @@ suffix replacement. Otherwise, we just return the symbol name.
         do (return (values (subseq symbol-name 0 prefix-end) replacement))
       finally (return symbol-name))
 
-@ We'll keep the suffixes in a global variable in case the user wants to
-override them for whatever reason. The format is simply a list of pairs
-of the form `(\<suffix>~.~\<replacement>)'.
+@ We keep the suffixes in a global association list in case the user wants
+to override or augment them. The entries are pairs of strings of the form
+`(\<suffix>~.~\<replacement>)'.
 
 @<Global variables@>=
 (defvar *print-symbol-suffixes*
@@ -4001,28 +4029,20 @@ of the form `(\<suffix>~.~\<replacement>)'.
     ("=" . "$=$")
     ("'" . "$'$")))
 
-@ A few symbols get special replacements.
+@ A few symbols get special replacements by default, e.g., |lambda| and~|pi|.
+Additional replacements may be added via the \.{@@w} control code, which calls
+this function.
 
 @l
-(defmacro weave-symbol-replace (symbol replacement)
-  `(set-weave-dispatch '(eql ,symbol)
-     (lambda (stream obj)
-       (declare (ignore obj))
-       (write-string ,replacement stream))
-     1))
+(defun weave-symbol-replace (symbol replacement)
+  (set-weave-dispatch `(eql ,symbol)
+    (lambda (stream obj)
+      (declare (ignore obj))
+      (write-string replacement stream))
+    1))
 
-(weave-symbol-replace lambda "\\L")
-(weave-symbol-replace pi "$\\pi$")
-
-@ We transform \.{\#'} into instances of |function-marker| during reading,
-so we don't want lists of the form |(function foo)| turned into |#'foo|
-during weaving.
-
-@l
-(set-weave-dispatch '(cons (eql function))
-  (lambda (stream obj)
-    (format stream "(~{~W~^ ~})" obj))
-  1)
+(weave-symbol-replace 'lambda "\\L")
+(weave-symbol-replace 'pi "$\\pi$")
 
 @1*Indentation tracking. Next, we turn to list printing, and the tricky
 topic of indentation. On the assumption that the human writing a web is
