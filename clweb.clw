@@ -80,18 +80,19 @@ and generates a \TeX\ file containing a pretty-printed version of it,
 along with a complete index of the classes, functions, variables,~\etc.
 defined by the program.
 
-@ We begin by defining a package for the \CLWEB\ system. In addition to
-the top-level tangling and weaving functions mentioned above, we also export
-a handful of public utility functions, some global variables that control
-various operations of the tangler and weaver, and condition classes for
-the various errors and warnings that may be signaled while processing a~web.
-We import the symbols needed for defining \asdf\ operations on web files,
-the \cltl~environments \api\ (needed for indexing), and whatever other
-implementation-specific symbols that we need.
-@^\asdf@>
+@ We begin by defining a package for the \CLWEB\ system. In addition
+to the top-level tangling and weaving functions, we export a handful
+of public utility functions, some global variables that control operations
+of the tangler and weaver, and condition classes for errors and warnings
+that may be signaled while processing a~web. There's also the pair of symbols
+|clweb-file| and |weave-op|, which are not used for anything in this program,
+but are used to name \asdf\ operations in the optional companion web
+|asdf-operations.clw|.
+
+We import the \cltl~environments \api\ for our indexing code walker,
+and an SBCL-specific special form that it will need to walk.
 @^\cltl@>
 @^environments \api@>
-
 
 @l
 @e
@@ -106,9 +107,12 @@ implementation-specific symbols that we need.
            "LOAD-WEB"
            "WEAVE"
            "LOAD-SECTIONS-FROM-TEMP-FILE"
+           "INPUT-FILE-PATHNAME"
+           "LISP-FILE-PATHNAME"
+           "FASL-FILE-PATHNAME"
+           "TESTS-FILE-PATHNAME"
            "TANGLE-FILE-PATHNAMES"
            "WEAVE-PATHNAMES"
-           "CLWEB-FILE" "WEAVE-OP"
            "*WEB-SOURCE-DEFAULTS*"
            "*LISP-SOURCE-DEFAULTS*"
            "*TEX-SOURCE-DEFAULTS*"
@@ -125,12 +129,8 @@ implementation-specific symbols that we need.
            "SECTION-NAME-CONTEXT-ERROR"
            "SECTION-NAME-USE-ERROR"
            "SECTION-NAME-DEFINITION-ERROR"
-           "UNUSED-NAMED-SECTION-WARNING")
-  #+asdf
-  (:import-from "ASDF"
-                "COMPONENT" "DOWNWARD-OPERATION" "SOURCE-FILE" "SYSTEM"
-                "COMPILE-OP" "LOAD-OP" "LOAD-SOURCE-OP"
-                "COMPONENT-PATHNAME" "INPUT-FILES" "OUTPUT-FILES" "PERFORM")
+           "UNUSED-NAMED-SECTION-WARNING"
+           "CLWEB-FILE" "WEAVE-OP") ; see |asdf-operations|
   #+(or sbcl ccl allegro)
   (:import-from #+sbcl "SB-CLTL2" #+ccl "CCL" #+allegro "SYS"
                 #-allegro "FUNCTION-INFORMATION"
@@ -471,56 +471,6 @@ filename by replacing its type component with~`\.{scn}'.
   #P"clweb-test:a;bar.tex.newest"
   #P"clweb-test:b;index.idx.newest"
   #P"clweb-test:b;index.scn.newest")
-
-@1*ASDF integration. \asdf\ is ``another system definition facility'' for
-Common Lisp. Despite its flaws, it has become the de~facto standard system
-construction tool, and plays an important r\^ole in the modern Common Lisp
-ecosystem.
-
-\asdf\ was designed to be extensible, and indeed adding basic support for
-webs as first-class components is straightforward. We define a class for
-webs as source files, and add specialized methods for the most important
-operations.
-
-@l
-(defclass clweb-file (source-file)
-  ((type :initform (pathname-type *web-source-defaults*))))
-
-(defmethod component-pathname ((component clweb-file))
-  (input-file-pathname (call-next-method)))
-
-(defmethod output-files ((op compile-op) (component clweb-file))
-  (values (multiple-value-list ;
-           (tangle-file-pathnames (component-pathname component)))
-          nil))
-
-(defmethod perform ((op compile-op) (component clweb-file))
-  (tangle-file (component-pathname component)
-               :output-file (first (output-files op component))))
-
-(defmethod perform ((op load-op) (component clweb-file))
-  (map nil #'load
-       (remove-if (lambda (file) ;
-                    (string= (pathname-type file) ;
-                             (pathname-type *lisp-source-defaults*)))
-                  (input-files op component))))
-
-(defmethod perform ((op load-source-op) (component clweb-file))
-  (load-web (component-pathname component)))
-
-@ We also define a new \asdf\ operation, |weave-op|, which invokes the weaver
-on a web. It has no effect on other components.
-
-@l
-(defclass weave-op (downward-operation) ())
-
-(defmethod output-files ((op weave-op) (component clweb-file))
-  (values (multiple-value-list ;
-           (weave-pathnames (component-pathname component)))
-          t))
-
-(defmethod perform ((op weave-op) (component clweb-file))
-  (weave (component-pathname component)))
 
 @*Sections. The fundamental unit of a web is the {\it section}, which may
 be either {\it named\/} or~{\it unnamed}. Named sections are conceptually
