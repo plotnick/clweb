@@ -18,6 +18,15 @@
 \def\ansi{{\sc ansi}}
 \def\asdf{{\sc asdf}}
 \def\cltl{{\sc cl{\rm t}l}-2} % Common Lisp, the Language (2nd ed.)
+\def\files#1{\left\{\,\vcenter{\normalbaselines
+    \ialign{&##\hfil\crcr#1\crcr}}\right.}
+\def\mapfiles#1\to#2{\enspace:\enspace$#1\to\files{#2}$}
+
+% macros for non-centered displays from manmac.tex
+\outer\def\begindisplay{\obeylines\startdisplay}
+{\obeylines\gdef\startdisplay#1
+  {\catcode`\^^M=5$$#1\halign\bgroup\indent##\hfil&&\qquad##\hfil\cr}}
+\outer\def\enddisplay{\crcr\egroup$$}
 
 @*Introduction. This is \CLWEB, a literate programming system for
 Common Lisp by Alex Plotnick. It~is modeled after the \CWEB\ system
@@ -89,11 +98,6 @@ that may be signaled while processing a~web. There's also the pair of symbols
 but are used to name \asdf\ operations in the optional companion web
 |asdf-operations.clw|.
 
-We import the \cltl~environments \api\ for our indexing code walker,
-and an SBCL-specific special form that it will need to walk.
-@^\cltl@>
-@^environments \api@>
-
 @l
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -109,15 +113,18 @@ and an SBCL-specific special form that it will need to walk.
            "LOAD-SECTIONS-FROM-TEMP-FILE"
            "INPUT-FILE-PATHNAME"
            "LISP-FILE-PATHNAME"
+           "TEX-FILE-PATHNAME"
+           "INDEX-FILE-PATHNAME"
+           "SECTIONS-FILE-PATHNAME"
            "FASL-FILE-PATHNAME"
            "TESTS-FILE-PATHNAME"
            "TANGLE-FILE-PATHNAMES"
            "WEAVE-PATHNAMES"
-           "*WEB-SOURCE-DEFAULTS*"
-           "*LISP-SOURCE-DEFAULTS*"
-           "*TEX-SOURCE-DEFAULTS*"
-           "*INDEX-FILE-DEFAULTS*"
-           "*SECTIONS-FILE-DEFAULTS*"
+           "*WEB-PATHNAME-DEFAULTS*"
+           "*LISP-PATHNAME-DEFAULTS*"
+           "*TEX-PATHNAME-DEFAULTS*"
+           "*INDEX-PATHNAME-DEFAULTS*"
+           "*SECTIONS-PATHNAME-DEFAULTS*"
            "*TESTS-FILE-PATHNAME-FUNCTION*"
            "*COMPILE-TESTS-FILE*"
            "*TANGLE-FILE-PATHNAME*"
@@ -238,19 +245,66 @@ of those symbols to a fresh, uninterned symbol.
                  collect `(,symbol (copy-symbol ',symbol)))
        ,@body)))
 
-@1*File names. In keeping with the usual conventions of both Lisp and \TeX,
-the type component of an input filename argument to any top-level function
-may be omitted; it defaults to~`\.{clw}'. Lisp source files are assumed to
-have type `\.{lisp}', \TeX\ files type `\.{tex}', and so on. Any of these
-defaults may be overridden by changing the value of the following global
-variables.
+@*File names. In \TeX, `\.{\\input foo}' reads tokens from the file named
+`\.{foo.tex}'. In Common Lisp, |(compile-file "foo")| compiles the file named
+`\.{foo.lisp}' (or an implementation-dependent variant~thereof). Those are
+just defaults, of course; `\.{\\input foo.bar}' causes \TeX\ to read tokens
+from `\.{foo.bar}', and similarly |(compile-file "foo.bar")| compiles Lisp
+forms from `\.{foo.bar}'. In both systems, the type components of input
+filenames default in reasonable ways when omitted, but types that the user
+supplies are respected.
+
+Output filenames are defaulted from the input filenames. For instance,
+`\.{\\input foo}' will cause \TeX\ to write a device-independent file
+named `\.{foo.dvi}' as output, along with `\.{foo.log}'. We will say
+that \TeX\ implements the {\it default filename mapping}
+\begindisplay
+\.{\\input foo}\mapfiles
+\.{foo.tex}\to{\.{foo.dvi}\cr
+               \.{foo.log}\cr}
+\enddisplay
+Similarly, compiling a Lisp source file named `\.{foo.lisp}' produces
+by default an output file named `\.{foo.fasl}' (or an implementation-%
+dependent variant thereof). So the Common Lisp file compiler implements
+the default filename mapping
+\begindisplay
+|(compile-file "foo")|\mapfiles\.{foo.lisp}\to{\.{foo.fasl}\cr}
+\enddisplay
+(or an implementation-dependent variant thereof).
+
+\CLWEB\ implements the default filename mappings
+\begindisplay
+|(tangle-file "foo")|\mapfiles
+\.{foo.clw}\to{\.{foo.fasl}\cr
+               \.{foo.lisp}\cr
+               \.{foo-tests.fasl}\cr
+               \.{foo-tests.lisp}\cr}
+\enddisplay
+and
+\begindisplay
+|(weave "foo")|\mapfiles
+\.{foo.clw}\to{\.{foo.tex}\cr
+               \.{foo.idx}\cr
+               \.{foo.scn}\cr}
+\enddisplay
+Filename defaulting is performed by the pathname manipulation functions
+that follow. We define a defaulting function for each type of file that
+\CLWEB\ operates on, and one `main' routine for each of |tangle-file|
+and |weave| (|tangle-file-pathnames| and |weave-pathnames|, respectively)
+that returns a fully defaulted set of filenames that the corresponding
+operation will write into. Thanks to Richard M.~Kreuter for his careful
+analysis of the requirements for these routines.
+@^Kreuter, Richard M.@>
+
+@ The type componenents of the various input and output files take their
+defaults from the following global variables.
 
 @<Global variables@>=
-(defvar *web-source-defaults* (make-pathname :type "clw" :version :newest))
-(defvar *lisp-source-defaults* (make-pathname :type "lisp" :version :newest))
-(defvar *tex-source-defaults* (make-pathname :type "tex" :version :newest))
-(defvar *index-file-defaults* (make-pathname :type "idx" :version :newest))
-(defvar *sections-file-defaults* (make-pathname :type "scn" :version :newest))
+(defvar *web-pathname-defaults* (make-pathname :type "clw" :version :newest))
+(defvar *lisp-pathname-defaults* (make-pathname :type "lisp" :version :newest))
+(defvar *tex-pathname-defaults* (make-pathname :type "tex" :version :newest))
+(defvar *index-pathname-defaults* (make-pathname :type "idx" :version :newest))
+(defvar *sections-pathname-defaults* (make-pathname :type "scn" :version :newest))
 
 @t We'll shortly be defining a number of tests for pathname-generating
 functions. To maximize portability, we will use only logical pathnames
@@ -261,21 +315,63 @@ on the host `\.{CLWEB-TEST}'.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (setf (logical-pathname-translations "clweb-test") '(("**;*.*.*" ""))))
 
-@ Here are a few utility functions for constructing input and output filenames.
+@ All of the filename defaulting functions call down to |output-file-pathname|,
+which is analogous to |compile-file-pathname| except that the type component
+of the defaults for the |output-file| comes from the |defaults| argument rather
+than an implementation-defined default type.
 
 @l
-(defun input-file-pathname (input-file)
-  (merge-pathnames input-file *web-source-defaults*))
+(defun output-file-pathname (input-file &key output-file ;
+                             (defaults *default-pathname-defaults*))
+  (assert (or (and output-file (pathname-type output-file))
+              (pathname-type defaults))
+          (defaults)
+          "Missing default output file type.")
+  (let* ((input-file (merge-pathnames input-file *default-pathname-defaults*))
+         (defaults (merge-pathnames ;
+                    (make-pathname :type nil :defaults input-file) ;
+                    defaults)))
+    (if output-file
+        (merge-pathnames output-file defaults)
+        defaults)))
 
-(defun lisp-file-pathname (filename)
-  (make-pathname :type (pathname-type *lisp-source-defaults*)
-                 :version :newest
-                 :defaults filename))
+@t@l
+(deftest output-file-pathname
+  (let ((*default-pathname-defaults* #P"clweb-test:")
+        (defaults *lisp-pathname-defaults*)
+        (input-file #P"clweb-test:foo")
+        (output-file #P"clweb-test:bar")
+        (output-file-with-type #P"clweb-test:bar.baz"))
+    (values (ignore-errors (output-file-pathname input-file))
+            (output-file-pathname input-file
+                                  :defaults defaults)
+            (output-file-pathname input-file
+                                  :output-file output-file
+                                  :defaults defaults)
+            (output-file-pathname input-file
+                                  :output-file output-file-with-type
+                                  :defaults defaults)))
+  nil
+  #P"clweb-test:foo.lisp.newest"
+  #P"clweb-test:bar.lisp.newest"
+  #P"clweb-test:bar.baz.newest")
 
-(defun fasl-file-pathname (input-file &rest args)
-  (apply #'compile-file-pathname (lisp-file-pathname input-file)
-         :allow-other-keys t
-         args))
+@ Now we can define pathname defaulting routines for each of the file types
+consumed and produced by \CLWEB. Most of them are trivial wrappers around
+|output-file-pathname| that simply provide the appropriate defaults.
+
+@l
+(macrolet ((defdefaults (name (input) defaults)
+             (with-unique-names (args)
+               `(defun ,name (,input &rest ,args)
+                  (apply #'output-file-pathname ,input ;
+                         :defaults ,defaults ;
+                         ,args)))))
+  (defdefaults input-file-pathname (input-file) *web-pathname-defaults*)
+  (defdefaults lisp-file-pathname (input-file) *lisp-pathname-defaults*)
+  (defdefaults tex-file-pathname (input-file) *tex-pathname-defaults*)
+  (defdefaults index-file-pathname (output-file) *index-pathname-defaults*)
+  (defdefaults sections-file-pathname (index-file) *sections-pathname-defaults*))
 
 @t@l
 (deftest input-file-pathname
@@ -283,46 +379,69 @@ on the host `\.{CLWEB-TEST}'.
   #P"clweb-test:foo.clw.newest")
 
 (deftest lisp-file-pathname
-  (lisp-file-pathname #P"clweb-test:foo.clw")
+  (lisp-file-pathname #P"clweb-test:foo")
   #P"clweb-test:foo.lisp.newest")
 
+(deftest tex-file-pathname
+  (tex-file-pathname #P"clweb-test:foo")
+  #P"clweb-test:foo.tex.newest")
+
+(deftest index-file-pathname
+  (index-file-pathname #P"clweb-test:foo")
+  #P"clweb-test:foo.idx.newest")
+
+(deftest sections-file-pathname
+  (sections-file-pathname #P"clweb-test:foo")
+  #P"clweb-test:foo.scn.newest")
+
+@ The tangler's primary output is a compiled Lisp file whose type is
+implementation-defined. So we must ask the file compiler where it would
+write its output if given a defaulted input filename.
+
+@l
+(defun fasl-file-pathname (input-file &rest args)
+  (apply #'compile-file-pathname (lisp-file-pathname input-file) ;
+         :allow-other-keys t ;
+         args))
+
+@t@l
 (deftest fasl-file-pathname
-  (fasl-file-pathname #P"clweb-test:foo.clw")
-  #.(compile-file-pathname #P"clweb-test:foo.lisp.newest"))
+  (fasl-file-pathname #P"clweb-test:foo")
+  #.(compile-file-pathname (lisp-file-pathname #P"clweb-test:foo")))
 
 @ Both |tangle-file| and |weave| take a |tests-file| argument with
-slightly hairy defaulting behavior. If it's supplied as~|nil|, then
-no tests file will be written. If it's supplied and non-|nil|, then
-we replace the type with that of the output filename. If it's not supplied,
-then we construct one from the output filename by appending the string
-\.{"-tests"} to its name. The behavior of the last case is customizable
-by overriding the function stored in |*tests-file-pathname-function*|.
+especially hairy defaulting behavior. If it's supplied as~|nil|, no tests
+file will be written. If it's supplied and non-|nil|, it is defaulted
+from the output filename. And if it's unsupplied, the function stored
+in |*tests-file-pathname-function*| is called to construct a~new filename
+from the input and output filenames.
 
 @l
 (defun tests-file-pathname (input-file &key output-file ;
                             (tests-file nil tests-file-supplied) ;
                             &allow-other-keys)
-  (check-type input-file pathname)
-  (assert (or output-file tests-file-supplied)
-          (output-file tests-file)
-          "Either an output or a tests filename must be supplied.")
   (if tests-file
-      (make-pathname :type (pathname-type output-file)
-                     :version :newest
-                     :defaults tests-file)
-      (unless tests-file-supplied
+      (output-file-pathname input-file ;
+                            :output-file tests-file ;
+                            :defaults output-file)
+      (unless tests-file-supplied ;
         (funcall *tests-file-pathname-function* input-file output-file))))
 
-@ @<Global variables@>=
+@ The default tests filename function appends the string \.{"-tests"}
+to the output file's name and defaults everything else.
+
+@<Global variables@>=
 (defvar *tests-file-pathname-function*
-  (lambda (input-file output-file)
-    (declare (ignore input-file))
-    (make-pathname :name (concatenate 'string ;
-                                      (pathname-name output-file) ;
-                                      "-tests")
-                   :type (pathname-type output-file)
-                   :version :newest
-                   :defaults output-file)))
+  (lambda (input-file output-file &aux
+           (output-file (pathname output-file))
+           (tests-file (make-pathname :name (concatenate 'string ;
+                                             (pathname-name output-file) ;
+                                             "-tests")
+                                      :version :newest
+                                      :defaults output-file)))
+    (output-file-pathname input-file
+                          :output-file tests-file
+                          :defaults output-file)))
 
 @t@l
 (deftest (tests-file-pathname 1)
@@ -342,29 +461,17 @@ by overriding the function stored in |*tests-file-pathname-function*|.
                        :output-file #P"clweb-test:a;b;bar.tex")
   #P"clweb-test:a;b;bar-tests.tex.newest")
 
-@ This routine performs the defaulting for the filename arguments to
-|tangle-file|. It returns four pathnames: the output (\.{fasl}) file,
-the intermediate Lisp file, the test suite output file, and~the test
-suite Lisp file. The defaulting behavior is as follows:
-
-\smallskip
-\item\bull The output filename is the pathname that |compile-file|
-will write into when called with the intermediate Lisp file. It is
-thus implementation-specific.
-
-\item\bull The Lisp filename is generated from the defaulted output filename
-by replacing its type component with~`\.{lisp}'.
-
-\item\bull The tests filename is computed by the function |tests-file-pathname|
-using the defaulted input and output filenames.
-
-\item\bull The tests output filename is generated from the defaulted tests
-filename by replacing its type with the~type of the defaulted output file.
+@ And now we come to our final filename defaulting functions:
+|tangle-file-pathnames| returns the defaulted output filenames for
+|tangle-file|, and |weave-pathnames| returns the defaulted output files
+for |weave|. The conditionals are for supplied but null output filename
+arguments, which disable writing of the corresponding outputs; e.g.,
+the tests or index files.
 
 @l
 (defun tangle-file-pathnames (input-file &rest args &key ;
                               output-file tests-file &allow-other-keys)
-  "Compute and return the names of the defaulted tangler output files."
+  "Compute and return the defaulted names of the tangler output files."
   (declare (ignorable output-file tests-file))
   (let* ((input-file (input-file-pathname input-file))
          (output-file (apply #'fasl-file-pathname input-file args))
@@ -372,11 +479,25 @@ filename by replacing its type with the~type of the defaulted output file.
          (tests-file (apply #'tests-file-pathname input-file ;
                             :output-file lisp-file ;
                             args))
-         (tests-output-file (and tests-file
-                                 (make-pathname :type (pathname-type output-file)
-                                                :version :newest
-                                                :defaults tests-file))))
-    (values output-file lisp-file tests-output-file tests-file)))
+         (tests-output-file (and tests-file (fasl-file-pathname tests-file))))
+    (values output-file
+            lisp-file
+            tests-output-file
+            tests-file)))
+
+(defun weave-pathnames (input-file &key output-file ;
+                        (index-file nil index-file-supplied) ;
+                        &allow-other-keys)
+  "Compute and return the defaulted names of the weaver output files."
+  (let* ((input-file (input-file-pathname input-file))
+         (output-file (tex-file-pathname input-file :output-file output-file))
+         (index-file (unless (and index-file-supplied (not index-file))
+                       (index-file-pathname output-file ;
+                                            :output-file index-file)))
+         (sections-file (and index-file (sections-file-pathname index-file))))
+    (values output-file
+            index-file
+            sections-file)))
 
 @t@l
 (deftest (tangle-file-pathnames 1)
@@ -404,67 +525,60 @@ filename by replacing its type with the~type of the defaulted output file.
   nil
   nil)
 
-@ And this routine does the defaulting for the filename arguments to |weave|.
-It returns three filenames: the output (\TeX) filename, the index filename,
-and the section names list filename. They are defaulted as follows:
-
-\smallskip
-\item\bull If |output-file| is not supplied or is |nil|, a pathname will be
-generated from |input-file| by replacing its type component with~`\.{tex}'.
-
-\item\bull If |index-file| is not supplied or is supplied and non-null,
-an index of variables, functions, classes, \etc. will be written to the
-indicated file. The default index filename is generated from |output-file|
-by replacing its type component with~`\.{idx}'.
-
-\item\bull The sections filename is generated from the defaulted index
-filename by replacing its type component with~`\.{scn}'.
-
-@l
-(defun weave-pathnames (input-file &key output-file ;
-                        (index-file nil index-file-supplied) ;
-                        &allow-other-keys)
-  "Compute and return the defaulted names of the weaver output files."
-  (let* ((input-file (input-file-pathname input-file))
-         (output-file (or output-file
-                          (make-pathname :type (pathname-type ;
-                                                *tex-source-defaults*)
-                                         :version :newest
-                                         :defaults input-file)))
-         (index-file (or index-file
-                         (unless index-file-supplied
-                           (make-pathname :type (pathname-type ;
-                                                 *index-file-defaults*)
-                                          :version :newest
-                                          :defaults output-file))))
-         (sections-file (and index-file
-                             (make-pathname :type (pathname-type ;
-                                                   *sections-file-defaults*)
-                                            :version :newest
-                                            :defaults index-file))))
-    (values output-file index-file sections-file)))
-
 @t@l
-(deftest (weave-pathnames 1)
+(deftest (weave-pathnames foo)
   (weave-pathnames #P"clweb-test:foo")
   #P"clweb-test:foo.tex.newest"
   #P"clweb-test:foo.idx.newest"
   #P"clweb-test:foo.scn.newest")
 
-(deftest (weave-pathnames 2)
+(deftest (weave-pathnames foo.bar)
+  (weave-pathnames #P"clweb-test:foo.bar")
+  #P"clweb-test:foo.tex.newest"
+  #P"clweb-test:foo.idx.newest"
+  #P"clweb-test:foo.scn.newest")
+
+(deftest (weave-pathnames foo :output-file t)
   (weave-pathnames #P"clweb-test:foo" ;
                    :output-file #P"clweb-test:a;bar.baz.newest")
   #P"clweb-test:a;bar.baz.newest"
   #P"clweb-test:a;bar.idx.newest"
   #P"clweb-test:a;bar.scn.newest")
 
-(deftest (weave-pathnames 3)
+(deftest (weave-pathnames foo :output-file bar)
+  (weave-pathnames #P"clweb-test:foo" ;
+                   :output-file #P"clweb-test:bar")
+  #P"clweb-test:bar.tex.newest"
+  #P"clweb-test:bar.idx.newest"
+  #P"clweb-test:bar.scn.newest")
+
+(deftest (weave-pathnames foo :output-file bar.t)
+  (pathname-type
+   (weave-pathnames #P"clweb-test:foo" ;
+                    :output-file #P"clweb-test:bar.t")
+   :case :common)
+  "T")
+
+(deftest (weave-pathnames foo :output-file (:type :unspecific))
+  (pathname-type
+   (weave-pathnames #P"clweb-test:foo" ;
+                    :output-file (make-pathname :host "clweb-test" ;
+                                                :type :unspecific)))
+  :unspecific)
+
+(deftest (weave-pathnames foo :index-file nil)
   (weave-pathnames #P"clweb-test:foo" :index-file nil)
   #P"clweb-test:foo.tex.newest"
   nil
   nil)
 
-(deftest (weave-pathnames 4)
+(deftest (weave-pathnames foo :index-file bar)
+  (weave-pathnames #P"clweb-test:foo" :index-file #P"clweb-test:bar")
+  #P"clweb-test:foo.tex.newest"
+  #P"clweb-test:bar.idx.newest"
+  #P"clweb-test:bar.scn.newest")
+
+(deftest (weave-pathnames foo :output-file t :index-file t)
   (weave-pathnames #P"clweb-test:foo"
                    :output-file #P"clweb-test:a;bar.tex.newest"
                    :index-file #P"clweb-test:b;index.idx.newest")
@@ -944,6 +1058,7 @@ the same as the reason |*sections*| was: to allow incremental redefinition.
 trailing whitespace and replaces all runs of one or more whitespace
 characters with a single space. Thanks to Richard M.~Kreuter for the
 basic structure of this implementation.
+@^Kreuter, Richard M.@>
 
 @l
 (defun squeeze (string)
@@ -3461,7 +3576,8 @@ sections.
                    :direction :output
                    :if-exists if-exists
                    :external-format external-format)
-    (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%" input-file)
+    (format output ";;;; TANGLED WEB FROM \"~A\". DO NOT EDIT.~%"
+            (enough-namestring input-file))
     (let ((*evaluating* nil)
           (*print-pprint-dispatch* *tangle-pprint-dispatch*)
           (*print-readably* nil))
@@ -3483,7 +3599,7 @@ tangling.
         "#+ALLEGRO~
          ~&(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)~
          ~&  (SETQ EXCL:*SOURCE-PATHNAME* ~S))~%"
-        *tangle-file-pathname*)
+        (enough-namestring *tangle-file-pathname*))
 
 @*Weaving. The function |weave| reads a web from |input-file| and produces
 an output \TeX\ file named by |output-file|. By default, it also weaves
@@ -4232,24 +4348,24 @@ which see.
 @ @l
 (set-weave-dispatch 'complex-marker
   (lambda (stream obj)
-    (format stream "\\#C~W" (complex-components obj))))
+    (format stream "\\#C\\/~W" (complex-components obj))))
 
 @ @l
 (set-weave-dispatch 'array-marker
   (lambda (stream obj)
-    (format stream "\\#~DA~W"
+    (format stream "\\#~D\\/A~W"
             (array-marker-rank obj)
             (array-marker-initial-contents obj))))
 
 @ @l
 (set-weave-dispatch 'structure-marker
   (lambda (stream obj)
-    (format stream "\\#S~W" (structure-marker-form obj))))
+    (format stream "\\#S\\/~W" (structure-marker-form obj))))
 
 @ @l
 (set-weave-dispatch 'pathname-marker
   (lambda (stream obj)
-    (format stream "\\#P~W" (pathname-marker-namestring obj))))
+    (format stream "\\#P\\/~W" (pathname-marker-namestring obj))))
 
 @ Read-time conditionals, like literal strings, must be printed one line at
 a time so as to respect the alignment tabs. Since the \.{\\RC} macro switches

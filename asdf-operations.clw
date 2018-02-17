@@ -27,7 +27,7 @@ The class name |clweb-file| is exported by the \CLWEB\ package.
 
 @l
 (defclass clweb-file (source-file)
-  ((type :initform (pathname-type *web-source-defaults*))))
+  ((type :initform (pathname-type *web-pathname-defaults*))))
 
 (defmethod component-pathname ((component clweb-file))
   (input-file-pathname (call-next-method)))
@@ -45,7 +45,7 @@ The class name |clweb-file| is exported by the \CLWEB\ package.
   (map nil #'load
        (remove-if (lambda (file) ;
                     (string= (pathname-type file) ;
-                             (pathname-type *lisp-source-defaults*)))
+                             (pathname-type *lisp-pathname-defaults*)))
                   (input-files op component))))
 
 (defmethod perform ((op load-source-op) (component clweb-file))
