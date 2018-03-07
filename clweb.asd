@@ -9,7 +9,8 @@
                (:feature :sbcl "sb-cltl2"))
   :components ((:static-file "LICENSE")
                (:static-file "README")
-               (:file "clweb")))
+               (:file "clweb")
+               (:file "asdf-operations" :depends-on ("clweb"))))
 
 (defmethod perform :after ((op load-op) (component (eql (find-system 'clweb))))
   (provide 'clweb))
