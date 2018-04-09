@@ -307,13 +307,25 @@ defaults from the following global variables.
 (defvar *sections-pathname-defaults* (make-pathname :type "scn" :version :newest))
 
 @t We'll shortly be defining a number of tests for pathname-generating
-functions. To maximize portability, we will use only logical pathnames
-on the host `\.{CLWEB-TEST}'.
+functions. To maximize portability, we will mention only logical pathnames
+on the host `\.{CLWEB-TEST}', but will compare only physical pathnames.
 
 @l
 @e
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (setf (logical-pathname-translations "clweb-test") '(("**;*.*.*" ""))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun physical-pathname-or-null (pathspec)
+    (and pathspec (translate-logical-pathname pathspec))))
+
+(defmacro define-pathname-test (name form &rest expected-values)
+  (with-unique-names (values)
+    `(deftest ,name
+       (let* ((*default-pathname-defaults* #P"clweb-test:")
+              (,values (multiple-value-list ,form)))
+         (values-list (mapcar #'physical-pathname-or-null ,values)))
+       ,@(mapcar #'physical-pathname-or-null expected-values))))
 
 @ All of the filename defaulting functions call down to |output-file-pathname|,
 which is analogous to |compile-file-pathname| except that the type component
@@ -336,21 +348,16 @@ than an implementation-defined default type.
         defaults)))
 
 @t@l
-(deftest output-file-pathname
-  (let ((*default-pathname-defaults* #P"clweb-test:")
-        (defaults *lisp-pathname-defaults*)
-        (input-file #P"clweb-test:foo")
-        (output-file #P"clweb-test:bar")
-        (output-file-with-type #P"clweb-test:bar.baz"))
-    (values (ignore-errors (output-file-pathname input-file))
-            (output-file-pathname input-file
-                                  :defaults defaults)
-            (output-file-pathname input-file
-                                  :output-file output-file
-                                  :defaults defaults)
-            (output-file-pathname input-file
-                                  :output-file output-file-with-type
-                                  :defaults defaults)))
+(define-pathname-test output-file-pathname
+  (values (ignore-errors (output-file-pathname #P"clweb-test:foo"))
+          (output-file-pathname #P"clweb-test:foo"
+                                :defaults *lisp-pathname-defaults*)
+          (output-file-pathname #P"clweb-test:foo"
+                                :output-file #P"clweb-test:bar"
+                                :defaults *lisp-pathname-defaults*)
+          (output-file-pathname #P"clweb-test:foo"
+                                :output-file #P"clweb-test:bar.baz"
+                                :defaults *lisp-pathname-defaults*))
   nil
   #P"clweb-test:foo.lisp.newest"
   #P"clweb-test:bar.lisp.newest"
@@ -374,23 +381,23 @@ consumed and produced by \CLWEB. Most of them are trivial wrappers around
   (defdefaults sections-file-pathname (index-file) *sections-pathname-defaults*))
 
 @t@l
-(deftest input-file-pathname
+(define-pathname-test input-file-pathname
   (input-file-pathname #P"clweb-test:foo")
   #P"clweb-test:foo.clw.newest")
 
-(deftest lisp-file-pathname
+(define-pathname-test lisp-file-pathname
   (lisp-file-pathname #P"clweb-test:foo")
   #P"clweb-test:foo.lisp.newest")
 
-(deftest tex-file-pathname
+(define-pathname-test tex-file-pathname
   (tex-file-pathname #P"clweb-test:foo")
   #P"clweb-test:foo.tex.newest")
 
-(deftest index-file-pathname
+(define-pathname-test index-file-pathname
   (index-file-pathname #P"clweb-test:foo")
   #P"clweb-test:foo.idx.newest")
 
-(deftest sections-file-pathname
+(define-pathname-test sections-file-pathname
   (sections-file-pathname #P"clweb-test:foo")
   #P"clweb-test:foo.scn.newest")
 
@@ -405,9 +412,9 @@ write its output if given a defaulted input filename.
          args))
 
 @t@l
-(deftest fasl-file-pathname
+(define-pathname-test fasl-file-pathname
   (fasl-file-pathname #P"clweb-test:foo")
-  #.(compile-file-pathname (lisp-file-pathname #P"clweb-test:foo")))
+  #.(compile-file-pathname #P"clweb-test:foo.lisp.newest"))
 
 @ Both |tangle-file| and |weave| take a |tests-file| argument with
 especially hairy defaulting behavior. If it's supplied as~|nil|, no tests
@@ -444,19 +451,19 @@ to the output file's name and defaults everything else.
                           :defaults output-file)))
 
 @t@l
-(deftest (tests-file-pathname 1)
+(define-pathname-test (tests-file-pathname 1)
   (tests-file-pathname #P"clweb-test:foo.clw"
                        :output-file #P"clweb-test:foo.lisp"
                        :tests-file #P"clweb-test:bar")
   #P"clweb-test:bar.lisp.newest")
 
-(deftest (tests-file-pathname 2)
+(define-pathname-test (tests-file-pathname 2)
   (tests-file-pathname #P"clweb-test:foo.clw"
                        :output-file #P"clweb-test:foo"
                        :tests-file nil)
   nil)
 
-(deftest (tests-file-pathname 3)
+(define-pathname-test (tests-file-pathname 3)
   (tests-file-pathname #P"clweb-test:foo.clw"
                        :output-file #P"clweb-test:a;b;bar.tex")
   #P"clweb-test:a;b;bar-tests.tex.newest")
@@ -500,14 +507,14 @@ the tests or index files.
             sections-file)))
 
 @t@l
-(deftest (tangle-file-pathnames 1)
+(define-pathname-test (tangle-file-pathnames 1)
   (tangle-file-pathnames #P"clweb-test:foo")
   #.(compile-file-pathname #P"clweb-test:foo.lisp.newest")
   #P"clweb-test:foo.lisp.newest"
   #.(compile-file-pathname #P"clweb-test:foo-tests.lisp.newest")
   #P"clweb-test:foo-tests.lisp.newest")
 
-(deftest (tangle-file-pathnames 2)
+(define-pathname-test (tangle-file-pathnames 2)
   (let* ((input-file #P"clweb-test:foo")
          (fasl-type (pathname-type (compile-file-pathname input-file)))
          (output-file (make-pathname :type fasl-type ;
@@ -518,7 +525,7 @@ the tests or index files.
   #.(compile-file-pathname #P"clweb-test:a;b;bar-tests.lisp.newest")
   #P"clweb-test:a;b;bar-tests.lisp.newest")
 
-(deftest (tangle-file-pathnames 3)
+(define-pathname-test (tangle-file-pathnames 3)
   (tangle-file-pathnames #P"clweb-test:foo" :tests-file nil)
   #.(compile-file-pathname #P"clweb-test:foo.lisp.newest")
   #P"clweb-test:foo.lisp.newest"
@@ -526,26 +533,26 @@ the tests or index files.
   nil)
 
 @t@l
-(deftest (weave-pathnames foo)
+(define-pathname-test (weave-pathnames foo)
   (weave-pathnames #P"clweb-test:foo")
   #P"clweb-test:foo.tex.newest"
   #P"clweb-test:foo.idx.newest"
   #P"clweb-test:foo.scn.newest")
 
-(deftest (weave-pathnames foo.bar)
+(define-pathname-test (weave-pathnames foo.bar)
   (weave-pathnames #P"clweb-test:foo.bar")
   #P"clweb-test:foo.tex.newest"
   #P"clweb-test:foo.idx.newest"
   #P"clweb-test:foo.scn.newest")
 
-(deftest (weave-pathnames foo :output-file t)
+(define-pathname-test (weave-pathnames foo :output-file t)
   (weave-pathnames #P"clweb-test:foo" ;
                    :output-file #P"clweb-test:a;bar.baz.newest")
   #P"clweb-test:a;bar.baz.newest"
   #P"clweb-test:a;bar.idx.newest"
   #P"clweb-test:a;bar.scn.newest")
 
-(deftest (weave-pathnames foo :output-file bar)
+(define-pathname-test (weave-pathnames foo :output-file bar)
   (weave-pathnames #P"clweb-test:foo" ;
                    :output-file #P"clweb-test:bar")
   #P"clweb-test:bar.tex.newest"
@@ -559,6 +566,7 @@ the tests or index files.
    :case :common)
   "T")
 
+#-allegro
 (deftest (weave-pathnames foo :output-file (:type :unspecific))
   (pathname-type
    (weave-pathnames #P"clweb-test:foo" ;
@@ -566,19 +574,19 @@ the tests or index files.
                                                 :type :unspecific)))
   :unspecific)
 
-(deftest (weave-pathnames foo :index-file nil)
+(define-pathname-test (weave-pathnames foo :index-file nil)
   (weave-pathnames #P"clweb-test:foo" :index-file nil)
   #P"clweb-test:foo.tex.newest"
   nil
   nil)
 
-(deftest (weave-pathnames foo :index-file bar)
+(define-pathname-test (weave-pathnames foo :index-file bar)
   (weave-pathnames #P"clweb-test:foo" :index-file #P"clweb-test:bar")
   #P"clweb-test:foo.tex.newest"
   #P"clweb-test:bar.idx.newest"
   #P"clweb-test:bar.scn.newest")
 
-(deftest (weave-pathnames foo :output-file t :index-file t)
+(define-pathname-test (weave-pathnames foo :output-file t :index-file t)
   (weave-pathnames #P"clweb-test:foo"
                    :output-file #P"clweb-test:a;bar.tex.newest"
                    :index-file #P"clweb-test:b;index.idx.newest")
