@@ -621,6 +621,9 @@ weaver pretty-prints them to the \TeX\ output file.
 @^\WEB@>
 @^\CWEB@>
 
+Finally, the section keeps track of where it was read, in a slot
+called |source-location|.
+
 Three control codes begin a section: \.{@@\ }, \.{@@*}, and \.{@@t}.
 Most sections will begin with \.{@@\ }: these are `regular' sections,
 which might be named or unnamed.
@@ -630,8 +633,9 @@ which might be named or unnamed.
   ((name :accessor section-name :initarg :name)
    (number :accessor section-number)
    (commentary :accessor section-commentary :initarg :commentary)
-   (code :accessor section-code :initarg :code))
-  (:default-initargs :name nil :commentary nil :code nil))
+   (code :accessor section-code :initarg :code)
+   (source-location :reader section-source-location :initarg :source-location))
+  (:default-initargs :name nil :commentary nil :code nil :source-location nil))
 
 @t It's occasionally useful in testing to be able to use numbers as if
 they were sections, at least for numbering purposes.
@@ -1389,7 +1393,8 @@ we'll pass around, so all the standard stream functions will still work.
 
 @l
 (defclass charpos-stream ()
-  ((charpos :initarg :charpos :initform 0)
+  ((charpos :initarg :charpos :reader charpos :initform 0)
+   (lineno :initarg :lineno :reader lineno :initform 1)
    (proxy-stream :accessor charpos-proxy-stream :initarg :proxy)))
 
 @ The {\sc gf} |charpos| returns the current character position of a charpos
@@ -1402,15 +1407,20 @@ to the next multiple of |*tab-width*|.
 @l
 (defgeneric get-charpos-stream-buffer (stream))
 
-(defgeneric charpos (stream))
-(defmethod charpos ((stream charpos-stream))
-  (with-slots (charpos) stream
+(defmethod charpos :before ((stream charpos-stream))
+  (update-charpos-stream-positions stream))
+
+(defmethod lineno ((stream stream)) nil)
+(defmethod lineno :before ((stream charpos-stream))
+  (update-charpos-stream-positions stream))
+
+(defun update-charpos-stream-positions (stream)
+  (with-slots (charpos lineno) stream
     (loop for char across (get-charpos-stream-buffer stream)
           do (case char
                (#\Tab (incf charpos (- *tab-width* (rem charpos *tab-width*))))
-               (#\Newline (setf charpos 0))
-               (t (incf charpos)))
-          finally (return charpos))))
+               (#\Newline (incf lineno) (setf charpos 0))
+               (t (incf charpos))))))
 
 @ @<Glob...@>=
 (defparameter *tab-width* 8)
@@ -1475,6 +1485,10 @@ instance.
 (defun stream-charpos (stream)
   (charpos (or (gethash stream *charpos-streams*)
                (error "Not tracking charpos for ~S" stream))))
+
+(defun stream-lineno (stream)
+  (lineno (or (gethash stream *charpos-streams*)
+              (error "Not tracking lineno for ~S" stream))))
 
 (defun release-charpos-stream (stream)
   (multiple-value-bind (charpos-stream present-p)
@@ -2844,12 +2858,42 @@ it should really only be used in \TeX\ text.
     (values (read-from-string "@@")))
   "@")
 
+@ While reading a \WEB\ from a file, each section gets initialized
+with a |source-location| instance denoting the filename and line
+number at which the section began. (As for getting the pathname
+associated with the stream, only a best-effort is possible in
+general. It is reasonable to expect that any stream created by
+|tangle-file|, |weave|, and |load-web| will be covered by the below;
+only arbitrary streams supplied to |load-web| ought to cause
+problems. The |ignore-errors| for the |file-stream| case is meant to
+compensate for a defect in SBCL, whose definition of |file-stream|
+includes streams not created by |open|, on which |pathname| errors.)
+
+@l
+(defstruct (source-location (:constructor create-source-location (lineno file)))
+  lineno file)
+
+(defun source-location-for-reader (stream)
+  (labels ((stream-pathname (stream)
+             (typecase stream
+               (file-stream (ignore-errors (pathname stream)))
+               (synonym-stream (stream-pathname
+                                (symbol-value (synonym-stream-symbol stream))))
+               (two-way-stream (stream-pathname
+                                (two-way-stream-input-stream stream)))
+               (concatenated-stream (stream-pathname
+                                     (first (concatenated-stream-streams stream)))))))
+    (let ((lineno (stream-lineno stream))
+          (pathname (stream-pathname stream)))
+      (when (and lineno pathname)
+        (create-source-location lineno pathname)))))
+
 @ Ordinary sections are introduced by \.{@@\ } or \.{@@|#\Newline|}.
 
 @l
 (defun start-section-reader (stream sub-char arg)
-  (declare (ignore stream sub-char arg))
-  (make-instance 'section))
+  (declare (ignore sub-char arg))
+  (make-instance 'section :source-location (source-location-for-reader stream)))
 
 (dolist (sub-char '(#\Space #\Newline))
   (set-control-code sub-char #'start-section-reader '(:limbo :TeX :lisp)))
@@ -2862,8 +2906,10 @@ argument occurs between the `\.{@@}' and the `\.{*}'.
 
 @l
 (defun start-starred-section-reader (stream sub-char arg)
-  (declare (ignore stream sub-char))
-  (apply #'make-instance 'starred-section (when arg `(:depth ,arg))))
+  (declare (ignore sub-char))
+  (apply #'make-instance 'starred-section
+         :source-location (source-location-for-reader stream)
+         (when arg `(:depth ,arg))))
 
 (set-control-code #\* #'start-starred-section-reader '(:limbo :TeX :lisp))
 
@@ -2877,6 +2923,7 @@ is ignored.
   (prog1 (if (and (char= (peek-char t stream t nil t) #\*)
                   (read-char stream t nil t))
              (apply #'make-instance 'starred-test-section ;
+                    :source-location (source-location-for-reader stream)
                     (when arg `(:depth ,arg)))
              (make-instance 'test-section))
          (loop until (char/= (peek-char t stream t nil t) #\Newline)
@@ -3634,6 +3681,8 @@ If successful, |weave| returns the truename of the output file.
 (defun weave (input-file &rest args &key output-file tests-file index-file
               (verbose *weave-verbose*)
               (print *weave-print*)
+              ((:source-locations *weave-source-locations*)
+               *weave-source-locations*)
               (external-format :default) &aux
               (input-file (input-file-pathname input-file))
               (readtable *readtable*)
@@ -3698,6 +3747,8 @@ files for the test suite.
   "The default for the :VERBOSE argument to WEAVE.")
 (defvar *weave-print* t
   "The default for the :PRINT argument to WEAVE.")
+(defvar *weave-source-locations* t
+  "If true, include src: specials in the woven TeX.")
 
 @ The following routine does most of the actual output for the weaver.
 It takes a list of sections and the defaulted arguments from |weave|,
@@ -3838,19 +3889,24 @@ object printer, which we'll come to next.
 
 (set-weave-dispatch 'limbo-section #'print-limbo 1)
 
-@ Section objects are printed just like any other objects, but they use some
-special \TeX\ macros to set up the formatting. They begin with either \.{\\M}
-or \.{\\N} depending on whether the section is unstarred or starred. Then
-comes the commentary, which is separated from the code part by a bit of
-vertical space using the \.{\\Y} macro if both are present. The code part
-always starts with \.{\\B}, followed by the name if it's a named section.
-Then comes the code, which we output one form at a time, using alignment
-tabs (\.{\\+}). Last come the cross-references and a final \.{\\fi} that
-matches the \.{\\ifon} in \.{\\M} and \.{\\N}.
+@ Section objects are printed just like any other objects, but they
+use some special \TeX\ macros to set up the formatting. They may be
+preceded by \.{\\SL}, which sets up source location information for
+some DVI previewers; but always commence with either \.{\\M} or
+\.{\\N} depending on whether the section is unstarred or starred. Then
+comes the commentary, which is separated from the code part by a bit
+of vertical space using the \.{\\Y} macro if both are present. The
+code part always starts with \.{\\B}, followed by the name if it's a
+named section.  Then comes the code, which we output one form at a
+time, using alignment tabs (\.{\\+}). Last come the cross-references
+and a final \.{\\fi} that matches the \.{\\ifon} in \.{\\M} and
+\.{\\N}.
 
 @l
 (defun print-section (stream section)
-  (format stream "~&\\~:[M~*~;N{~D}~]{~D}"
+  (format stream "~&~:[~*~;~@[\\SL~W~]~%~]\\~:[M~*~;N{~D}~]{~D}"
+          *weave-source-locations*
+          (section-source-location section)
           (starred-section-p section)
           (section-depth section)
           (section-number section))
@@ -3889,6 +3945,17 @@ matches the \.{\\ifon} in \.{\\M} and \.{\\N}.
   (format stream "~&\\fi~%"))
 
 (set-weave-dispatch 'section #'print-section)
+
+@ Source locations are printed in a bespoke syntax implemented by the
+\.{\\SL} macro.
+
+@l
+(defun print-source-location (stream source-location)
+  (format stream "[~D ~A]"
+          (source-location-lineno source-location)
+          (file-namestring (source-location-file source-location))))
+
+(set-weave-dispatch 'source-location #'print-source-location)
 
 @ The cross-references lists use the macros \.{\\A} (for `also'),
 \.{\\U} (for `use'), \.{\\Q} (for `quote'), and their pluralized variants,
@@ -4003,8 +4070,9 @@ the newline.
                               (1+ newline))
         for newline = (position #\Newline string :start last)
         as line = (subseq string last newline)
-        do (format stream "\\.{~:[~;\"~]~/clweb::print-escaped/~:[~;\"~]}"
-                   (zerop last) line (null newline))
+        do (format stream "~:[~;\\.{~]~:[~;\"~]~/clweb::print-escaped/~:[~;\"~]~:[~;}~]"
+                   *print-escape* (and *print-escape* (zerop last))
+                   line (and *print-escape* (null newline)) *print-escape*)
         while newline do (format stream "\\cr~:@_")))
 
 (set-weave-dispatch 'string #'print-string)

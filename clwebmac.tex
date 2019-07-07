@@ -60,3 +60,9 @@
 % main program sections.
 \def\nolink#1#2{#1}
 \def\exnote#1#2.{{\let\pdflink\nolink \let\it\eightit \note{#1}{#2}.}}
+
+\newtoks\srcspc
+\def\srcspecial#1{\ifx{}#1\else\special{src:#1}\fi}
+\let\oldstartsection=\startsection
+\def\startsection{\srcspecial{\the\srcspc}\oldstartsection}
+\def\SL[#1]{\srcspc={#1}}
