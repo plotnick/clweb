@@ -7022,31 +7022,38 @@ symbols inside quoted forms.
   '((:section :code ((quote foo)))
     (:section :code ((quote (foo bar))))))
 
-@ We have to override the walker's macro expansion function, since the
-forms that we're considering might be or contain referring symbols, which
-might not have the appropriate definition as macros. There are two
-important cases here: (1)~a form that is a referring symbol whose referent
-is a symbol macro in the local or global environment; and (2)~a compound
-form, the operator of which is a referring symbol whose referent has a
-macro definition in the local environment. The first case is handled via
-the call to |walk-variable-name| in |walk-form| for symbol macros.
-We handle the second case here: we'll index the use of the macro, then hand
-off control to the next method (which will perform the actual expansion),
-passing the referent of the referring symbol.
-@^referring symbols@>
+@ We have to override the walker's macro expansion function, since
+the forms that we're considering might be or contain referring symbols,
+which might not have the appropriate definition as macros. Moreover,
+we ignore all errors that may occur during expansion, since not all
+macros are well-behaved in the presence of referring symbols.
 
 @l
 (defmethod macroexpand-for-walk ((walker indexing-walker) (form cons) env)
-  (multiple-value-bind (symbol section) (symbol-provenance (car form))
-    (if section
-        (multiple-value-bind (type local) (function-information symbol env)
-          (case type
-            (:macro
-             (index (walker-index walker) symbol section ;
-                    (make-context 'macro-name :local local))
-             (call-next-method walker (cons symbol (cdr form)) env))
-            (t (call-next-method))))
-        (call-next-method))))
+  (handler-case @<Index an expanded form@>
+    (error () form)))
+
+@ There are two important cases here: (1)~a form that is a referring symbol
+whose referent is a symbol macro in the local or global environment;
+and (2)~a compound form, the operator of which is a referring symbol whose
+referent has a macro definition in the local environment. The first case
+is handled via the call to |walk-variable-name| in |walk-form| for symbol
+macros. We handle the second case here: we'll index the use of the macro,
+then hand off control to the next method (which will perform the actual
+expansion), passing the referent of the referring symbol.
+
+@^referring symbols@>
+@<Index an expanded form@>=
+(multiple-value-bind (symbol section) (symbol-provenance (car form))
+  (if section
+      (multiple-value-bind (type local) (function-information symbol env)
+        (case type
+          (:macro
+           (index (walker-index walker) symbol section ;
+                  (make-context 'macro-name :local local))
+           (call-next-method walker (cons symbol (cdr form)) env))
+          (t (call-next-method))))
+      (call-next-method)))
 
 @ The only ordinary atomic forms we care about are referring symbols, which
 we'll index and then return the referents of. Everything else gets handled
