@@ -3995,7 +3995,8 @@ and a final \.{\\fi} that matches the \.{\\ifon} in \.{\\M} and
 (defun print-source-location (stream source-location)
   (format stream "[~D ~A]"
           (source-location-lineno source-location)
-          (file-namestring (source-location-file source-location))))
+          (file-namestring (translate-logical-pathname
+                            (source-location-file source-location)))))
 
 (set-weave-dispatch 'source-location #'print-source-location)
 
