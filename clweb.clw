@@ -156,19 +156,16 @@ information on {\sc rt}, see Richard C.~Waters, ``Supporting the Regression
 Testing of Lisp Programs,'' {\it SIGPLAN Lisp Pointers\/}~4, no.~2 (1991):
 47--53.
 
-We use the sleazy trick of manually importing the external symbols of
-the {\sc rt} package instead of the more sensible |(use-package "RT")|
-because many compilers issue warnings when the use-list of a package
-changes, which would occur if the |defpackage| form above were evaluated
-after the tests have been loaded.
+The \CLWEB\ package does not |(use-package "RT")| because the main program
+does not depend on the test suite. To avoid playing symbol games, we will
+define a trivial wrapper around {\sc rt}'s |deftest| macro, but not import
+any of its symbols.
 
 @l
 (in-package "CLWEB")
-@e
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (require "RT")
-  (do-external-symbols (symbol (find-package "RT"))
-    (import symbol)))
+
+(defmacro deftest (name form &rest values)
+  `(rt:deftest ,name ,form ,@values))
 
 @ We'll define our global variables and condition classes as we need them,
 but we'd like them to appear near the top of the tangled output.
