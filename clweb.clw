@@ -3821,9 +3821,9 @@ files for the test suite.
 
 @<Fix up the index and sections filenames...@>=
 (when index-file
-  (let ((output-file-name (make-pathname :name (pathname-name output-file))))
-    (setq index-file (merge-pathnames output-file-name index-file)
-          sections-file (merge-pathnames output-file-name sections-file))))
+  (let ((output-file-name (pathname-name output-file)))
+    (setq index-file (make-pathname :name output-file-name :defaults index-file)
+          sections-file (make-pathname :name output-file-name :defaults sections-file))))
 
 @ @<Global variables@>=
 (defvar *weave-verbose* t

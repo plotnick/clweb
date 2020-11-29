@@ -1462,11 +1462,13 @@ otherwise, they will replace them."
                (APPLY #'WEAVE-PATHNAMES INPUT-FILE :OUTPUT-FILE TESTS-FILE
                       ARGS)
              (WHEN INDEX-FILE
-               (LET ((OUTPUT-FILE-NAME
-                      (MAKE-PATHNAME :NAME (PATHNAME-NAME OUTPUT-FILE))))
-                 (SETQ INDEX-FILE (MERGE-PATHNAMES OUTPUT-FILE-NAME INDEX-FILE)
+               (LET ((OUTPUT-FILE-NAME (PATHNAME-NAME OUTPUT-FILE)))
+                 (SETQ INDEX-FILE
+                         (MAKE-PATHNAME :NAME OUTPUT-FILE-NAME :DEFAULTS
+                                        INDEX-FILE)
                        SECTIONS-FILE
-                         (MERGE-PATHNAMES OUTPUT-FILE-NAME SECTIONS-FILE))))
+                         (MAKE-PATHNAME :NAME OUTPUT-FILE-NAME :DEFAULTS
+                                        SECTIONS-FILE))))
              (WEAVE-SECTIONS *TEST-SECTIONS* :INPUT-FILE INPUT-FILE
                              :OUTPUT-FILE OUTPUT-FILE :INDEX-FILE INDEX-FILE
                              :SECTIONS-FILE SECTIONS-FILE :VERBOSE VERBOSE
