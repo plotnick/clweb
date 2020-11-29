@@ -316,12 +316,37 @@ on the host `\.{CLWEB-TEST}', but will compare only physical pathnames.
   (defun physical-pathname-or-null (pathspec)
     (and pathspec (translate-logical-pathname pathspec))))
 
+@t The macro |with-pathname-test-variables| ensures that tests are independent
+of the current pathname defaults.
+
+@l
+(defmacro with-pathname-test-variables (&body body &aux (fix-lpn (gensym)))
+  `(flet ((,fix-lpn (lpn)
+            (make-pathname :defaults lpn :directory nil :name nil)))
+     (progv '(*web-pathname-defaults*
+              *lisp-pathname-defaults*
+              *tex-pathname-defaults*
+              *index-pathname-defaults*
+              *sections-pathname-defaults*)
+         (mapcar #',fix-lpn
+                 '(#P"clweb-test:foo.clw.newest"
+                   #P"clweb-test:foo.lisp.newest"
+                   #P"clweb-test:foo.tex.newest"
+                   #P"clweb-test:foo.idx.newest"
+                   #P"clweb-test:foo.scn.newest"))
+       ,@body)))
+
+@t And here's the pathname-test generating macro. It wraps |deftest|,
+coercing the returned and expected values to physical pathnames.
+
+@l
 (defmacro define-pathname-test (name form &rest expected-values)
   (with-unique-names (values)
     `(deftest ,name
-       (let* ((*default-pathname-defaults* #P"clweb-test:")
-              (,values (multiple-value-list ,form)))
-         (values-list (mapcar #'physical-pathname-or-null ,values)))
+       (with-pathname-test-variables
+         (let* ((*default-pathname-defaults* #P"clweb-test:")
+                (,values (multiple-value-list ,form)))
+           (values-list (mapcar #'physical-pathname-or-null ,values))))
        ,@(mapcar #'physical-pathname-or-null expected-values))))
 
 @ All of the filename defaulting functions call down to |output-file-pathname|,
