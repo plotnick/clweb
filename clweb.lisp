@@ -1,7 +1,4 @@
 ;;;; TANGLED WEB FROM "clweb.clw". DO NOT EDIT.
-#+ALLEGRO
-(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)
-  (SETQ EXCL:*SOURCE-PATHNAME* "clweb.clw"))
 
 (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
   #+:SBCL (require "SB-CLTL2"))
@@ -1419,10 +1416,12 @@ otherwise, they will replace them."
     (LET ((*EVALUATING* NIL)
           (*PRINT-PPRINT-DISPATCH* *TANGLE-PPRINT-DISPATCH*)
           (*PRINT-READABLY* NIL))
-      (FORMAT OUTPUT "#+ALLEGRO~
+      #+:ALLEGRO
+(format output
+        "#+ALLEGRO~
          ~&(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)~
          ~&  (SETQ EXCL:*SOURCE-PATHNAME* ~S))~%"
-              (ENOUGH-NAMESTRING *TANGLE-FILE-PATHNAME*))
+        (namestring *tangle-file-pathname*))
       (DOLIST (FORM (TANGLE (UNNAMED-SECTION-CODE-PARTS SECTIONS)))
         (PPRINT FORM OUTPUT)))))
 (DEFUN WEAVE

@@ -3720,16 +3720,13 @@ definitions in source files. If we override that, we can get it to look
 in the \CLWEB\ file instead of the tangled Lisp file.
 @^Allegro Common Lisp@>
 
-We have to do this output as a string rather than a form because the
-package |"EXCL"| might not exist in the implementation with which we're
-tangling.
-
 @<Output a form that sets...@>=
+#+allegro
 (format output
         "#+ALLEGRO~
          ~&(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)~
          ~&  (SETQ EXCL:*SOURCE-PATHNAME* ~S))~%"
-        (enough-namestring *tangle-file-pathname*))
+        (namestring *tangle-file-pathname*))
 
 @*Weaving. The function |weave| reads a web from |input-file| and produces
 an output \TeX\ file named by |output-file|. By default, it also weaves
