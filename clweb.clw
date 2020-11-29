@@ -349,27 +349,38 @@ coercing the returned and expected values to physical pathnames.
            (values-list (mapcar #'physical-pathname-or-null ,values))))
        ,@(mapcar #'physical-pathname-or-null expected-values))))
 
-@ All of the filename defaulting functions call down to |output-file-pathname|,
-which is analogous to |compile-file-pathname| except that the type component
-of the defaults for the |output-file| comes from the |defaults| argument rather
-than an implementation-defined default type.
+@ All of the filename defaulting code eventually calls down to either
+|input-file-pathname| or |output-file-pathname|. Both return a fully
+defaulted, untranslated pathname.
 
 @l
+(defun input-file-pathname (input-file)
+  (let ((defaults (merge-pathnames *web-pathname-defaults*)))
+    (merge-pathnames input-file defaults)))
+
 (defun output-file-pathname (input-file &key output-file ;
                              (defaults *default-pathname-defaults*))
   (assert (or (and output-file (pathname-type output-file))
               (pathname-type defaults))
           (defaults)
           "Missing default output file type.")
-  (let* ((input-file (merge-pathnames input-file *default-pathname-defaults*))
+  (let* ((input-file (input-file-pathname input-file))
          (defaults (merge-pathnames ;
-                    (make-pathname :type nil :defaults input-file) ;
+                    (make-pathname :type nil ;
+                                   :version :newest ;
+                                   :defaults input-file) ;
                     defaults)))
     (if output-file
         (merge-pathnames output-file defaults)
         defaults)))
 
 @t@l
+(define-pathname-test input-file-pathname
+  (values (input-file-pathname #P"clweb-test:foo")
+          (input-file-pathname #P"clweb-test:foo.in"))
+  #P"clweb-test:foo.clw.newest"
+  #P"clweb-test:foo.in.newest")
+
 (define-pathname-test output-file-pathname
   (values (ignore-errors (output-file-pathname #P"clweb-test:foo"))
           (output-file-pathname #P"clweb-test:foo"
@@ -385,8 +396,27 @@ than an implementation-defined default type.
   #P"clweb-test:bar.lisp.newest"
   #P"clweb-test:bar.baz.newest")
 
-@ Now we can define pathname defaulting routines for each of the file types
-consumed and produced by \CLWEB. Most of them are trivial wrappers around
+@t The default version of an output file is |:newest|. But if a version
+is supplied on the |output-file|, we should respect that.
+
+@l
+(deftest (output-file-pathname version :newest)
+  (pathname-version ;
+   (output-file-pathname #P"clweb-test:foo.clw.1"
+                         :defaults *lisp-pathname-defaults*))
+  #-allegro :newest
+  #+allegro :unspecific)
+
+(deftest (output-file-pathname version output-file)
+  (pathname-version ;
+   (output-file-pathname #P"clweb-test:foo.clw.1"
+                         :output-file #P"clweb-test:foo.clw.2"
+                         :defaults *lisp-pathname-defaults*))
+  #-allegro 2
+  #+allegro :unspecific)
+
+@ Now we can define pathname defaulting routines for each of the output
+file types produced by \CLWEB. Most of them are trivial wrappers around
 |output-file-pathname| that simply provide the appropriate defaults.
 
 @l
@@ -396,17 +426,12 @@ consumed and produced by \CLWEB. Most of them are trivial wrappers around
                   (apply #'output-file-pathname ,input ;
                          :defaults ,defaults ;
                          ,args)))))
-  (defdefaults input-file-pathname (input-file) *web-pathname-defaults*)
   (defdefaults lisp-file-pathname (input-file) *lisp-pathname-defaults*)
   (defdefaults tex-file-pathname (input-file) *tex-pathname-defaults*)
   (defdefaults index-file-pathname (output-file) *index-pathname-defaults*)
   (defdefaults sections-file-pathname (index-file) *sections-pathname-defaults*))
 
 @t@l
-(define-pathname-test input-file-pathname
-  (input-file-pathname #P"clweb-test:foo")
-  #P"clweb-test:foo.clw.newest")
-
 (define-pathname-test lisp-file-pathname
   (lisp-file-pathname #P"clweb-test:foo")
   #P"clweb-test:foo.lisp.newest")

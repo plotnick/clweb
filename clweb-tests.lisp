@@ -39,6 +39,10 @@
               (,VALUES (MULTIPLE-VALUE-LIST ,FORM)))
          (VALUES-LIST (MAPCAR #'PHYSICAL-PATHNAME-OR-NULL ,VALUES))))
       ,@(MAPCAR #'PHYSICAL-PATHNAME-OR-NULL EXPECTED-VALUES))))
+(DEFINE-PATHNAME-TEST INPUT-FILE-PATHNAME
+ (VALUES (INPUT-FILE-PATHNAME #P"clweb-test:foo")
+         (INPUT-FILE-PATHNAME #P"clweb-test:foo.in"))
+ #P"clweb-test:foo.clw.newest" #P"clweb-test:foo.in.newest")
 (DEFINE-PATHNAME-TEST OUTPUT-FILE-PATHNAME
  (VALUES (IGNORE-ERRORS (OUTPUT-FILE-PATHNAME #P"clweb-test:foo"))
          (OUTPUT-FILE-PATHNAME #P"clweb-test:foo" :DEFAULTS
@@ -51,8 +55,17 @@
                                *LISP-PATHNAME-DEFAULTS*))
  NIL #P"clweb-test:foo.lisp.newest" #P"clweb-test:bar.lisp.newest"
  #P"clweb-test:bar.baz.newest")
-(DEFINE-PATHNAME-TEST INPUT-FILE-PATHNAME
- (INPUT-FILE-PATHNAME #P"clweb-test:foo") #P"clweb-test:foo.clw.newest")
+(DEFTEST (OUTPUT-FILE-PATHNAME VERSION :NEWEST)
+ (PATHNAME-VERSION
+  (OUTPUT-FILE-PATHNAME #P"clweb-test:foo.clw.1" :DEFAULTS
+                        *LISP-PATHNAME-DEFAULTS*))
+ #-:ALLEGRO :newest #+:ALLEGRO :unspecific)
+(DEFTEST (OUTPUT-FILE-PATHNAME VERSION OUTPUT-FILE)
+ (PATHNAME-VERSION
+  (OUTPUT-FILE-PATHNAME #P"clweb-test:foo.clw.1" :OUTPUT-FILE
+                        #P"clweb-test:foo.clw.2" :DEFAULTS
+                        *LISP-PATHNAME-DEFAULTS*))
+ #-:ALLEGRO 2 #+:ALLEGRO :unspecific)
 (DEFINE-PATHNAME-TEST LISP-FILE-PATHNAME
  (LISP-FILE-PATHNAME #P"clweb-test:foo") #P"clweb-test:foo.lisp.newest")
 (DEFINE-PATHNAME-TEST TEX-FILE-PATHNAME (TEX-FILE-PATHNAME #P"clweb-test:foo")
