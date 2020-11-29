@@ -294,14 +294,24 @@ analysis of the requirements for these routines.
 @^Kreuter, Richard M.@>
 
 @ The type componenents of the various input and output files take their
-defaults from the following global variables.
+defaults from the following global variables. We use a tiny helper function
+to make them so that their version and host parameters are set correctly.
 
 @<Global variables@>=
-(defvar *web-pathname-defaults* (make-pathname :type "clw" :version :newest))
-(defvar *lisp-pathname-defaults* (make-pathname :type "lisp" :version :newest))
-(defvar *tex-pathname-defaults* (make-pathname :type "tex" :version :newest))
-(defvar *index-pathname-defaults* (make-pathname :type "idx" :version :newest))
-(defvar *sections-pathname-defaults* (make-pathname :type "scn" :version :newest))
+(defvar *physical-pathname-host*
+  #+sbcl ""
+  #-sbcl :unspecific)
+
+(defun make-default-pathname (type)
+  (make-pathname :type type
+                 :host *physical-pathname-host*
+                 :version :newest))
+
+(defvar *web-pathname-defaults* (make-default-pathname "clw"))
+(defvar *lisp-pathname-defaults* (make-default-pathname "lisp"))
+(defvar *tex-pathname-defaults* (make-default-pathname "tex"))
+(defvar *index-pathname-defaults* (make-default-pathname "idx"))
+(defvar *sections-pathname-defaults* (make-default-pathname "scn"))
 
 @t We'll shortly be defining a number of tests for pathname-generating
 functions. To maximize portability, we will mention only logical pathnames
