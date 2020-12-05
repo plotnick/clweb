@@ -300,7 +300,8 @@ to make them so that their version and host parameters are set correctly.
 @<Global variables@>=
 (defvar *physical-pathname-host*
   #+sbcl ""
-  #-sbcl :unspecific)
+  #+(or allegro ccl) :unspecific
+  #-(or allegro ccl sbcl) nil)
 
 (defun make-default-pathname (type)
   (make-pathname :type type
