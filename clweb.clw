@@ -3737,7 +3737,7 @@ in the \CLWEB\ file instead of the tangled Lisp file.
         "#+ALLEGRO~
          ~&(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)~
          ~&  (SETQ EXCL:*SOURCE-PATHNAME* ~S))~%"
-        (namestring *tangle-file-pathname*))
+        (namestring *tangle-file-truename*))
 
 @*Weaving. The function |weave| reads a web from |input-file| and produces
 an output \TeX\ file named by |output-file|. By default, it also weaves

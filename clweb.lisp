@@ -1426,7 +1426,7 @@ otherwise, they will replace them."
         "#+ALLEGRO~
          ~&(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)~
          ~&  (SETQ EXCL:*SOURCE-PATHNAME* ~S))~%"
-        (namestring *tangle-file-pathname*))
+        (namestring *tangle-file-truename*))
       (DOLIST (FORM (TANGLE (UNNAMED-SECTION-CODE-PARTS SECTIONS)))
         (PPRINT FORM OUTPUT)))))
 (DEFUN WEAVE
