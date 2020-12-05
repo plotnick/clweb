@@ -1,0 +1,52 @@
+name: Test CLWEB on various Lisp implementations
+on: [push]
+env:
+  DO_TESTS: >
+    (or (and (setq *compile-print* nil
+                   *compile-verbose* t)
+             (load (compile-file "rt.lisp"))
+             (load (compile-file "clweb.lisp"))
+             (in-package "CLWEB")
+             (load (funcall (find-symbol "TANGLE-FILE") "clweb"))
+             (load (compile-file "clweb-tests"))
+             (funcall (find-symbol "DO-TESTS" "RT")))
+        (error "CLWEB tests failed."))
+jobs:
+  Allegro:
+    runs-on: ubuntu-20.04
+    env:
+      URL: https://franz.com/ftp/pub/acl10.1express/linux86/acl10.1express-linux-x86.tbz2
+      LISP: ./acl10.1express/alisp
+    steps:
+      - name: Check out CLWEB
+        uses: actions/checkout@v2
+      - name: Install Allegro
+        run: curl -sSL "$URL" | tar xjvf -
+      - name: Compile CLWEB & run tests
+        run: echo "$DO_TESTS" | $LISP -qq --batch
+
+  Clozure:
+    runs-on: ubuntu-20.04
+    env:
+      URL: https://github.com/Clozure/ccl/releases/download/v1.12/ccl-1.12-linuxx86.tar.gz
+      LISP: ./ccl/lx86cl64
+    steps:
+      - name: Check out CLWEB
+        uses: actions/checkout@v2
+      - name: Install Clozure CL
+        run: curl -sSL "$URL" | tar xzvf -
+      - name: Compile CLWEB & run tests
+        run: echo "$DO_TESTS" | $LISP -n -Q --batch
+
+  SBCL:
+    runs-on: ubuntu-20.04
+    env:
+      URL: http://prdownloads.sourceforge.net/sbcl/sbcl-2.0.11-x86-64-linux-binary.tar.bz2
+      LISP: ./sbcl-2.0.11-x86-64-linux/run-sbcl.sh
+    steps:
+      - name: Check out CLWEB
+        uses: actions/checkout@v2
+      - name: Install SBCL
+        run: curl -sSL "$URL" | tar xjvf -
+      - name: Compile CLWEB & run tests
+        run: echo "$DO_TESTS" | $LISP --no-userinit --no-sysinit --script
