@@ -624,7 +624,7 @@ the tests or index files.
    :case :common)
   "T")
 
-#-allegro
+#-(or allegro clisp)
 (deftest (weave-pathnames foo :output-file (:type :unspecific))
   (pathname-type
    (weave-pathnames #P"clweb-test:foo" ;

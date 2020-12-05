@@ -126,7 +126,7 @@
   (WEAVE-PATHNAMES #P"clweb-test:foo" :OUTPUT-FILE #P"clweb-test:bar.t") :CASE
   :COMMON)
  "T")
-#-:ALLEGRO
+#-(:OR :ALLEGRO :CLISP)
 (deftest (weave-pathnames foo :output-file (:type :unspecific))
   (pathname-type
    (weave-pathnames #P"clweb-test:foo" ;
